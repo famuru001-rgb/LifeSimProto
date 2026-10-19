@@ -77,6 +77,23 @@ namespace LifeSimProto
         float speed;
         Vector3 lastPos;
         float talkT;
+        float measuredHeight, fixAngle;
+        bool eatingNow, dozingNow;
+
+        // 確認用（写真を撮るときに姿勢を決め打ちする）
+        [System.NonSerialized] public bool testMode;
+        [System.NonSerialized] public BodyPose testPose;
+        [System.NonSerialized] public bool testTalk, testEat, testDoze;
+        [System.NonSerialized] public float testSpeed;
+
+        public string DebugInfo
+        {
+            get
+            {
+                return "仮モデルあり（人型として読み込み=" + humanOk + "、Mixamoの動き=" + (clipBook != null ? clipBook.Count : 0) +
+                       "本、向きの補正=" + Mathf.RoundToInt(fixAngle) + "度、背の高さ=" + measuredHeight.ToString("0.00") + "m）";
+            }
+        }
 
         public static ProtoBody Create(GameObject owner, CharLook look)
         {
@@ -120,12 +137,14 @@ namespace LifeSimProto
             if (toe.sqrMagnitude > 1e-6f)
             {
                 float ang = Vector3.SignedAngle(toe, Vector3.forward, Vector3.up);
+                fixAngle = ang;
                 model.localRotation = Quaternion.Euler(0f, ang, 0f) * model.localRotation;
             }
             fix = model.localRotation;
             // 大きさを確かめる（単位がずれていたら合わせる）
             Transform top = bones.ContainsKey("HeadTop_End") ? bones["HeadTop_End"] : bones["Head"];
             float h = owner.InverseTransformPoint(top.position).y;
+            measuredHeight = h;
             if (h < 1.2f || h > 2.4f)
             {
                 if (h > 0.01f) model.localScale *= height / h;
@@ -134,8 +153,9 @@ namespace LifeSimProto
             if (owner.InverseTransformPoint(bones["LeftArm"].position).x > 0f)
                 Debug.LogWarning("仮モデルの左右が反対になっています");
 
+            // 元に戻す対象は「骨」だけ（モデル全体や部品の置き方は含めない）
             var list = new List<Transform>();
-            foreach (var kv in bones) if (!list.Contains(kv.Value)) list.Add(kv.Value);
+            foreach (var t in hips.GetComponentsInChildren<Transform>(true)) if (!list.Contains(t)) list.Add(t);
             boneList = list.ToArray();
             restRot = new Quaternion[boneList.Length];
             for (int i = 0; i < boneList.Length; i++) restRot[i] = boneList[i].localRotation;
@@ -162,7 +182,7 @@ namespace LifeSimProto
             var keep = new HashSet<string>(AlwaysOn);
             foreach (var p in look.parts) keep.Add(p);
             var cache = new Dictionary<string, Material>();
-            Color towel = new Color(0.97f, 0.97f, 0.94f);
+            Color towel = new Color(0.62f, 0.78f, 0.95f); // 水色のバスタオル
             foreach (var r in model.GetComponentsInChildren<Renderer>(true))
             {
                 string on = r.gameObject.name;
@@ -189,7 +209,8 @@ namespace LifeSimProto
         {
             switch (key)
             {
-                case "Skin": case "Hip": return look.skin;
+                case "Skin": return look.skin;
+                case "Hip": return new Color(0.11f, 0.11f, 0.14f); // スカートの中は黒（見えても大丈夫な色）
                 case "Hair": return look.hair;
                 case "Eye": return look.eye;
                 case "Blazer": case "Sleeve": return new Color(0.09f, 0.09f, 0.12f);
@@ -308,8 +329,8 @@ namespace LifeSimProto
         void LateUpdate()
         {
             if (model == null) return;
-            if (sim == null) sim = GetComponent<SimCharacter>();
-            if (sim == null) return;
+            if (sim == null && !testMode) sim = GetComponent<SimCharacter>();
+            if (sim == null && !testMode) return;
             float dt = Time.deltaTime;
             if (dt <= 0f) return;
 
@@ -318,8 +339,11 @@ namespace LifeSimProto
             lastPos = transform.position;
             speed = Mathf.Lerp(speed, Mathf.Min(d.magnitude / dt, 3f), Mathf.Clamp01(dt * 10f));
 
-            BodyPose pose = sim.BodyPoseNow;
-            bool talking = sim.IsTalkingNow;
+            BodyPose pose = testMode ? testPose : sim.BodyPoseNow;
+            bool talking = testMode ? testTalk : sim.IsTalkingNow;
+            eatingNow = testMode ? testEat : sim.IsEatingNow;
+            dozingNow = testMode ? testDoze : sim.IsDozingNow;
+            if (testMode) speed = testSpeed;
             ShowBath(pose == BodyPose.Soak);
 
             // 体の置き方（寝るときは横にする）
@@ -415,17 +439,17 @@ namespace LifeSimProto
                     thL = thR = new Vector3(0f, -0.12f, 1f);
                     shL = shR = new Vector3(0f, -1f, 0.1f);
                     thL.x = -0.06f; thR.x = 0.06f;
-                    uaL = new Vector3(-0.15f, -1f, 0.3f); faL = new Vector3(-0.1f, -0.25f, 1f);
-                    uaR = new Vector3(0.15f, -1f, 0.3f); faR = new Vector3(0.1f, -0.25f, 1f);
-                    if (sim.IsEatingNow) { faL = new Vector3(-0.2f, 0.1f, 1f); faR = new Vector3(0.2f, 0.1f + 0.15f * Mathf.Sin(talkT * 3f), 1f); }
+                    uaL = new Vector3(-0.12f, -1f, 0.15f); faL = new Vector3(0.05f, -0.75f, 1f);
+                    uaR = new Vector3(0.12f, -1f, 0.15f); faR = new Vector3(-0.05f, -0.75f, 1f);
+                    if (eatingNow) { faL = new Vector3(-0.2f, 0.1f, 1f); faR = new Vector3(0.2f, 0.1f + 0.15f * Mathf.Sin(talkT * 3f), 1f); }
                     else if (talking) faR = new Vector3(0.25f, -0.1f + 0.3f * Mathf.Sin(talkT * 4f), 1f);
                     break;
                 case BodyPose.SitFloor:
                     hips.position = transform.position + up * (0.28f * k) - fwd * 0.12f;
                     thL = new Vector3(-0.05f, -0.5f, 1f); thR = new Vector3(0.05f, -0.5f, 1f);
                     shL = shR = new Vector3(0f, 0.02f, -1f);
-                    uaL = new Vector3(-0.12f, -1f, 0.3f); faL = new Vector3(-0.1f, -0.4f, 1f);
-                    uaR = new Vector3(0.12f, -1f, 0.3f); faR = new Vector3(0.1f, -0.4f, 1f);
+                    uaL = new Vector3(-0.1f, -1f, 0.12f); faL = new Vector3(0.05f, -0.9f, 1f);
+                    uaR = new Vector3(0.1f, -1f, 0.12f); faR = new Vector3(-0.05f, -0.9f, 1f);
                     if (talking) faR = new Vector3(0.25f, -0.2f + 0.3f * Mathf.Sin(talkT * 4f), 1f);
                     break;
                 case BodyPose.Soak:
@@ -452,7 +476,7 @@ namespace LifeSimProto
             Aim("RightForeArm", "RightHand", frame, faR);
 
             // 座ったまま居眠り：首を前に傾ける
-            if (sim.IsDozingNow)
+            if (dozingNow)
             {
                 Transform neck = B("Neck") ?? B("Head");
                 if (neck != null) neck.rotation = Quaternion.AngleAxis(28f, frame * Vector3.right) * neck.rotation;

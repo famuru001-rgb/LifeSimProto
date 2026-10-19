@@ -61,6 +61,13 @@ namespace LifeSimProto.EditorTools
             mi.clipAnimations = clips;
         }
 
+        [MenuItem("LifeSim/確認用の写真を撮る（再生中）")]
+        static void TakePhotos()
+        {
+            if (!Application.isPlaying) { Debug.LogWarning("再生中に使ってください"); return; }
+            new GameObject("PhotoBooth").AddComponent<LifeSimProto.ProtoPhotoBooth>();
+        }
+
         [MenuItem("LifeSim/仮モデルと動きを読み込み直す")]
         static void ReimportAll()
         {
