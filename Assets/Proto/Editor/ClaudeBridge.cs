@@ -8,7 +8,7 @@ namespace LifeSimProto.EditorTools
     /// <summary>
     /// Claude が外から Unity を操作するための合図（ファイル）を見る。
     /// LifeSimProto\Logs\claude_cmd.txt に1行ずつ命令を書くと、順に実行して claude_result.txt に結果を書く。
-    /// 命令：refresh（読み込み直し）／play（再生）／stop（停止）／photos（再生中なら確認用の写真）／reimport（仮モデルと動きを読み込み直す）
+    /// 命令：refresh（読み込み直し）／play（再生）／stop（停止）／photos（再生中なら確認用の写真）／reimport（仮モデルと動きを読み込み直す）／checkchars（本番キャラの検品）
     /// famuru さんが Unity を操作しているときの邪魔はしない（ファイルが置かれたときだけ動く）。
     /// </summary>
     [InitializeOnLoad]
@@ -60,6 +60,10 @@ namespace LifeSimProto.EditorTools
                     case "stop":
                         if (EditorApplication.isPlaying) EditorApplication.ExitPlaymode();
                         log.AppendLine("stop: ok");
+                        break;
+                    case "checkchars":
+                        CharCheck.Run();
+                        log.AppendLine("checkchars: ok");
                         break;
                     case "photos":
                         if (EditorApplication.isPlaying)

@@ -50,10 +50,22 @@ namespace LifeSimProto
             world.SetUserSpeed(s);
         }
 
+        // ================= 顔アイコン・立ち絵（Resources/Portraits/（記号）_face, _stand） =================
+        readonly Dictionary<string, Texture2D> portraits = new Dictionary<string, Texture2D>();
+        Texture2D Portrait(SimCharacter c, string kind)
+        {
+            string key = c.displayName + "_" + kind;
+            Texture2D t;
+            if (!portraits.TryGetValue(key, out t)) { t = Resources.Load<Texture2D>("Portraits/" + key); portraits[key] = t; }
+            return t;
+        }
+        Rect StandRect { get { return new Rect(DetailPanel.xMax + 8, 108, 300, 600); } }
+
         bool OverHud(Vector2 v)
         {
             if (TopBar.Contains(v) || TablePanel.Contains(v) || LogPanel.Contains(v) || HelpPanel.Contains(v) || RomancePanel.Contains(v)) return true;
             if (selected != null && DetailPanel.Contains(v)) return true;
+            if (selected != null && Portrait(selected, "stand") != null && StandRect.Contains(v)) return true;
             if (shopOpen && ShopPanel.Contains(v)) return true;
             return false;
         }
@@ -245,7 +257,12 @@ namespace LifeSimProto
             DrawRomance();
             DrawLog();
             DrawHelp();
-            if (selected != null) DrawDetail();
+            if (selected != null)
+            {
+                DrawDetail();
+                var st = Portrait(selected, "stand");
+                if (st != null) GUI.DrawTexture(StandRect, st, ScaleMode.ScaleToFit, true);
+            }
             if (shopOpen) DrawShop();
         }
 
@@ -301,6 +318,8 @@ namespace LifeSimProto
                 Rect r = new Rect(g.x - size.x / 2f, g.y - size.y, size.x, size.y);
                 Color old = GUI.color;
                 GUI.Box(r, tag, nameTag);
+                var face = Portrait(c, "face");
+                if (face != null) GUI.DrawTexture(new Rect(r.x - r.height - 2, r.y, r.height, r.height), face, ScaleMode.ScaleToFit, true);
                 GUI.color = c.color;
                 GUI.DrawTexture(new Rect(r.x, r.y, 6, r.height), ProtoArt.White);
                 if (c.selected)
@@ -401,8 +420,17 @@ namespace LifeSimProto
                 GUI.DrawTexture(new Rect(ox + cw * (i + 1) + 4, oy + 2, cw - 8, 4), ProtoArt.White);
                 GUI.DrawTexture(new Rect(ox + 4, oy + ch * (i + 1) + 4, 4, ch - 8), ProtoArt.White);
                 GUI.color = old;
-                GUI.Label(new Rect(ox + cw * (i + 1), oy, cw, ch), ci.displayName, cell);
-                GUI.Label(new Rect(ox, oy + ch * (i + 1), cw, ch), ci.displayName, cell);
+                var fi = Portrait(ci, "face");
+                if (fi != null)
+                {
+                    GUI.DrawTexture(new Rect(ox + cw * (i + 1) + 2, oy + 2, cw - 4, ch - 4), fi, ScaleMode.ScaleToFit, true);
+                    GUI.DrawTexture(new Rect(ox + 2, oy + ch * (i + 1) + 2, cw - 4, ch - 4), fi, ScaleMode.ScaleToFit, true);
+                }
+                else
+                {
+                    GUI.Label(new Rect(ox + cw * (i + 1), oy, cw, ch), ci.displayName, cell);
+                    GUI.Label(new Rect(ox, oy + ch * (i + 1), cw, ch), ci.displayName, cell);
+                }
             }
             for (int i = 0; i < n; i++)
             {
@@ -452,7 +480,9 @@ namespace LifeSimProto
                 GUI.color = c.color;
                 GUI.DrawTexture(new Rect(r.x + 14, y + 4, 4, 18), ProtoArt.White);
                 GUI.color = old;
-                GUI.Label(new Rect(r.x + 24, y, 40, 26), c.displayName, small);
+                var rf = Portrait(c, "face");
+                if (rf != null) GUI.DrawTexture(new Rect(r.x + 22, y, 26, 26), rf, ScaleMode.ScaleToFit, true);
+                else GUI.Label(new Rect(r.x + 24, y, 40, 26), c.displayName, small);
                 Rect bar = new Rect(r.x + 60, y + 6, 240, 14);
                 GUI.DrawTexture(bar, barBg);
                 Color bc = st == 3 ? new Color(1f, 0.35f, 0.55f) : (st == 2 ? new Color(0.95f, 0.5f, 0.65f) : (st == 1 ? new Color(0.85f, 0.65f, 0.75f) : new Color(0.55f, 0.55f, 0.6f)));

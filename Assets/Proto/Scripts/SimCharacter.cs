@@ -2658,6 +2658,37 @@ namespace LifeSimProto
         public bool IsTalkingNow { get { return state == State.Talking || chatting; } }
         public bool IsEatingNow { get { return state == State.Eating; } }
         public bool IsDozingNow { get { var p = CurrentPose(); return dozing && (p == Pose.Sit || p == Pose.SitFloor); } }
+        public bool EyesClosedNow { get { return state == State.Sleeping || dozing; } }
+        public bool IsSpeakingNow { get { return (state == State.Talking || chatting) && !string.IsNullOrEmpty(bubble) && bubble.Length > 1 && bubble != "♪" && bubble != "♥"; } }
+        /// <summary>今の服：Uniform（制服）／Towel（お風呂）／Sleep（寝間着）／Casual（休日の私服）。ない服は制服で表示される。</summary>
+        public string OutfitNow
+        {
+            get
+            {
+                if (state == State.Bathing) return "Towel";
+                if (state == State.Sleeping && !napping && !dozing) return "Sleep";
+                if (world != null && world.IsHolidayToday) return "Casual";
+                return "Uniform";
+            }
+        }
+        /// <summary>今の表情：Smile／Sad／Angry／Surprised／Shy（照れ）／""（ふつう）</summary>
+        public string FaceNow
+        {
+            get
+            {
+                if (!string.IsNullOrEmpty(bubble))
+                {
+                    if (bubble.Contains("♪") || bubble.Contains("♥") || bubble.Contains("♡") || bubble.Contains("ふふ")) return "Smile";
+                    if (bubble.Contains("涙") || bubble.Contains("ごめん")) return "Sad";
+                    if (bubble.Contains("！？") || bubble.Contains("えっ")) return "Surprised";
+                }
+                if (GetStage(StatusLine.Shy) > 0) return "Shy";
+                if (GetStage(StatusLine.Jealousy) > 0 || GetStage(StatusLine.Frustration) > 0) return "Angry";
+                if (GetStage(StatusLine.MoodDown) > 0 || GetStage(StatusLine.Lonely) >= 2) return "Sad";
+                if (GetStage(StatusLine.MoodUp) > 0) return "Smile";
+                return "";
+            }
+        }
 
         Pose CurrentPose()
         {

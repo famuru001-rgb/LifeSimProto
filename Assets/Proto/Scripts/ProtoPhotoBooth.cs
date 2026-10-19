@@ -52,48 +52,77 @@ namespace LifeSimProto
                 }
             }
 
-            // 姿勢の見本（建物の外の離れた場所に並べる）
-            var poses = new[] { "立つ", "歩く", "話す", "椅子", "食べる", "正座", "居眠り", "寝る", "お風呂" };
-            var made = new List<GameObject>();
-            for (int g = 0; g < 2; g++)
+            // 見本（建物の外の離れた場所に並べる）：本番モデルがあるキャラは全員、なければ仮モデルのAとF
+            var letters = new List<string>();
+            if (world != null)
+                foreach (var c in world.characters)
+                    if (Resources.Load<GameObject>("Chars/" + c.displayName + "/Char" + c.displayName) != null) letters.Add(c.displayName);
+            if (letters.Count == 0) { letters.Add("A"); letters.Add("F"); }
+            var items = new[] { "立つ", "歩く", "話す", "椅子", "食べる", "正座", "居眠り", "寝る", "お風呂",
+                                "服_タオル", "服_私服", "服_寝間着",
+                                "顔_ふつう", "顔_笑顔", "顔_目を閉じる", "顔_話す口", "顔_困り", "顔_怒り", "顔_驚き", "顔_照れ" };
+            var made = new List<KeyValuePair<string, ProtoBody>>();
+            for (int li = 0; li < letters.Count; li++)
             {
-                bool male = g == 1;
-                var look = CharLook.Get(male ? "F" : "A", male, Color.gray);
-                for (int i = 0; i < poses.Length; i++)
+                string letter = letters[li];
+                bool male = letter == "F";
+                var look = CharLook.Get(letter, male, Color.gray);
+                for (int i = 0; i < items.Length; i++)
                 {
-                    var go = new GameObject("PoseSample_" + poses[i]);
-                    go.transform.position = new Vector3(60f + i * 3f, 0f, 60f + g * 6f);
+                    string it = items[i];
+                    var go = new GameObject("Sample_" + letter + "_" + it);
+                    go.transform.position = new Vector3(60f + i * 3f, 0f, 60f + li * 6f);
                     go.transform.rotation = Quaternion.identity;
-                    var pb = ProtoBody.Create(go, look);
-                    if (pb == null) { report.AppendLine("姿勢の見本：仮モデルを作れませんでした"); Destroy(go); continue; }
+                    var pb = ProtoBody.Create(go, look, letter);
+                    if (pb == null) { report.AppendLine("見本：" + letter + " のモデルを作れませんでした"); Destroy(go); continue; }
+                    if (i == 0) report.AppendLine("見本 " + letter + "：" + pb.DebugInfo);
                     pb.testMode = true;
-                    switch (poses[i])
+                    pb.testPose = BodyPose.Stand;
+                    pb.testOutfit = "Uniform";
+                    pb.testFace = "";
+                    switch (it)
                     {
-                        case "立つ": pb.testPose = BodyPose.Stand; break;
-                        case "歩く": pb.testPose = BodyPose.Stand; pb.testSpeed = 1.2f; break;
-                        case "話す": pb.testPose = BodyPose.Stand; pb.testTalk = true; break;
+                        case "歩く": pb.testSpeed = 1.2f; break;
+                        case "話す": pb.testTalk = true; break;
                         case "椅子": pb.testPose = BodyPose.Sit; break;
                         case "食べる": pb.testPose = BodyPose.Sit; pb.testEat = true; break;
                         case "正座": pb.testPose = BodyPose.SitFloor; break;
-                        case "居眠り": pb.testPose = BodyPose.Sit; pb.testDoze = true; break;
-                        case "寝る": pb.testPose = BodyPose.Lie; break;
-                        case "お風呂": pb.testPose = BodyPose.Soak; break;
+                        case "居眠り": pb.testPose = BodyPose.Sit; pb.testDoze = true; pb.testEyesClosed = true; break;
+                        case "寝る": pb.testPose = BodyPose.Lie; pb.testOutfit = "Sleep"; pb.testEyesClosed = true; break;
+                        case "お風呂": pb.testPose = BodyPose.Soak; pb.testOutfit = "Towel"; break;
+                        case "服_タオル": pb.testOutfit = "Towel"; break;
+                        case "服_私服": pb.testOutfit = "Casual"; break;
+                        case "服_寝間着": pb.testOutfit = "Sleep"; break;
+                        case "顔_笑顔": pb.testFace = "Smile"; break;
+                        case "顔_目を閉じる": pb.testEyesClosed = true; break;
+                        case "顔_話す口": pb.testTalk = true; break;
+                        case "顔_困り": pb.testFace = "Sad"; break;
+                        case "顔_怒り": pb.testFace = "Angry"; break;
+                        case "顔_驚き": pb.testFace = "Surprised"; break;
+                        case "顔_照れ": pb.testFace = "Shy"; break;
                     }
-                    made.Add(go);
+                    made.Add(new KeyValuePair<string, ProtoBody>(letter + "_" + it, pb));
                 }
             }
-            for (int f = 0; f < 20; f++) yield return null;
-            foreach (var go in made)
+            for (int f = 0; f < 30; f++) yield return null;
+            foreach (var kv in made)
             {
-                string n = go.name.Replace("PoseSample_", "");
-                string who = go.transform.position.z > 62f ? "男性" : "女性";
-                bool lie = n == "寝る";
-                Vector3 center = go.transform.position + Vector3.up * (lie ? 0.6f : (n == "立つ" || n == "歩く" || n == "話す" ? 0.9f : 0.55f));
-                Shoot(go, center + Vector3.forward * 3.2f + Vector3.up * 0.4f, center, "見本_" + who + "_" + n + "_前.png", true);
-                Shoot(go, center + Vector3.right * 3.2f + Vector3.up * 0.4f, center, "見本_" + who + "_" + n + "_横.png", true);
-                if (lie) Shoot(go, center + Vector3.up * 3.2f + Vector3.forward * 0.01f, center, "見本_" + who + "_" + n + "_上.png", true);
+                var go = kv.Value.gameObject;
+                string n = kv.Key;
+                if (n.Contains("_顔_"))
+                {
+                    Vector3 hp = kv.Value.HeadPoint;
+                    Shoot(go, hp + Vector3.forward * 0.9f, hp, "見本_" + n + ".png", true);
+                    continue;
+                }
+                bool lie = n.EndsWith("寝る");
+                bool stand = n.EndsWith("立つ") || n.EndsWith("歩く") || n.EndsWith("話す") || n.Contains("_服_");
+                Vector3 center = go.transform.position + Vector3.up * (lie ? 0.6f : (stand ? 0.9f : 0.55f));
+                Shoot(go, center + Vector3.forward * 3.2f + Vector3.up * 0.4f, center, "見本_" + n + "_前.png", true);
+                Shoot(go, center + Vector3.right * 3.2f + Vector3.up * 0.4f, center, "見本_" + n + "_横.png", true);
+                if (lie) Shoot(go, center + Vector3.up * 3.2f + Vector3.forward * 0.01f, center, "見本_" + n + "_上.png", true);
             }
-            foreach (var go in made) Destroy(go);
+            foreach (var kv in made) Destroy(kv.Value.gameObject);
 
             File.WriteAllText(Path.Combine(OutDir, "報告.txt"), report.ToString(), Encoding.UTF8);
             Debug.Log("確認用の写真を保存しました：" + OutDir);
@@ -108,6 +137,7 @@ namespace LifeSimProto
             cam.transform.position = from;
             cam.transform.LookAt(at);
             lamp.transform.position = from + Vector3.up * 0.5f;
+            lamp.intensity = (from - at).magnitude < 1.5f ? 0.8f : 4f; // 顔のアップは明るすぎないように
             var saved = new List<KeyValuePair<GameObject, int>>();
             if (isolated)
             {

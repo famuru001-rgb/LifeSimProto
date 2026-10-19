@@ -85,13 +85,16 @@ namespace LifeSimProto
         [System.NonSerialized] public BodyPose testPose;
         [System.NonSerialized] public bool testTalk, testEat, testDoze;
         [System.NonSerialized] public float testSpeed;
+        [System.NonSerialized] public string testOutfit, testFace;
+        [System.NonSerialized] public bool testEyesClosed;
 
         public string DebugInfo
         {
             get
             {
-                return "仮モデルあり（人型として読み込み=" + humanOk + "、Mixamoの動き=" + (clipBook != null ? clipBook.Count : 0) +
-                       "本、向きの補正=" + Mathf.RoundToInt(fixAngle) + "度、背の高さ=" + measuredHeight.ToString("0.00") + "m）";
+                return (real ? "本番モデル" : "仮モデル") + "あり（人型として読み込み=" + humanOk + "、Mixamoの動き=" + (clipBook != null ? clipBook.Count : 0) +
+                       "本、向きの補正=" + Mathf.RoundToInt(fixAngle) + "度、背の高さ=" + measuredHeight.ToString("0.00") + "m、表情=" + FaceKeyList() +
+                       "、揺れの骨=" + springs.Count + "本、服=" + OutfitList() + "）";
             }
         }
 
@@ -104,13 +107,26 @@ namespace LifeSimProto
             gestureUntil = Time.time + seconds;
         }
 
-        public static ProtoBody Create(GameObject owner, CharLook look)
+        // 本番モデル（Codex 制作。Resources/Chars/（記号）/Char（記号））があればそちらを使う
+        bool real;
+        public bool IsRealModel { get { return real; } }
+        public Vector3 HeadPoint { get { return bones["Head"].position + transform.up * 0.07f; } }
+
+        public static ProtoBody Create(GameObject owner, CharLook look, string letter = null)
         {
-            var prefab = Resources.Load<GameObject>(look.male ? "ProtoModels/ProtoMale" : "ProtoModels/ProtoFemale");
+            GameObject prefab = null;
+            bool isReal = false;
+            if (!string.IsNullOrEmpty(letter))
+            {
+                prefab = Resources.Load<GameObject>("Chars/" + letter + "/Char" + letter);
+                isReal = prefab != null;
+            }
+            if (prefab == null) prefab = Resources.Load<GameObject>(look.male ? "ProtoModels/ProtoMale" : "ProtoModels/ProtoFemale");
             if (prefab == null) return null;
             var inst = Instantiate(prefab, owner.transform, false);
             inst.name = "Model";
             var pb = owner.AddComponent<ProtoBody>();
+            pb.real = isReal;
             if (!pb.Setup(inst.transform, look))
             {
                 Destroy(inst);
@@ -170,7 +186,9 @@ namespace LifeSimProto
             for (int i = 0; i < boneList.Length; i++) restRot[i] = boneList[i].localRotation;
             hipsRest = hips.localPosition;
 
-            SetupLook();
+            if (real) SetupOutfits(); else SetupLook();
+            SetupFace();
+            SetupSprings();
 
             anim = model.GetComponent<Animator>();
             if (anim != null)
@@ -349,11 +367,13 @@ namespace LifeSimProto
             speed = Mathf.Lerp(speed, Mathf.Min(d.magnitude / dt, 3f), Mathf.Clamp01(dt * 10f));
 
             BodyPose pose = testMode ? testPose : sim.BodyPoseNow;
+            string outfit = testMode ? testOutfit : sim.OutfitNow;
+            if (string.IsNullOrEmpty(outfit)) outfit = pose == BodyPose.Soak ? "Towel" : "Uniform";
             bool talking = testMode ? testTalk : sim.IsTalkingNow;
             eatingNow = testMode ? testEat : sim.IsEatingNow;
             dozingNow = testMode ? testDoze : sim.IsDozingNow;
             if (testMode) speed = testSpeed;
-            ShowBath(pose == BodyPose.Soak);
+            if (real) ShowOutfit(outfit); else ShowBath(outfit == "Towel");
 
             // 体の置き方（寝るときは横にする）
             Quaternion frame = Quaternion.identity;
@@ -394,10 +414,218 @@ namespace LifeSimProto
                     mixer.SetInputWeight(0, fade);
                     mixer.SetInputWeight(1, 1f - fade);
                 }
-                return;
             }
-            StopClips();
-            Procedural(pose, talking, dt, transform.rotation * frame);
+            else
+            {
+                StopClips();
+                Procedural(pose, talking, dt, transform.rotation * frame);
+            }
+            bool eyesClosed = testMode ? testEyesClosed : sim.EyesClosedNow;
+            bool speaking = testMode ? testTalk : sim.IsSpeakingNow;
+            string face = testMode ? testFace : sim.FaceNow;
+            UpdateFace(dt, eyesClosed, speaking, face);
+            UpdateSprings(dt);
+        }
+
+        // ================= 着替え（本番モデル） =================
+        readonly Dictionary<string, List<GameObject>> outfits = new Dictionary<string, List<GameObject>>();
+        string curOutfit;
+
+        void SetupOutfits()
+        {
+            // 材質名に DoubleSided を含むもの（スカートなど薄い布）は裏側も表示する
+            var twoSided = new Dictionary<Material, Material>();
+            foreach (var r in model.GetComponentsInChildren<Renderer>(true))
+            {
+                var ms = r.sharedMaterials;
+                bool changed = false;
+                for (int i = 0; i < ms.Length; i++)
+                {
+                    if (ms[i] == null || !ms[i].name.Contains("DoubleSided") || !ms[i].HasProperty("_Cull")) continue;
+                    Material m2;
+                    if (!twoSided.TryGetValue(ms[i], out m2)) { m2 = new Material(ms[i]); m2.SetFloat("_Cull", 0f); m2.doubleSidedGI = true; twoSided[ms[i]] = m2; }
+                    ms[i] = m2;
+                    changed = true;
+                }
+                if (changed) r.sharedMaterials = ms;
+            }
+            foreach (var r in model.GetComponentsInChildren<Renderer>(true))
+            {
+                string n = r.gameObject.name;
+                if (n == "Face_Blush") continue;
+                if (!n.StartsWith("Outfit_")) continue;
+                string rest = n.Substring(7);
+                int k = rest.IndexOf('_');
+                string key = k >= 0 ? rest.Substring(0, k) : rest;
+                List<GameObject> l;
+                if (!outfits.TryGetValue(key, out l)) { l = new List<GameObject>(); outfits[key] = l; }
+                l.Add(r.gameObject);
+            }
+            curOutfit = null;
+            ShowOutfit("Uniform");
+        }
+
+        void ShowOutfit(string name)
+        {
+            if (outfits.Count == 0) return;
+            if (!outfits.ContainsKey(name)) name = outfits.ContainsKey("Uniform") ? "Uniform" : null;
+            if (name == null || name == curOutfit) return;
+            curOutfit = name;
+            foreach (var kv in outfits)
+                foreach (var g in kv.Value) g.SetActive(kv.Key == name);
+        }
+
+        string OutfitList()
+        {
+            if (!real) return "仮（制服・タオル）";
+            if (outfits.Count == 0) return "なし";
+            return string.Join("・", new List<string>(outfits.Keys).ToArray());
+        }
+
+        // ================= 表情（シェイプキー） =================
+        static readonly string[] FaceKeys = { "Blink", "Smile", "MouthOpen", "Sad", "Angry", "Surprised" };
+        readonly Dictionary<string, List<KeyValuePair<SkinnedMeshRenderer, int>>> faceKeys = new Dictionary<string, List<KeyValuePair<SkinnedMeshRenderer, int>>>();
+        readonly Dictionary<string, float> faceNow = new Dictionary<string, float>();
+        GameObject blush;
+        float blinkTimer = 3f, blinkT = -1f, mouthT;
+
+        void SetupFace()
+        {
+            foreach (var smr in model.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                if (smr.gameObject.name == "Face_Blush") { blush = smr.gameObject; blush.SetActive(false); }
+                var mesh = smr.sharedMesh;
+                if (mesh == null) continue;
+                foreach (var key in FaceKeys)
+                {
+                    int idx = mesh.GetBlendShapeIndex(key);
+                    if (idx < 0) continue;
+                    List<KeyValuePair<SkinnedMeshRenderer, int>> l;
+                    if (!faceKeys.TryGetValue(key, out l)) { l = new List<KeyValuePair<SkinnedMeshRenderer, int>>(); faceKeys[key] = l; }
+                    l.Add(new KeyValuePair<SkinnedMeshRenderer, int>(smr, idx));
+                }
+            }
+            foreach (var key in FaceKeys) faceNow[key] = 0f;
+        }
+
+        string FaceKeyList()
+        {
+            if (faceKeys.Count == 0) return "なし";
+            return string.Join("・", new List<string>(faceKeys.Keys).ToArray());
+        }
+
+        void SetKey(string key, float target, float dt, float rate)
+        {
+            float v = Mathf.MoveTowards(faceNow[key], target, rate * dt);
+            faceNow[key] = v;
+            List<KeyValuePair<SkinnedMeshRenderer, int>> l;
+            if (!faceKeys.TryGetValue(key, out l)) return;
+            foreach (var kv in l) kv.Key.SetBlendShapeWeight(kv.Value, v);
+        }
+
+        void UpdateFace(float dt, bool eyesClosed, bool speaking, string face)
+        {
+            if (faceKeys.Count == 0 && blush == null) return;
+            dt = Mathf.Min(dt, 0.1f);
+            // まばたき
+            float blink = 0f;
+            if (eyesClosed) blink = 100f;
+            else
+            {
+                blinkTimer -= dt;
+                if (blinkTimer <= 0f) { blinkT = 0f; blinkTimer = Random.Range(2.5f, 6f); }
+                if (blinkT >= 0f)
+                {
+                    blinkT += dt;
+                    blink = 100f * Mathf.Clamp01(1f - Mathf.Abs(blinkT - 0.07f) / 0.07f);
+                    if (blinkT > 0.14f) blinkT = -1f;
+                }
+            }
+            SetKey("Blink", blink, dt, 2000f);
+            // 口パク
+            mouthT += dt;
+            float mouth = speaking ? Mathf.Abs(Mathf.Sin(mouthT * 9f)) * 70f : 0f;
+            SetKey("MouthOpen", mouth, dt, 900f);
+            // 気分の表情
+            string f = face ?? "";
+            bool shy = f == "Shy";
+            SetKey("Smile", f == "Smile" ? 100f : (shy ? 55f : 0f), dt, 300f);
+            SetKey("Sad", f == "Sad" ? 100f : 0f, dt, 300f);
+            SetKey("Angry", f == "Angry" ? 100f : 0f, dt, 300f);
+            SetKey("Surprised", f == "Surprised" ? 100f : 0f, dt, 400f);
+            if (blush != null && blush.activeSelf != shy) blush.SetActive(shy);
+        }
+
+        // ================= 揺れ（Spring_ で始まる骨） =================
+        class SpringBone
+        {
+            public Transform bone, child, parent;
+            public Quaternion restLocal;
+            public Vector3 restDirLocal;   // 骨の向き（自分の座標で）
+            public float length, stiffness, drag, gravity;
+            public Vector3 tip, prevTip;
+            public int depth;
+        }
+        readonly List<SpringBone> springs = new List<SpringBone>();
+        Vector3 lastSpringRoot;
+
+        static string BaseName(Transform t)
+        {
+            string n = t.name;
+            int k = n.LastIndexOf(':');
+            return k >= 0 ? n.Substring(k + 1) : n;
+        }
+
+        void SetupSprings()
+        {
+            foreach (var t in hips.GetComponentsInChildren<Transform>(true))
+            {
+                string bn = BaseName(t);
+                if (!bn.StartsWith("Spring_") || bn.EndsWith("_End")) continue;
+                Transform child = null;
+                foreach (Transform c in t) if (BaseName(c).StartsWith("Spring_")) { child = c; break; }
+                if (child == null) continue;
+                var sb = new SpringBone { bone = t, child = child, parent = t.parent, restLocal = t.localRotation };
+                sb.restDirLocal = t.InverseTransformDirection(child.position - t.position).normalized;
+                sb.length = (child.position - t.position).magnitude;
+                string part = bn.Substring(7);
+                if (part.StartsWith("Skirt")) { sb.stiffness = 0.35f; sb.drag = 0.35f; sb.gravity = 0.3f; }
+                else if (part.StartsWith("Tail")) { sb.stiffness = 0.12f; sb.drag = 0.15f; sb.gravity = 0.15f; }
+                else if (part.StartsWith("Ear")) { sb.stiffness = 0.5f; sb.drag = 0.4f; sb.gravity = 0f; }
+                else if (part.StartsWith("Ribbon")) { sb.stiffness = 0.15f; sb.drag = 0.2f; sb.gravity = 0.5f; }
+                else { sb.stiffness = 0.18f; sb.drag = 0.2f; sb.gravity = 0.4f; } // Hair
+                int d = 0;
+                for (var p = t.parent; p != null && p != model; p = p.parent) d++;
+                sb.depth = d;
+                sb.tip = sb.prevTip = child.position;
+                springs.Add(sb);
+            }
+            springs.Sort((a, b) => a.depth.CompareTo(b.depth));
+            lastSpringRoot = transform.position;
+        }
+
+        void UpdateSprings(float dt)
+        {
+            if (springs.Count == 0) return;
+            bool reset = dt > 0.1f || (transform.position - lastSpringRoot).sqrMagnitude > 0.25f;
+            lastSpringRoot = transform.position;
+            float step = Mathf.Min(dt, 1f / 30f) * 60f; // 60fps を基準にした強さ
+            foreach (var s in springs)
+            {
+                s.bone.localRotation = s.restLocal;
+                Vector3 restDir = s.bone.TransformDirection(s.restDirLocal);
+                Vector3 target = s.bone.position + restDir * s.length;
+                if (reset) { s.tip = s.prevTip = target; continue; }
+                Vector3 vel = (s.tip - s.prevTip) * Mathf.Pow(1f - s.drag, step);
+                s.prevTip = s.tip;
+                Vector3 next = s.tip + vel + Vector3.down * s.gravity * 0.0008f * step * step;
+                next = Vector3.Lerp(next, target, 1f - Mathf.Pow(1f - s.stiffness, step));
+                Vector3 dir = next - s.bone.position;
+                if (dir.sqrMagnitude < 1e-8f) dir = restDir;
+                next = s.bone.position + dir.normalized * s.length;
+                s.tip = next;
+                s.bone.rotation = Quaternion.FromToRotation(restDir, next - s.bone.position) * s.bone.rotation;
+            }
         }
 
         // ================= 骨を直接曲げる簡単な動き =================

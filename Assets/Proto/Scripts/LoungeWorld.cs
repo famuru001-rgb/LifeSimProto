@@ -157,6 +157,7 @@ namespace LifeSimProto
 
         void Start()
         {
+            Application.runInBackground = true; // ほかのウィンドウを触っている間も、寮の時間は進む
             gameMinutes = startHour * 60.0;
             Time.timeScale = 1f;
             Build();
@@ -388,7 +389,7 @@ namespace LifeSimProto
 
             // 仮モデル（Blenderで作った人型）があれば使い、仮の人形は見えなくする（クリック用の当たり判定は残す）
             var look = CharLook.Get(name, male, color);
-            if (ProtoBody.Create(go, look) != null)
+            if (ProtoBody.Create(go, look, name) != null)
             {
                 body.GetComponent<Renderer>().enabled = false;
                 face.GetComponent<Renderer>().enabled = false;

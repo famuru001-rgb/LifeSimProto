@@ -14,10 +14,11 @@ namespace LifeSimProto.EditorTools
     {
         const string ModelDir = "Assets/Proto/Resources/ProtoModels";
         const string MotionDir = "Assets/Proto/Resources/Motions";
+        const string CharDir = "Assets/Proto/Resources/Chars";   // 本番キャラ（Codex 制作）
 
-        public override uint GetVersion() { return 4; }
+        public override uint GetVersion() { return 5; }
 
-        static bool IsModel(string p) { return p.Replace('\\', '/').StartsWith(ModelDir); }
+        static bool IsModel(string p) { p = p.Replace('\\', '/'); return p.StartsWith(ModelDir) || p.StartsWith(CharDir); }
         static bool IsMotion(string p) { return p.Replace('\\', '/').StartsWith(MotionDir); }
 
         void OnPreprocessModel()
@@ -32,7 +33,8 @@ namespace LifeSimProto.EditorTools
             {
                 mi.importAnimation = false;
                 mi.materialImportMode = ModelImporterMaterialImportMode.ImportStandard;
-                mi.importBlendShapes = false;
+                mi.importBlendShapes = true;   // 表情（シェイプキー）
+                mi.importAnimation = false;
             }
             else
             {
@@ -71,7 +73,7 @@ namespace LifeSimProto.EditorTools
         [MenuItem("LifeSim/仮モデルと動きを読み込み直す")]
         static void ReimportAll()
         {
-            foreach (var dir in new[] { ModelDir, MotionDir })
+            foreach (var dir in new[] { ModelDir, MotionDir, CharDir })
             {
                 if (!AssetDatabase.IsValidFolder(dir)) continue;
                 foreach (var guid in AssetDatabase.FindAssets("t:Model", new[] { dir }))
