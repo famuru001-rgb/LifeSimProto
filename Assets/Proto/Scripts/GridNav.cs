@@ -4,26 +4,29 @@ using UnityEngine;
 namespace LifeSimProto
 {
     /// <summary>
-    /// 床をマス目に分けて、家具をよけて歩く道を探す（A*法）。
+    /// 1つの階の床をマス目に分けて、壁や家具をよけて歩く道を探す（A*法）。
+    /// 最初は全部「通れない」にしておき、部屋の中や出入口を Open で通れるようにする。
     /// </summary>
     public class GridNav
     {
         public readonly float cell;
         public readonly Vector2 min;
         public readonly int width, height;
+        public readonly float floorY;
         readonly bool[] blocked;
 
-        public GridNav(Vector2 min, Vector2 max, float cell)
+        public GridNav(Vector2 min, Vector2 max, float cell, float floorY)
         {
             this.min = min;
             this.cell = cell;
+            this.floorY = floorY;
             width = Mathf.CeilToInt((max.x - min.x) / cell);
             height = Mathf.CeilToInt((max.y - min.y) / cell);
             blocked = new bool[width * height];
+            for (int i = 0; i < blocked.Length; i++) blocked[i] = true;
         }
 
-        /// <summary>x,z の範囲（Rect の x=X, y=Z）を通れなくする。</summary>
-        public void Block(Rect r)
+        void SetRect(Rect r, bool value)
         {
             for (int y = 0; y < height; y++)
             {
@@ -31,16 +34,27 @@ namespace LifeSimProto
                 {
                     Vector3 p = ToWorld(x, y);
                     if (p.x >= r.xMin && p.x <= r.xMax && p.z >= r.yMin && p.z <= r.yMax)
-                        blocked[y * width + x] = true;
+                        blocked[y * width + x] = value;
                 }
             }
         }
+
+        /// <summary>x,z の範囲（Rect の x=X, y=Z）を通れるようにする。</summary>
+        public void Open(Rect r) { SetRect(r, false); }
+
+        /// <summary>x,z の範囲を通れなくする。</summary>
+        public void Block(Rect r) { SetRect(r, true); }
 
         public bool InBounds(int x, int y) { return x >= 0 && y >= 0 && x < width && y < height; }
 
         public bool IsFree(int x, int y) { return InBounds(x, y) && !blocked[y * width + x]; }
 
-        public bool IsFree(Vector3 p) { Vector2Int c = ToCell(p); return IsFree(c.x, c.y); }
+        public bool IsFree(Vector3 p)
+        {
+            int x = Mathf.FloorToInt((p.x - min.x) / cell);
+            int y = Mathf.FloorToInt((p.z - min.y) / cell);
+            return IsFree(x, y);
+        }
 
         public Vector2Int ToCell(Vector3 p)
         {
@@ -51,13 +65,13 @@ namespace LifeSimProto
 
         public Vector3 ToWorld(int x, int y)
         {
-            return new Vector3(min.x + (x + 0.5f) * cell, 0f, min.y + (y + 0.5f) * cell);
+            return new Vector3(min.x + (x + 0.5f) * cell, floorY, min.y + (y + 0.5f) * cell);
         }
 
         public Vector2Int NearestFree(Vector2Int c)
         {
             if (IsFree(c.x, c.y)) return c;
-            for (int r = 1; r < 30; r++)
+            for (int r = 1; r < 40; r++)
             {
                 Vector2Int best = new Vector2Int(-1, -1);
                 float bestD = float.MaxValue;
@@ -79,55 +93,58 @@ namespace LifeSimProto
 
         public Vector3 NearestFreePoint(Vector3 p)
         {
-            Vector2Int c = ToCell(p);
-            if (IsFree(c.x, c.y)) return new Vector3(p.x, 0f, p.z);
-            Vector2Int n = NearestFree(c);
+            if (IsFree(p)) return new Vector3(p.x, floorY, p.z);
+            Vector2Int n = NearestFree(ToCell(p));
             return ToWorld(n.x, n.y);
         }
 
-        public Vector3 RandomFreePoint()
+        /// <summary>指定した範囲の中から、通れるマスをランダムに1つ選ぶ。</summary>
+        public Vector3 RandomFreePoint(Rect area)
         {
-            for (int i = 0; i < 200; i++)
+            for (int i = 0; i < 300; i++)
             {
-                int x = Random.Range(0, width);
-                int y = Random.Range(0, height);
-                if (IsFree(x, y)) return ToWorld(x, y);
+                Vector3 p = new Vector3(Random.Range(area.xMin, area.xMax), floorY, Random.Range(area.yMin, area.yMax));
+                if (IsFree(p)) return p;
             }
-            return ToWorld(width / 2, height / 2);
+            return NearestFreePoint(new Vector3(area.center.x, floorY, area.center.y));
         }
 
         static readonly int[] DX = { 1, -1, 0, 0, 1, 1, -1, -1 };
         static readonly int[] DY = { 0, 0, 1, -1, 1, -1, 1, -1 };
 
-        /// <summary>道を探す。見つからなければ null。</summary>
+        // A* 用の作業領域（毎回作り直さない）
+        float[] gScore;
+        int[] came;
+        int[] stamp;
+        bool[] closed;
+        int search;
+
+        /// <summary>道を探す。見つからなければ null。返す点の高さはこの階の床の高さ。</summary>
         public List<Vector3> FindPath(Vector3 from, Vector3 to)
         {
             Vector2Int s = NearestFree(ToCell(from));
             Vector2Int g = NearestFree(ToCell(to));
-            bool exactGoal = IsFree(ToCell(to).x, ToCell(to).y);
+            bool exactGoal = IsFree(to);
 
             int n = width * height;
-            var gScore = new float[n];
-            var came = new int[n];
-            var closed = new bool[n];
-            for (int i = 0; i < n; i++) { gScore[i] = float.MaxValue; came[i] = -1; }
+            if (gScore == null)
+            {
+                gScore = new float[n];
+                came = new int[n];
+                stamp = new int[n];
+                closed = new bool[n];
+            }
+            search++;
             int si = s.y * width + s.x, gi = g.y * width + g.x;
+            Touch(si);
             gScore[si] = 0f;
-            var open = new List<int> { si };
-            var fScore = new Dictionary<int, float> { { si, Heuristic(s, g) } };
+            var open = new MinHeap();
+            open.Push(si, Heuristic(s.x, s.y, g.x, g.y));
 
             bool found = false;
             while (open.Count > 0)
             {
-                int bestIdx = 0;
-                float bestF = fScore[open[0]];
-                for (int i = 1; i < open.Count; i++)
-                {
-                    float f = fScore[open[i]];
-                    if (f < bestF) { bestF = f; bestIdx = i; }
-                }
-                int cur = open[bestIdx];
-                open.RemoveAt(bestIdx);
+                int cur = open.Pop();
                 if (cur == gi) { found = true; break; }
                 if (closed[cur]) continue;
                 closed[cur] = true;
@@ -138,14 +155,14 @@ namespace LifeSimProto
                     if (!IsFree(nx, ny)) continue;
                     if (k >= 4 && (!IsFree(cx + DX[k], cy) || !IsFree(cx, cy + DY[k]))) continue; // 角をすり抜けない
                     int ni = ny * width + nx;
+                    Touch(ni);
                     if (closed[ni]) continue;
                     float cost = gScore[cur] + (k >= 4 ? 1.4142f : 1f);
                     if (cost < gScore[ni])
                     {
                         gScore[ni] = cost;
                         came[ni] = cur;
-                        fScore[ni] = cost + Heuristic(new Vector2Int(nx, ny), g);
-                        open.Add(ni);
+                        open.Push(ni, cost + Heuristic(nx, ny, g.x, g.y));
                     }
                 }
             }
@@ -153,18 +170,19 @@ namespace LifeSimProto
 
             var cells = new List<Vector3>();
             int c = gi;
-            while (c != -1)
+            int guard = 0;
+            while (c != -1 && guard++ < n)
             {
                 cells.Add(ToWorld(c % width, c / width));
                 if (c == si) break;
                 c = came[c];
             }
             cells.Reverse();
-            if (exactGoal && cells.Count > 0) cells[cells.Count - 1] = new Vector3(to.x, 0f, to.z);
+            if (exactGoal && cells.Count > 0) cells[cells.Count - 1] = new Vector3(to.x, floorY, to.z);
 
             // 見通しのよい所は直線にまとめる
             var smooth = new List<Vector3>();
-            Vector3 anchor = new Vector3(from.x, 0f, from.z);
+            Vector3 anchor = new Vector3(from.x, floorY, from.z);
             int idx = 0;
             while (idx < cells.Count)
             {
@@ -180,15 +198,24 @@ namespace LifeSimProto
             return smooth;
         }
 
-        float Heuristic(Vector2Int a, Vector2Int b)
+        void Touch(int i)
         {
-            int dx = Mathf.Abs(a.x - b.x), dy = Mathf.Abs(a.y - b.y);
+            if (stamp[i] == search) return;
+            stamp[i] = search;
+            gScore[i] = float.MaxValue;
+            came[i] = -1;
+            closed[i] = false;
+        }
+
+        static float Heuristic(int ax, int ay, int bx, int by)
+        {
+            int dx = Mathf.Abs(ax - bx), dy = Mathf.Abs(ay - by);
             return (dx + dy) + (1.4142f - 2f) * Mathf.Min(dx, dy);
         }
 
         public bool LineFree(Vector3 a, Vector3 b)
         {
-            float dist = Vector3.Distance(a, b);
+            float dist = Vector2.Distance(new Vector2(a.x, a.z), new Vector2(b.x, b.z));
             int steps = Mathf.CeilToInt(dist / (cell * 0.4f));
             for (int i = 1; i <= steps; i++)
             {
@@ -196,6 +223,55 @@ namespace LifeSimProto
                 if (!IsFree(p)) return false;
             }
             return true;
+        }
+
+        /// <summary>小さい順に取り出せる入れ物（A* の高速化用）。</summary>
+        class MinHeap
+        {
+            readonly List<int> items = new List<int>();
+            readonly List<float> keys = new List<float>();
+            public int Count { get { return items.Count; } }
+
+            public void Push(int item, float key)
+            {
+                items.Add(item);
+                keys.Add(key);
+                int i = items.Count - 1;
+                while (i > 0)
+                {
+                    int p = (i - 1) / 2;
+                    if (keys[p] <= keys[i]) break;
+                    Swap(i, p);
+                    i = p;
+                }
+            }
+
+            public int Pop()
+            {
+                int top = items[0];
+                int last = items.Count - 1;
+                items[0] = items[last];
+                keys[0] = keys[last];
+                items.RemoveAt(last);
+                keys.RemoveAt(last);
+                int i = 0;
+                while (true)
+                {
+                    int l = i * 2 + 1, r = l + 1, m = i;
+                    if (l < items.Count && keys[l] < keys[m]) m = l;
+                    if (r < items.Count && keys[r] < keys[m]) m = r;
+                    if (m == i) break;
+                    Swap(i, m);
+                    i = m;
+                }
+                return top;
+            }
+
+            void Swap(int a, int b)
+            {
+                int ti = items[a]; items[a] = items[b]; items[b] = ti;
+                float tk = keys[a]; keys[a] = keys[b]; keys[b] = tk;
+            }
         }
     }
 }

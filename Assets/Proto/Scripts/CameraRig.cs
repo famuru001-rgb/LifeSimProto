@@ -5,18 +5,24 @@ namespace LifeSimProto
 {
     /// <summary>
     /// 自由に動かせる視点。
-    /// 右ドラッグ：回す / ホイール：近づく・離れる / WASD：移動 / 中ドラッグ：平行移動 / Q・E：左右に回す
+    /// 右ドラッグ：回す / ホイール：近づく・離れる / WASD：移動 / 中ドラッグ：平行移動 / Q・E：左右に回す / R・F：上下
     /// キャラをダブルクリックで追いかける（Escで解除）。時間を止めていても動かせる。
     /// </summary>
     public class CameraRig : MonoBehaviour
     {
-        public Vector3 pivot = new Vector3(0f, 0.8f, 0f);
+        public Vector3 pivot = new Vector3(0f, 1.5f, -2f);
         public float yaw = 0f;
-        public float pitch = 32f;
-        public float distance = 13f;
+        public float pitch = 48f;
+        public float distance = 24f;
         public Transform follow;
 
-        const float MinDist = 1.5f, MaxDist = 28f;
+        const float MinDist = 1.5f, MaxDist = 45f;
+
+        public void LookAtFloor(int floor)
+        {
+            follow = null;
+            pivot.y = floor == 0 ? 0.8f : LoungeWorld.Floor2Y + 0.8f;
+        }
 
         void LateUpdate()
         {
@@ -55,6 +61,8 @@ namespace LifeSimProto
                 if (kb.dKey.isPressed || kb.rightArrowKey.isPressed) move += Vector3.right;
                 if (kb.qKey.isPressed) yaw -= 70f * dt;
                 if (kb.eKey.isPressed) yaw += 70f * dt;
+                if (kb.rKey.isPressed) { pivot.y += 3f * dt; follow = null; }
+                if (kb.fKey.isPressed) { pivot.y -= 3f * dt; follow = null; }
                 if (move.sqrMagnitude > 0f)
                 {
                     float spd = (2.5f + distance * 0.35f) * (kb.leftShiftKey.isPressed ? 2.5f : 1f);
@@ -70,9 +78,9 @@ namespace LifeSimProto
                 pivot = Vector3.Lerp(pivot, want, 1f - Mathf.Exp(-dt * 5f));
             }
 
-            pivot.x = Mathf.Clamp(pivot.x, -LoungeWorld.HalfW - 2f, LoungeWorld.HalfW + 2f);
-            pivot.z = Mathf.Clamp(pivot.z, -LoungeWorld.HalfD - 2f, LoungeWorld.HalfD + 2f);
-            pivot.y = Mathf.Clamp(pivot.y, 0.2f, 3f);
+            pivot.x = Mathf.Clamp(pivot.x, -16f, 16f);
+            pivot.z = Mathf.Clamp(pivot.z, -16f, 8f);
+            pivot.y = Mathf.Clamp(pivot.y, 0.2f, 6f);
 
             Quaternion rot = Quaternion.Euler(pitch, yaw, 0f);
             Vector3 pos = pivot - rot * Vector3.forward * distance;

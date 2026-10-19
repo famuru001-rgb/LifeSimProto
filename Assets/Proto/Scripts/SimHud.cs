@@ -5,7 +5,7 @@ using UnityEngine.InputSystem;
 namespace LifeSimProto
 {
     /// <summary>
-    /// 画面の表示（頭の上の名前と吹き出し・関係表・時間の速さ・記録）と、クリックでの指示。
+    /// 画面の表示（時計・速さ・頭の上の名前と吹き出し・関係表・記録）と、クリックでの指示。
     /// 試作なので Unity の簡易表示（OnGUI）で作っている。
     /// </summary>
     public class SimHud : MonoBehaviour
@@ -15,33 +15,31 @@ namespace LifeSimProto
         SimCharacter selected;
         SimCharacter lastClicked;
         float lastClickTime;
-        float currentSpeed = 1f;
         float speedBeforePause = 1f;
 
-        GUIStyle panel, label, small, title, bubble, nameTag, cell, button, buttonOn, worldLabel;
+        GUIStyle panel, label, small, title, bubble, nameTag, cell, button, buttonOn, worldLabel, clock;
         Texture2D panelTex, bubbleTex, barBg;
 
         const float VirtualHeight = 1080f;
         float Scale { get { return Mathf.Max(0.55f, Screen.height / VirtualHeight); } }
         float VW { get { return Screen.width / Scale; } }
 
-        Rect TopBar { get { return new Rect(12, 12, 660, 50); } }
-        Rect TablePanel { get { return new Rect(VW - 492, 12, 480, 372); } }
-        Rect LogPanel { get { return new Rect(12, VirtualHeight - 272, 660, 260); } }
-        Rect HelpPanel { get { return new Rect(VW - 492, VirtualHeight - 202, 480, 190); } }
-        Rect DetailPanel { get { return new Rect(12, 72, 400, 330); } }
+        Rect TopBar { get { return new Rect(12, 12, 1240, 50); } }
+        Rect InfoLine { get { return new Rect(12, 66, 1240, 32); } }
+        Rect TablePanel { get { return new Rect(VW - 492, 108, 480, 372); } }
+        Rect LogPanel { get { return new Rect(12, VirtualHeight - 272, 760, 260); } }
+        Rect HelpPanel { get { return new Rect(VW - 492, VirtualHeight - 232, 480, 220); } }
+        Rect DetailPanel { get { return new Rect(12, 108, 420, 470); } }
 
         void Start()
         {
             world = GetComponent<LoungeWorld>();
-            Time.timeScale = 1f;
         }
 
         void SetSpeed(float s)
         {
             if (s > 0f) speedBeforePause = s;
-            currentSpeed = s;
-            Time.timeScale = s;
+            world.SetUserSpeed(s);
         }
 
         bool OverHud(Vector2 v)
@@ -55,15 +53,22 @@ namespace LifeSimProto
         {
             if (world == null || world.mainCamera == null) return;
             if (rig == null) rig = world.mainCamera.GetComponent<CameraRig>();
+            if (selected != null && !selected.Present) Select(null);
 
             var kb = Keyboard.current;
             if (kb != null)
             {
-                if (kb.spaceKey.wasPressedThisFrame) SetSpeed(currentSpeed > 0f ? 0f : speedBeforePause);
-                if (kb.digit1Key.wasPressedThisFrame) SetSpeed(1f);
-                if (kb.digit2Key.wasPressedThisFrame) SetSpeed(2f);
-                if (kb.digit3Key.wasPressedThisFrame) SetSpeed(4f);
+                if (kb.spaceKey.wasPressedThisFrame) SetSpeed(world.userSpeed > 0f ? 0f : speedBeforePause);
+                var opts = world.speedOptions;
+                if (opts != null)
+                {
+                    if (kb.digit1Key.wasPressedThisFrame && opts.Length > 0) SetSpeed(opts[0]);
+                    if (kb.digit2Key.wasPressedThisFrame && opts.Length > 1) SetSpeed(opts[1]);
+                    if (kb.digit3Key.wasPressedThisFrame && opts.Length > 2) SetSpeed(opts[2]);
+                    if (kb.digit4Key.wasPressedThisFrame && opts.Length > 3) SetSpeed(opts[3]);
+                }
                 if (kb.escapeKey.wasPressedThisFrame) Select(null);
+                if (kb.tabKey.wasPressedThisFrame) CycleWallMode();
             }
 
             var mouse = Mouse.current;
@@ -94,7 +99,6 @@ namespace LifeSimProto
                 Select(hit);
                 return;
             }
-            // 選んでいるキャラに「〇〇に会いに行って」と指示する
             world.Log("指示：" + selected.displayName + "に「" + hit.displayName + "に会いに行って」");
             selected.Order(hit);
             Select(null);
@@ -105,6 +109,16 @@ namespace LifeSimProto
             if (selected != null) selected.selected = false;
             selected = c;
             if (selected != null) selected.selected = true;
+        }
+
+        void CycleWallMode()
+        {
+            world.wallMode = world.wallMode == WallMode.Auto ? WallMode.Low : (world.wallMode == WallMode.Low ? WallMode.All : WallMode.Auto);
+        }
+
+        static string WallModeName(WallMode m)
+        {
+            return m == WallMode.Auto ? "壁：自動" : (m == WallMode.Low ? "壁：低く" : "壁：全部");
         }
 
         // ================= 表示 =================
@@ -129,6 +143,8 @@ namespace LifeSimProto
 
             label = new GUIStyle(GUI.skin.label) { fontSize = 20, wordWrap = false };
             label.normal.textColor = new Color(0.95f, 0.92f, 0.85f);
+            clock = new GUIStyle(label) { fontSize = 22, fontStyle = FontStyle.Bold };
+            clock.normal.textColor = new Color(1f, 0.88f, 0.6f);
             small = new GUIStyle(label) { fontSize = 16 };
             title = new GUIStyle(label) { fontSize = 22, fontStyle = FontStyle.Bold };
             title.normal.textColor = new Color(1f, 0.85f, 0.55f);
@@ -145,8 +161,8 @@ namespace LifeSimProto
             nameTag.normal.textColor = Color.white;
             nameTag.padding = new RectOffset(8, 8, 3, 3);
 
-            worldLabel = new GUIStyle(label) { fontSize = 16, alignment = TextAnchor.MiddleCenter };
-            worldLabel.normal.textColor = new Color(0.85f, 0.8f, 0.7f, 0.85f);
+            worldLabel = new GUIStyle(label) { fontSize = 15, alignment = TextAnchor.MiddleCenter };
+            worldLabel.normal.textColor = new Color(0.9f, 0.85f, 0.72f, 0.8f);
 
             button = new GUIStyle(GUI.skin.button) { fontSize = 18 };
             buttonOn = new GUIStyle(button);
@@ -164,6 +180,7 @@ namespace LifeSimProto
             DrawWorldLabels(s);
             DrawCharacters(s);
             DrawTopBar();
+            DrawInfoLine();
             DrawTable();
             DrawLog();
             DrawHelp();
@@ -179,8 +196,10 @@ namespace LifeSimProto
 
         void DrawWorldLabels(float s)
         {
+            Vector3 cam = world.mainCamera.transform.position;
             foreach (var kv in world.worldLabels)
             {
+                if ((kv.Key - cam).sqrMagnitude > 40f * 40f) continue;
                 Vector2 g;
                 if (!ToGui(kv.Key, s, out g)) continue;
                 GUI.Label(new Rect(g.x - 150, g.y - 12, 300, 24), kv.Value, worldLabel);
@@ -189,12 +208,12 @@ namespace LifeSimProto
 
         void DrawCharacters(float s)
         {
-            // 遠いキャラから順に描く（近いキャラの表示が上に来るように）
             var list = new List<SimCharacter>(world.characters);
             Vector3 cam = world.mainCamera.transform.position;
             list.Sort((a, b) => (b.transform.position - cam).sqrMagnitude.CompareTo((a.transform.position - cam).sqrMagnitude));
             foreach (var c in list)
             {
+                if (!c.Present) continue;
                 Vector2 g;
                 if (!ToGui(c.transform.position + Vector3.up * c.HeadHeight, s, out g)) continue;
 
@@ -203,7 +222,6 @@ namespace LifeSimProto
                 Rect r = new Rect(g.x - size.x / 2f, g.y - size.y, size.x, size.y);
                 Color old = GUI.color;
                 GUI.Box(r, tag, nameTag);
-                // キャラの色の帯
                 GUI.color = c.color;
                 GUI.DrawTexture(new Rect(r.x, r.y, 6, r.height), ProtoArt.White);
                 if (c.selected)
@@ -229,20 +247,38 @@ namespace LifeSimProto
         {
             Rect r = TopBar;
             GUI.Box(r, GUIContent.none, panel);
-            int t = Mathf.FloorToInt(world.simTime);
-            GUI.Label(new Rect(r.x + 14, r.y + 11, 160, 30), string.Format("経過 {0:00}:{1:00}", t / 60, t % 60), label);
-            float x = r.x + 170;
-            float[] speeds = { 0f, 1f, 2f, 4f };
-            string[] names = { "一時停止", "1倍", "2倍", "4倍" };
-            for (int i = 0; i < speeds.Length; i++)
+            GUI.Label(new Rect(r.x + 14, r.y + 10, 260, 30), world.Day + "日目 " + ScheduleMaker.Clock(world.Now) + "（" + world.TimeOfDayName() + "）", clock);
+            float x = r.x + 280;
+            float cur = world.userSpeed;
+            if (GUI.Button(new Rect(x, r.y + 8, 110, 34), "一時停止", cur <= 0f ? buttonOn : button)) SetSpeed(0f);
+            x += 118;
+            foreach (var sp in world.speedOptions)
             {
-                float w = i == 0 ? 110 : 70;
-                bool on = Mathf.Approximately(currentSpeed, speeds[i]);
-                if (GUI.Button(new Rect(x, r.y + 8, w, 34), names[i], on ? buttonOn : button)) SetSpeed(speeds[i]);
-                x += w + 8;
+                bool on = Mathf.Approximately(cur, sp);
+                if (GUI.Button(new Rect(x, r.y + 8, 76, 34), sp + "倍", on ? buttonOn : button)) SetSpeed(sp);
+                x += 84;
             }
-            string hint = selected == null ? "キャラをクリックで選択" : selected.displayName + "を選択中：会わせたい相手をクリック";
-            GUI.Label(new Rect(x + 6, r.y + 13, 240, 30), hint, small);
+            x += 16;
+            if (GUI.Button(new Rect(x, r.y + 8, 130, 34), WallModeName(world.wallMode), button)) CycleWallMode();
+            x += 138;
+            if (GUI.Button(new Rect(x, r.y + 8, 80, 34), "1階", button) && rig != null) rig.LookAtFloor(0);
+            x += 88;
+            if (GUI.Button(new Rect(x, r.y + 8, 80, 34), "2階", button) && rig != null) rig.LookAtFloor(1);
+        }
+
+        void DrawInfoLine()
+        {
+            Rect r = InfoLine;
+            var parts = new List<string>();
+            if (world.autoFast) parts.Add("全員就寝中：" + world.allAsleepSpeed + "倍速");
+            var away = new List<string>();
+            foreach (var c in world.characters) if (!c.Present) away.Add(c.displayName);
+            if (away.Count > 0) parts.Add("授業に出ている：" + string.Join("・", away.ToArray()));
+            parts.Add(selected == null ? "キャラをクリックで選択" : selected.displayName + "を選択中：会わせたい相手をクリック");
+            string text = string.Join("　｜　", parts.ToArray());
+            Vector2 size = small.CalcSize(new GUIContent(text));
+            GUI.Box(new Rect(r.x, r.y, size.x + 28, r.height), GUIContent.none, panel);
+            GUI.Label(new Rect(r.x + 14, r.y + 5, size.x + 10, 24), text, small);
         }
 
         void DrawTable()
@@ -326,13 +362,14 @@ namespace LifeSimProto
             string[] lines =
             {
                 "右ドラッグ：視点を回す　ホイール：近づく/離れる",
-                "WASD：移動　Q/E：回す　中ドラッグ：平行移動",
+                "WASD：移動　Q/E：回す　R/F：上下　中ドラッグ：平行移動",
                 "キャラをクリック → 相手をクリック：会いに行かせる",
                 "キャラをダブルクリック：追いかける（Escで解除）",
-                "スペース：一時停止/再開　1・2・3：1倍・2倍・4倍",
+                "スペース：一時停止/再開　1〜4：速さ　Tab：壁の表示",
+                "全員が寝ている間は自動で早送り",
             };
             float y = r.y + 42;
-            foreach (var l in lines) { GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), l, small); y += 27; }
+            foreach (var l in lines) { GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), l, small); y += 28; }
         }
 
         void DrawDetail()
@@ -341,23 +378,39 @@ namespace LifeSimProto
             GUI.Box(r, GUIContent.none, panel);
             var c = selected;
             GUI.Label(new Rect(r.x + 14, r.y + 8, r.width - 28, 30), c.displayName + "（" + c.note + "）", title);
+            string roomName = c.room != null ? "2階・" + c.room.name + "の部屋" : "なし";
             GUI.Label(new Rect(r.x + 14, r.y + 42, r.width - 28, 24), "今：" + c.actionText, small);
-            GUI.Label(new Rect(r.x + 14, r.y + 68, r.width - 28, 24), "人と話したい度 " + Level(c.sociability) + "　気まぐれ度 " + Level(c.whim), small);
-            Bar(new Rect(r.x + 14, r.y + 100, r.width - 28, 22), "さみしさ", c.lonely, new Color(0.45f, 0.6f, 0.95f));
-            Bar(new Rect(r.x + 14, r.y + 128, r.width - 28, 22), "疲れ", c.tired, new Color(0.9f, 0.6f, 0.3f));
-            Bar(new Rect(r.x + 14, r.y + 156, r.width - 28, 22), "退屈", c.bored, new Color(0.6f, 0.85f, 0.4f));
+            GUI.Label(new Rect(r.x + 14, r.y + 66, r.width - 28, 24), "部屋：" + roomName, small);
+            GUI.Label(new Rect(r.x + 14, r.y + 90, r.width - 28, 24), "人と話したい度 " + Level(c.sociability) + "　気まぐれ度 " + Level(c.whim), small);
+            Bar(new Rect(r.x + 14, r.y + 122, r.width - 28, 22), "さみしさ", c.lonely, new Color(0.45f, 0.6f, 0.95f));
+            Bar(new Rect(r.x + 14, r.y + 150, r.width - 28, 22), "疲れ", c.tired, new Color(0.9f, 0.6f, 0.3f));
+            Bar(new Rect(r.x + 14, r.y + 178, r.width - 28, 22), "退屈", c.bored, new Color(0.6f, 0.85f, 0.4f));
 
-            // 好感度の高い順
+            float y = r.y + 212;
+            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "今日の予定", small);
+            y += 24;
+            int shown = 0;
+            foreach (var it in c.schedule)
+            {
+                if (shown >= 4) break;
+                string mark = it.done ? "済 " : "　 ";
+                string time = ScheduleMaker.Clock(it.start) + (it.kind == TaskKind.Class ? "〜" + ScheduleMaker.Clock(it.end) : "");
+                if (it.done && it.end < world.Now && it.kind != TaskKind.Bed) continue;
+                GUI.Label(new Rect(r.x + 24, y, r.width - 38, 22), mark + time + "　" + it.Label, small);
+                y += 22;
+                shown++;
+            }
+
+            y += 8;
             var others = new List<SimCharacter>(world.characters);
             others.Remove(c);
             others.Sort((a, b) => world.rel.Get(c.id, b.id).CompareTo(world.rel.Get(c.id, a.id)));
-            float y = r.y + 190;
             foreach (var o in others)
             {
                 float v = world.rel.Get(c.id, o.id);
-                GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24),
+                GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22),
                     o.displayName + "：" + Relationships.StageName(Relationships.StageOf(v)) + "（" + Mathf.RoundToInt(v) + "）", small);
-                y += 23;
+                y += 21;
             }
         }
 

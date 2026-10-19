@@ -5,12 +5,12 @@ using UnityEngine;
 namespace LifeSimProto
 {
     /// <summary>
-    /// 仮の人形1体。3つの欲求（さみしさ・疲れ・退屈）で行動を選び、会いに行って会話する。
+    /// 仮の人形1体。1日の予定（食事・授業・お風呂・就寝）を優先し、空き時間は3つの欲求（さみしさ・疲れ・退屈）で行動を選ぶ。
     /// </summary>
     public class SimCharacter : MonoBehaviour
     {
-        public enum State { Idle, Walking, Sitting, Activity, Approaching, Waiting, Talking }
-        enum Goal { None, Seat, Poi, Wander }
+        public enum State { Idle, Walking, Sitting, Activity, Approaching, Waiting, Talking, Eating, Bathing, Sleeping, Away }
+        enum Goal { None, Seat, Poi, Wander, Counter, DiningSeat, Bath, Bed, Exit, Return }
 
         // ---- 設定 ----
         public int id;
@@ -20,6 +20,7 @@ namespace LifeSimProto
         [Range(0, 1)] public float sociability; // 人と話したい度
         [Range(0, 1)] public float whim;        // 気まぐれ度
         public bool male;
+        public RoomInfo room;
 
         // ---- 欲求（0〜100）----
         public float lonely, tired, bored;
@@ -31,9 +32,18 @@ namespace LifeSimProto
         float bubbleTimer;
         public bool selected;
 
+        // ---- 1日の予定 ----
+        public List<ScheduleItem> schedule = new List<ScheduleItem>();
+        int scheduleDay = -1;
+        double sleepUntil, awayUntil, eatUntil, bathUntil;
+        bool mealPending;
+        ScheduleItem bedItem;
+
         LoungeWorld world;
         Transform visual;
         GameObject ring;
+        Renderer[] renderers;
+        Collider[] colliders;
         readonly List<Vector3> path = new List<Vector3>();
         Goal goal = Goal.None;
         Seat seat;
@@ -47,24 +57,57 @@ namespace LifeSimProto
         float approachTimer;
         SimCharacter target;
         SimCharacter talkPartner;
+        SimCharacter pendingOrder;
         bool hasOrder;
         float speed;
 
-        public bool IsSitting { get { return state == State.Sitting || (state == State.Talking && seat != null); } }
         public SimCharacter TalkPartner { get { return talkPartner; } }
         public bool HasOrder { get { return hasOrder; } }
+        public bool Present { get { return state != State.Away; } }
+        bool OnMission { get { return mealPending || goal == Goal.Counter || goal == Goal.DiningSeat || goal == Goal.Bath || goal == Goal.Bed || goal == Goal.Exit || goal == Goal.Return; } }
+
+        /// <summary>話しかけられる状態か（寝ている・出かけている・入浴中・急いでいるときは不可）。</summary>
+        public bool AvailableForTalk
+        {
+            get
+            {
+                if (state == State.Sleeping || state == State.Away || state == State.Bathing || state == State.Talking) return false;
+                if (OnMission || hasOrder) return false;
+                return true;
+            }
+        }
 
         public void Init(LoungeWorld w, Transform visualRoot, GameObject selectionRing)
         {
             world = w;
             visual = visualRoot;
             ring = selectionRing;
+            renderers = GetComponentsInChildren<Renderer>(true);
+            colliders = GetComponentsInChildren<Collider>(true);
             speed = male ? 1.35f : 1.2f;
-            lonely = Random.Range(10f, 50f);
-            tired = Random.Range(10f, 50f);
-            bored = Random.Range(10f, 50f);
+            lonely = Random.Range(10f, 40f);
+            tired = Random.Range(0f, 20f);
+            bored = Random.Range(10f, 40f);
             thinkTimer = Random.Range(0.2f, 1.5f);
-            ApplyPose(false);
+
+            // 最初は自分の部屋のベッドで寝ている
+            EnsureSchedule();
+            if (room != null)
+            {
+                seat = room.bed;
+                seat.occupant = this;
+                transform.position = seat.position;
+                transform.rotation = Quaternion.LookRotation(seat.forward);
+                sleepUntil = ScheduleMaker.WakeTime(id, world.Day);
+                if (sleepUntil < world.Now) sleepUntil = world.Now + 1;
+                actionText = "寝ている";
+                SetState(State.Sleeping);
+            }
+            else
+            {
+                transform.position = world.NearestFree(new Vector3(0f, 0f, -2f));
+                SetState(State.Idle);
+            }
         }
 
         void Update()
@@ -73,18 +116,20 @@ namespace LifeSimProto
             if (dt <= 0f) return;
             stateTime += dt;
 
-            UpdateNeeds(dt);
-
-            if (state == State.Walking || state == State.Approaching) Move(dt);
-            if (state == State.Approaching) UpdateApproach(dt);
-            if (state == State.Waiting) UpdateWaiting(dt);
-            if (state == State.Talking && talkPartner != null) FaceTowards(talkPartner.transform.position, dt);
-            if (state == State.Activity && poi != null) FaceTowards(poi.lookAt, dt);
+            if (state != State.Away)
+            {
+                UpdateNeeds(dt);
+                if (state == State.Walking || state == State.Approaching) Move(dt);
+                if (state == State.Approaching) UpdateApproach(dt);
+                if (state == State.Waiting) UpdateWaiting(dt);
+                if (state == State.Talking && talkPartner != null) FaceTowards(talkPartner.transform.position, dt);
+                if (state == State.Activity && poi != null) FaceTowards(poi.lookAt, dt);
+            }
 
             thinkTimer -= dt;
             if (thinkTimer <= 0f)
             {
-                thinkTimer = 0.8f + Random.value * 0.6f;
+                thinkTimer = 0.6f + Random.value * 0.6f;
                 Think();
             }
 
@@ -94,27 +139,38 @@ namespace LifeSimProto
                 if (bubbleTimer <= 0f) bubble = null;
             }
 
-            if (ring != null && ring.activeSelf != selected) ring.SetActive(selected);
+            if (ring != null)
+            {
+                bool show = selected && Present;
+                if (ring.activeSelf != show) ring.SetActive(show);
+            }
         }
 
         // ================= 欲求 =================
         void UpdateNeeds(float dt)
         {
-            if (state != State.Talking) lonely += dt * 0.9f * (0.4f + sociability);
-
             switch (state)
             {
+                case State.Sleeping:
+                    tired -= dt * 5f; lonely += dt * 0.1f; bored -= dt * 2f; break;
                 case State.Walking:
                 case State.Approaching:
+                    lonely += dt * 0.9f * (0.4f + sociability);
                     tired += dt * 0.9f; bored -= dt * 0.3f; break;
                 case State.Sitting:
+                case State.Eating:
+                    lonely += dt * 0.9f * (0.4f + sociability);
                     tired -= dt * 3.5f; bored += dt * (0.5f + whim * 0.4f); break;
+                case State.Bathing:
+                    tired -= dt * 4f; bored -= dt * 2f; break;
                 case State.Activity:
+                    lonely += dt * 0.9f * (0.4f + sociability);
                     tired += dt * 0.3f; bored -= dt * 4f; break;
                 case State.Talking:
                     if (seat != null) tired -= dt * 2f; else tired += dt * 0.2f;
                     bored -= dt * 1f; break;
                 default:
+                    lonely += dt * 0.9f * (0.4f + sociability);
                     tired += dt * 0.35f; bored += dt * (0.6f + whim * 0.4f); break;
             }
             lonely = Mathf.Clamp(lonely, 0f, 100f);
@@ -122,11 +178,210 @@ namespace LifeSimProto
             bored = Mathf.Clamp(bored, 0f, 100f);
         }
 
+        // ================= 予定 =================
+        void EnsureSchedule()
+        {
+            if (scheduleDay == world.Day) return;
+            scheduleDay = world.Day;
+            schedule = ScheduleMaker.Make(id, scheduleDay);
+            // 始めた時刻より前の予定は済んだことにする
+            foreach (var it in schedule) if (it.kind != TaskKind.Bed && it.end < world.Now) it.done = true;
+        }
+
+        public ScheduleItem NextItem()
+        {
+            foreach (var it in schedule) if (!it.done) return it;
+            return null;
+        }
+
+        /// <summary>予定の時刻になっていれば、その行動を始める。始めたら true。</summary>
+        bool HandleSchedule(double now)
+        {
+            if (hasOrder) return false;
+            foreach (var it in schedule)
+            {
+                if (it.done) continue;
+                if (it.start > now) return false;
+                switch (it.kind)
+                {
+                    case TaskKind.Class:
+                        if (now >= it.end - 5) { it.done = true; continue; }
+                        it.done = true;
+                        awayUntil = it.end;
+                        StartLeave();
+                        return true;
+                    case TaskKind.Breakfast:
+                    case TaskKind.Lunch:
+                    case TaskKind.Dinner:
+                        if (now > it.start + 60) { it.done = true; continue; }
+                        it.done = true;
+                        StartMeal(it.Label);
+                        return true;
+                    case TaskKind.Bath:
+                        if (now > it.start + 90) { it.done = true; continue; }
+                        it.done = true;
+                        StartBath();
+                        return true;
+                    case TaskKind.Bed:
+                        if (state == State.Sleeping) { it.done = true; return false; }
+                        if (goal == Goal.Bed) return true;
+                        bedItem = it;
+                        StartBed();
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        void StartMeal(string label)
+        {
+            LeaveCurrentSpot();
+            mealPending = true;
+            Poi counter = null;
+            foreach (var p in world.pois) if (p.counter) { counter = p; break; }
+            int slot = counter != null ? counter.FreeSlot() : -1;
+            actionText = label + "を食べに食堂へ";
+            if (slot >= 0)
+            {
+                poi = counter;
+                poiSlot = slot;
+                poi.occupants[slot] = this;
+                goal = Goal.Counter;
+                if (!GoTo(poi.slots[slot], State.Walking)) GoDiningSeat();
+            }
+            else GoDiningSeat();
+        }
+
+        void GoDiningSeat()
+        {
+            ReleaseSeatAndPoi();
+            Seat best = null;
+            float bestScore = float.MinValue;
+            foreach (var s in world.seats)
+            {
+                if (s.kind != SeatKind.Sit || s.area != "食堂" || (s.occupant != null && s.occupant != this)) continue;
+                float score = Random.value * 2f;
+                foreach (var o in world.characters)
+                {
+                    if (o == this || !o.Present) continue;
+                    if (Vector3.Distance(o.transform.position, s.position) < 2.2f) score += (world.rel.Get(id, o.id) - 30f) / 20f;
+                }
+                if (score > bestScore) { bestScore = score; best = s; }
+            }
+            if (best == null) { mealPending = false; SetState(State.Idle); return; }
+            seat = best;
+            seat.occupant = this;
+            goal = Goal.DiningSeat;
+            mealPending = false;
+            if (!GoTo(seat.approach, State.Walking)) { goal = Goal.None; SetState(State.Idle); }
+        }
+
+        void StartBath()
+        {
+            LeaveCurrentSpot();
+            Seat free = null;
+            foreach (var s in world.seats)
+                if (s.kind == SeatKind.Bath && s.occupant == null) { free = s; break; }
+            if (free == null) return;
+            seat = free;
+            seat.occupant = this;
+            goal = Goal.Bath;
+            actionText = "お風呂に向かう";
+            if (!GoTo(seat.approach, State.Walking)) { ReleaseSeatAndPoi(); goal = Goal.None; }
+        }
+
+        void StartBed()
+        {
+            if (room == null) return;
+            LeaveCurrentSpot();
+            seat = room.bed;
+            seat.occupant = this;
+            goal = Goal.Bed;
+            actionText = "部屋に戻って寝る";
+            if (!GoTo(seat.approach, State.Walking)) { goal = Goal.None; }
+        }
+
+        void StartLeave()
+        {
+            LeaveCurrentSpot();
+            goal = Goal.Exit;
+            actionText = "授業に出かける";
+            if (!GoTo(world.exitPoint, State.Walking)) { goal = Goal.None; SetState(State.Idle); }
+        }
+
+        void ReturnFromClass()
+        {
+            transform.position = world.exitPoint;
+            SetVisible(true);
+            world.Log(displayName + "が授業から帰ってきた");
+            goal = Goal.Return;
+            actionText = "授業から帰ってきた";
+            if (!GoTo(world.entrancePoint, State.Walking)) { goal = Goal.None; SetState(State.Idle); }
+        }
+
+        void WakeUp()
+        {
+            if (seat != null && seat.occupant == this)
+            {
+                transform.position = world.NearestFree(seat.approach);
+                seat.occupant = null;
+            }
+            seat = null;
+            EnsureSchedule();
+            actionText = "起きた";
+            ShowBubble("ふあ〜", 2f);
+            SetState(State.Idle);
+            thinkTimer = Random.Range(1f, 3f);
+        }
+
+        void SetVisible(bool v)
+        {
+            foreach (var r in renderers) if (r != null && r.gameObject != ring) r.enabled = v;
+            foreach (var c in colliders) if (c != null) c.enabled = v;
+            if (!v) selected = false;
+        }
+
         // ================= 行動の選択 =================
         void Think()
         {
-            if (state == State.Talking || state == State.Approaching || state == State.Waiting) return;
-            if (state == State.Walking) return; // 目的地へ向かっている途中
+            EnsureSchedule();
+            double now = world.Now;
+
+            switch (state)
+            {
+                case State.Talking:
+                    return;
+                case State.Sleeping:
+                    if (now >= sleepUntil) WakeUp();
+                    return;
+                case State.Away:
+                    if (now >= awayUntil) ReturnFromClass();
+                    return;
+                case State.Eating:
+                    if (now < eatUntil) return;
+                    ShowBubble("ごちそうさま", 1.8f);
+                    LeaveCurrentSpot();
+                    SetState(State.Idle);
+                    actionText = "ぼんやりしている";
+                    break;
+                case State.Bathing:
+                    if (now < bathUntil) return;
+                    ShowBubble("さっぱり", 1.8f);
+                    LeaveCurrentSpot();
+                    SetState(State.Idle);
+                    actionText = "ぼんやりしている";
+                    break;
+                case State.Activity:
+                    if (mealPending)
+                    {
+                        if (stateTime >= 2.5f) GoDiningSeat();
+                        return;
+                    }
+                    break;
+            }
+
+            if (HandleSchedule(now)) return;
+            if (state == State.Approaching || state == State.Waiting || state == State.Walking) return;
 
             float sSocial = lonely * (0.7f + 0.6f * sociability);
             float sRest = tired;
@@ -136,7 +391,6 @@ namespace LifeSimProto
             sRest += (Random.value - 0.5f) * noise;
             sFun += (Random.value - 0.5f) * noise;
 
-            // 今していることを続けるか
             if (state == State.Sitting)
             {
                 if (stateTime < 5f) return;
@@ -149,7 +403,6 @@ namespace LifeSimProto
             }
 
             float best = Mathf.Max(sSocial, Mathf.Max(sRest, sFun));
-            // いちばんしたいことを今している最中なら、そのまま続ける
             if (state == State.Sitting && best == sRest) return;
             if (state == State.Activity && best == sFun && stateTime < activityDuration * 2f) return;
             if (best < 30f)
@@ -172,9 +425,11 @@ namespace LifeSimProto
             for (int i = 0; i < others.Count; i++)
             {
                 var o = others[i];
-                if (o == this || o.state == State.Talking || o.HasOrder) continue;
+                if (o == this || !o.AvailableForTalk) continue;
                 float a = world.rel.Get(id, o.id);
                 float w = Mathf.Pow((a + 10f) / 110f, 1f + shy * 3f);
+                float dist = Vector3.Distance(transform.position, o.transform.position);
+                w *= 1f / (1f + dist / 8f);
                 weights[i] = w;
                 total += w;
             }
@@ -198,11 +453,13 @@ namespace LifeSimProto
             float bestScore = float.MinValue;
             foreach (var s in world.seats)
             {
+                if (s.kind != SeatKind.Sit) continue;
                 if (s.occupant != null && s.occupant != this) continue;
                 float score = -Vector3.Distance(transform.position, s.approach) * 0.4f;
+                if (Mathf.Abs(s.position.y - transform.position.y) > 1f) score -= 4f;
                 foreach (var o in world.characters)
                 {
-                    if (o == this) continue;
+                    if (o == this || !o.Present) continue;
                     float d = Vector3.Distance(o.transform.position, s.position);
                     if (d < 3f) score += (world.rel.Get(id, o.id) - 30f) / 25f * (1f - sociability * 0.3f);
                 }
@@ -221,9 +478,24 @@ namespace LifeSimProto
         bool StartActivity()
         {
             var candidates = new List<Poi>();
-            foreach (var p in world.pois) if (p.FreeSlot() >= 0) candidates.Add(p);
+            var weights = new List<float>();
+            float total = 0f;
+            foreach (var p in world.pois)
+            {
+                if (p.counter) continue;
+                if (p.owner >= 0 && p.owner != id) continue;
+                int fs = p.FreeSlot();
+                if (fs < 0) continue;
+                float w = 1f / (1f + Vector3.Distance(transform.position, p.slots[fs]) / 6f);
+                if (p.owner == id) w *= 1.5f;
+                candidates.Add(p);
+                weights.Add(w);
+                total += w;
+            }
             if (candidates.Count == 0) return false;
-            Poi chosen = candidates[Random.Range(0, candidates.Count)];
+            float r = Random.value * total;
+            Poi chosen = candidates[candidates.Count - 1];
+            for (int i = 0; i < candidates.Count; i++) { r -= weights[i]; if (r <= 0f) { chosen = candidates[i]; break; } }
             LeaveCurrentSpot();
             poi = chosen;
             poiSlot = poi.FreeSlot();
@@ -239,8 +511,12 @@ namespace LifeSimProto
             LeaveCurrentSpot();
             goal = Goal.Wander;
             actionText = "ぶらぶら歩く";
-            Vector3 p = transform.position + new Vector3(Random.Range(-4f, 4f), 0f, Random.Range(-4f, 4f));
-            p = world.nav.NearestFreePoint(p);
+            AreaInfo area = world.AreaAt(transform.position);
+            Vector3 p;
+            if (area == null || area.name == "外" || Random.value < 0.35f)
+                p = world.nav0.RandomFreePoint(new Rect(-5.5f, -4.5f, 11f, 9f));
+            else
+                p = world.NavAt(transform.position).RandomFreePoint(area.rect);
             if (!GoTo(p, State.Walking)) SetState(State.Idle);
         }
 
@@ -261,9 +537,19 @@ namespace LifeSimProto
         public void Order(SimCharacter who)
         {
             if (who == null || who == this) return;
+            if (state == State.Sleeping || state == State.Away || state == State.Bathing)
+            {
+                world.Log(displayName + "は今は動けない（" + StateName() + "）");
+                return;
+            }
+            if (who.state == State.Sleeping || who.state == State.Away || who.state == State.Bathing)
+            {
+                ShowBubble(who.displayName + "は今いないみたい", 2.2f);
+                world.Log(who.displayName + "は今会えない（" + who.StateName() + "）");
+                return;
+            }
             if (state == State.Talking)
             {
-                // 会話が終わってから向かう
                 pendingOrder = who;
                 ShowBubble("！（あとで行くね）", 1.8f);
                 return;
@@ -271,42 +557,56 @@ namespace LifeSimProto
             ShowBubble("！", 1.5f);
             BeginApproach(who, true);
         }
-        SimCharacter pendingOrder;
+
+        public string StateName()
+        {
+            switch (state)
+            {
+                case State.Sleeping: return "寝ている";
+                case State.Away: return "授業に出ている";
+                case State.Bathing: return "お風呂";
+                case State.Eating: return "食事中";
+                case State.Talking: return "会話中";
+                default: return actionText;
+            }
+        }
 
         void UpdateApproach(float dt)
         {
-            if (target == null) { SetState(State.Idle); return; }
+            if (target == null || !target.Present || target.state == State.Sleeping || target.state == State.Bathing) { GiveUp(); return; }
             approachTimer += dt;
             repathTimer -= dt;
-            float d = Flat(target.transform.position - transform.position).magnitude;
-            if (d <= 1.3f)
+            Vector3 d3 = target.transform.position - transform.position;
+            float d = Flat(d3).magnitude;
+            bool sameFloor = Mathf.Abs(d3.y) < 0.5f;
+            if (sameFloor && d <= 1.3f)
             {
                 if (target.CanStartTalk(this)) { StartCoroutine(TalkRoutine(target)); return; }
                 path.Clear();
                 waitTimer = 0f;
-                actionText = target.displayName + "の話が終わるのを待つ";
+                actionText = target.displayName + "の用事が終わるのを待つ";
                 SetState(State.Waiting);
                 return;
             }
-            if (repathTimer <= 0f || path.Count == 0) RepathToTarget();
-            if (!hasOrder && approachTimer > 25f) GiveUp();
+            if ((repathTimer <= 0f || path.Count == 0) && LoungeWorld.OnFloorLevel(transform.position)) RepathToTarget();
+            if (!hasOrder && approachTimer > 30f) GiveUp();
         }
 
         void UpdateWaiting(float dt)
         {
             waitTimer += dt;
-            if (target == null) { SetState(State.Idle); return; }
+            if (target == null || !target.Present) { GiveUp(); return; }
             FaceTowards(target.transform.position, dt);
             if (target.CanStartTalk(this))
             {
-                float d = Flat(target.transform.position - transform.position).magnitude;
-                if (d <= 1.4f) { StartCoroutine(TalkRoutine(target)); return; }
+                Vector3 d3 = target.transform.position - transform.position;
+                if (Flat(d3).magnitude <= 1.4f && Mathf.Abs(d3.y) < 0.5f) { StartCoroutine(TalkRoutine(target)); return; }
                 actionText = target.displayName + "に会いに行く" + (hasOrder ? "（指示）" : "");
                 SetState(State.Approaching);
                 RepathToTarget();
                 return;
             }
-            if (waitTimer > (hasOrder ? 15f : 6f)) GiveUp();
+            if (waitTimer > (hasOrder ? 20f : 6f)) GiveUp();
         }
 
         void GiveUp()
@@ -323,19 +623,21 @@ namespace LifeSimProto
         void RepathToTarget()
         {
             repathTimer = 1.0f;
+            if (target == null) return;
             Vector3 tp = target.transform.position;
             Vector3 dir = Flat(transform.position - tp);
-            if (dir.sqrMagnitude < 0.01f) dir = target.transform.forward;
-            Vector3 goalPos = world.nav.NearestFreePoint(tp + dir.normalized * 1.0f);
-            var p = world.nav.FindPath(transform.position, goalPos);
+            if (dir.sqrMagnitude < 0.01f || Mathf.Abs(transform.position.y - tp.y) > 0.5f) dir = target.transform.forward;
+            Vector3 goalPos = world.NearestFree(tp + dir.normalized * 1.0f);
+            var p = world.FindPath(transform.position, goalPos);
             path.Clear();
             if (p != null) path.AddRange(p);
         }
 
         public bool CanStartTalk(SimCharacter by)
         {
-            if (state == State.Talking) return false;
+            if (state == State.Talking || state == State.Sleeping || state == State.Away || state == State.Bathing) return false;
             if (hasOrder && target != by) return false;
+            if (OnMission) return false;
             return true;
         }
 
@@ -359,7 +661,6 @@ namespace LifeSimProto
                 SimCharacter speaker = (i % 2 == 0) ? this : partner;
                 speaker.ShowBubble(i == 0 ? topic + "なんだけど…" : Chatter[Random.Range(0, Chatter.Length)], 1.5f);
                 yield return new WaitForSeconds(1.6f);
-                if (partner == null) break;
             }
 
             TalkResult result = world.rel.Roll(id, partner.id);
@@ -386,11 +687,9 @@ namespace LifeSimProto
         {
             StopAllCoroutines();
             path.Clear();
-            if (state == State.Walking || state == State.Approaching || state == State.Waiting || state == State.Activity)
-            {
-                // 座りに行く途中・作業中などは中断（座っている人は座ったまま話す）
-                if (state != State.Sitting) ReleaseSeatAndPoi();
-            }
+            bool seated = state == State.Sitting || state == State.Eating;
+            if (!seated) ReleaseSeatAndPoi();
+            goal = Goal.None;
             target = null;
             hasOrder = false;
             talkPartner = by;
@@ -400,7 +699,13 @@ namespace LifeSimProto
         void ExitTalk()
         {
             talkPartner = null;
-            if (seat != null && seat.occupant == this && Flat(transform.position - seat.position).magnitude < 0.3f)
+            bool atSeat = seat != null && seat.occupant == this && Flat(transform.position - seat.position).magnitude < 0.3f;
+            if (atSeat && seat.area == "食堂" && eatUntil > world.Now)
+            {
+                SetState(State.Eating);
+                actionText = "食事をしている";
+            }
+            else if (atSeat)
             {
                 SetState(State.Sitting);
                 actionText = seat.label + "で休んでいる";
@@ -429,7 +734,7 @@ namespace LifeSimProto
         // ================= 移動 =================
         bool GoTo(Vector3 dest, State moveState)
         {
-            var p = world.nav.FindPath(transform.position, dest);
+            var p = world.FindPath(transform.position, dest);
             path.Clear();
             if (p == null || p.Count == 0)
             {
@@ -450,59 +755,97 @@ namespace LifeSimProto
             }
             Vector3 pos = transform.position;
             Vector3 next = path[0];
-            Vector3 to = Flat(next - pos);
+            Vector3 to = next - pos;
             float step = speed * dt;
             if (to.magnitude <= step)
             {
-                transform.position = new Vector3(next.x, 0f, next.z);
+                transform.position = next;
                 path.RemoveAt(0);
             }
             else
             {
-                Vector3 dir = to.normalized;
-                transform.position = pos + dir * step;
-                FaceTowards(pos + dir, dt);
+                transform.position = pos + to.normalized * step;
+                FaceTowards(pos + Flat(to), dt);
             }
         }
 
         void Arrive()
         {
-            switch (goal)
+            Goal g = goal;
+            goal = Goal.None;
+            switch (g)
             {
                 case Goal.Seat:
-                    if (seat != null)
-                    {
-                        transform.position = seat.position;
-                        transform.rotation = Quaternion.LookRotation(seat.forward);
-                        SetState(State.Sitting);
-                        actionText = seat.label + "で休んでいる";
-                    }
+                    if (seat != null) { SnapToSeat(); SetState(State.Sitting); actionText = seat.label + "で休んでいる"; }
                     else SetState(State.Idle);
                     break;
                 case Goal.Poi:
-                    if (poi != null)
+                    if (poi != null) { SetState(State.Activity); actionText = poi.label; }
+                    else SetState(State.Idle);
+                    break;
+                case Goal.Counter:
+                    if (poi != null) { SetState(State.Activity); actionText = poi.label; mealPending = true; }
+                    else GoDiningSeat();
+                    break;
+                case Goal.DiningSeat:
+                    if (seat != null)
                     {
-                        SetState(State.Activity);
-                        actionText = poi.label;
+                        SnapToSeat();
+                        eatUntil = world.Now + 20.0;
+                        SetState(State.Eating);
+                        actionText = "食事をしている";
                     }
                     else SetState(State.Idle);
+                    break;
+                case Goal.Bath:
+                    if (seat != null)
+                    {
+                        SnapToSeat();
+                        bathUntil = world.Now + 25.0;
+                        SetState(State.Bathing);
+                        actionText = "お風呂に入っている";
+                    }
+                    else SetState(State.Idle);
+                    break;
+                case Goal.Bed:
+                    if (seat != null)
+                    {
+                        SnapToSeat();
+                        sleepUntil = bedItem != null ? bedItem.end : world.Now + 400.0;
+                        if (bedItem != null) bedItem.done = true;
+                        actionText = "寝ている";
+                        SetState(State.Sleeping);
+                        ShowBubble("おやすみ", 1.5f);
+                        world.Log(displayName + "が寝た");
+                    }
+                    else SetState(State.Idle);
+                    break;
+                case Goal.Exit:
+                    SetState(State.Away);
+                    actionText = "授業に出ている";
+                    SetVisible(false);
+                    world.Log(displayName + "が授業に出かけた（" + ScheduleMaker.Clock(awayUntil) + "ごろ帰る）");
                     break;
                 default:
                     SetState(State.Idle);
                     actionText = "ぼんやりしている";
                     break;
             }
-            goal = Goal.None;
+        }
+
+        void SnapToSeat()
+        {
+            transform.position = seat.position;
+            transform.rotation = Quaternion.LookRotation(seat.forward);
         }
 
         void LeaveCurrentSpot()
         {
-            if (seat != null && state == State.Sitting)
-            {
-                transform.position = world.nav.NearestFreePoint(seat.approach);
-            }
+            bool atSeat = seat != null && (state == State.Sitting || state == State.Eating || state == State.Bathing || state == State.Sleeping);
+            if (atSeat) transform.position = world.NearestFree(seat.approach);
             ReleaseSeatAndPoi();
             goal = Goal.None;
+            mealPending = false;
         }
 
         void ReleaseSeatAndPoi()
@@ -518,26 +861,62 @@ namespace LifeSimProto
         {
             state = s;
             stateTime = 0f;
-            ApplyPose(IsSitting);
+            ApplyPose();
         }
 
-        void ApplyPose(bool sitting)
+        enum Pose { Stand, Sit, Lie, Soak }
+
+        Pose CurrentPose()
+        {
+            if (state == State.Sleeping) return Pose.Lie;
+            if (state == State.Bathing) return Pose.Soak;
+            if (state == State.Sitting || state == State.Eating) return Pose.Sit;
+            if (state == State.Talking && seat != null && seat.kind == SeatKind.Sit && Flat(transform.position - seat.position).magnitude < 0.3f) return Pose.Sit;
+            return Pose.Stand;
+        }
+
+        void ApplyPose()
         {
             if (visual == null) return;
             float h = male ? 1.85f : 1.7f;
-            if (sitting)
+            switch (CurrentPose())
             {
-                visual.localScale = new Vector3(0.45f, 0.45f, 0.45f);
-                visual.localPosition = new Vector3(0f, 0.45f + 0.45f, 0f);
-            }
-            else
-            {
-                visual.localScale = new Vector3(0.45f, h / 2f, 0.45f);
-                visual.localPosition = new Vector3(0f, h / 2f, 0f);
+                case Pose.Sit:
+                    visual.localRotation = Quaternion.identity;
+                    visual.localScale = new Vector3(0.45f, 0.45f, 0.45f);
+                    visual.localPosition = new Vector3(0f, 0.9f, 0f);
+                    break;
+                case Pose.Lie:
+                    visual.localRotation = Quaternion.Euler(90f, 0f, 0f);
+                    visual.localScale = new Vector3(0.45f, h / 2f, 0.45f);
+                    visual.localPosition = new Vector3(0f, 0.72f, 0f);
+                    break;
+                case Pose.Soak:
+                    visual.localRotation = Quaternion.identity;
+                    visual.localScale = new Vector3(0.45f, 0.45f, 0.45f);
+                    visual.localPosition = new Vector3(0f, 0.3f, 0f);
+                    break;
+                default:
+                    visual.localRotation = Quaternion.identity;
+                    visual.localScale = new Vector3(0.45f, h / 2f, 0.45f);
+                    visual.localPosition = new Vector3(0f, h / 2f, 0f);
+                    break;
             }
         }
 
-        public float HeadHeight { get { return IsSitting ? 1.55f : (male ? 2.05f : 1.9f); } }
+        public float HeadHeight
+        {
+            get
+            {
+                switch (CurrentPose())
+                {
+                    case Pose.Lie: return 1.0f;
+                    case Pose.Soak: return 1.0f;
+                    case Pose.Sit: return 1.55f;
+                    default: return male ? 2.05f : 1.9f;
+                }
+            }
+        }
 
         void FaceTowards(Vector3 p, float dt)
         {
@@ -552,17 +931,21 @@ namespace LifeSimProto
         // 立っている人同士が重ならないように少し離す
         void LateUpdate()
         {
-            if (Time.deltaTime <= 0f || IsSitting) return;
+            if (Time.deltaTime <= 0f || CurrentPose() != Pose.Stand || !Present) return;
+            if (!LoungeWorld.OnFloorLevel(transform.position)) return;
+            var nav = world.NavAt(transform.position);
             foreach (var o in world.characters)
             {
-                if (o == this || o.IsSitting) continue;
-                Vector3 d = Flat(transform.position - o.transform.position);
+                if (o == this || !o.Present || o.CurrentPose() != Pose.Stand) continue;
+                Vector3 d = transform.position - o.transform.position;
+                if (Mathf.Abs(d.y) > 0.3f) continue;
+                d.y = 0f;
                 float m = d.magnitude;
                 if (m < 0.55f && m > 0.0001f)
                 {
                     Vector3 push = d / m * (0.55f - m) * 0.5f;
                     Vector3 np = transform.position + push;
-                    if (world.nav.IsFree(np)) transform.position = np;
+                    if (nav.IsFree(np)) transform.position = np;
                 }
             }
         }
