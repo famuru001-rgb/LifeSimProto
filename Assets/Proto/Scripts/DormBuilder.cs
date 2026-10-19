@@ -11,6 +11,10 @@ namespace LifeSimProto
         public Poi desk;
         public Vector3 labelPos;
         public Rect rect;
+        public int owner = -1;
+        public readonly List<Seat> cushions = new List<Seat>();
+        public Seat futon;
+        public string AreaName { get { return name + "の部屋"; } }
     }
 
     public class AreaInfo
@@ -136,14 +140,17 @@ namespace LifeSimProto
             else if (m < 1170f) day = 1f - Mathf.InverseLerp(1020f, 1170f, m);
             else day = 0f;
 
+            Weather w = Calendar.WeatherOf(Day);
+            float wf = w == Weather.Sunny ? 1f : (w == Weather.Cloudy ? 0.7f : (w == Weather.Rain ? 0.45f : 0.6f));
             if (sun != null)
             {
-                sun.intensity = Mathf.Lerp(0.12f, 1.1f, day);
+                sun.intensity = Mathf.Lerp(0.12f, 1.1f * wf, day);
                 sun.color = Color.Lerp(new Color(0.55f, 0.65f, 1f), new Color(1f, 0.95f, 0.85f), day);
             }
             RenderSettings.ambientLight = Color.Lerp(new Color(0.16f, 0.15f, 0.2f), new Color(0.42f, 0.4f, 0.37f), day);
 
-            Color win = Color.Lerp(new Color(0.06f, 0.08f, 0.18f), new Color(0.85f, 0.92f, 1.1f), day);
+            Color dayWin = w == Weather.Rain ? new Color(0.5f, 0.55f, 0.65f) : (w == Weather.Snow ? new Color(1.1f, 1.1f, 1.2f) : (w == Weather.Cloudy ? new Color(0.7f, 0.75f, 0.85f) : new Color(0.85f, 0.92f, 1.1f)));
+            Color win = Color.Lerp(new Color(0.06f, 0.08f, 0.18f), dayWin, day);
             foreach (var wm in windowMats)
             {
                 if (wm.HasProperty("_BaseColor")) wm.SetColor("_BaseColor", win);
@@ -152,7 +159,8 @@ namespace LifeSimProto
 
             bool lateNight = m < 330f;
             float lampScale = lateNight ? 0.45f : Mathf.Lerp(1f, 0.4f, day);
-            foreach (var kv in lamps) if (kv.Key != null) kv.Key.scale = lampScale;
+            bool blackout = Blackout;
+            foreach (var kv in lamps) if (kv.Key != null) kv.Key.scale = (blackout && !kv.Key.isFire) ? 0.08f : lampScale;
         }
 
         // ================= 部品づくり =================
@@ -358,6 +366,7 @@ namespace LifeSimProto
             }
             var fire = Lamp(new Vector3(0f, 1.0f, 3.9f), 9f, 10f, true, 0.2f);
             fire.color = new Color(1f, 0.6f, 0.3f);
+            fire.GetComponent<Flicker>().isFire = true;
             blockers0.Add(new Rect(-1.85f, 3.85f, 3.7f, 1.2f));
 
             Bookshelf(new Vector3(-4.1f, 0f, 4.75f));
@@ -401,10 +410,18 @@ namespace LifeSimProto
             pois.Add(MakePoi("本棚の本を眺めている", new Vector3(4.1f, 1.5f, 5f), new Vector3(3.6f, 0f, 3.9f), new Vector3(4.6f, 0f, 3.9f)));
             pois.Add(MakePoi("窓の外を眺めている", new Vector3(6f, 2f, -3.4f), new Vector3(5.2f, 0f, -3.4f)));
             // 魔法の練習場所（床の魔法陣）。趣味が「魔法の練習」のキャラだけが使う
-            Cyl("MagicCircle", new Vector3(-3.0f, 0.015f, -3.6f), new Vector3(1.8f, 0.004f, 1.8f), Quaternion.identity, ProtoArt.Glow(new Color(0.4f, 0.55f, 1f), 0.6f));
-            var magic = MakePoi("魔法の練習をしている", new Vector3(-3.0f, 1.2f, -3.6f), new Vector3(-3.6f, 0f, -3.2f), new Vector3(-2.4f, 0f, -4.0f));
+            Cyl("MagicCircle", new Vector3(-3.3f, 0.015f, -3.5f), new Vector3(1.8f, 0.004f, 1.8f), Quaternion.identity, ProtoArt.Glow(new Color(0.4f, 0.55f, 1f), 0.6f));
+            var magic = MakePoi("魔法の練習をしている", new Vector3(-3.3f, 1.2f, -3.5f), new Vector3(-3.8f, 0f, -3.1f), new Vector3(-2.8f, 0f, -3.0f));
             magic.hobby = (int)SimCharacter.HobbyKind.Magic;
             pois.Add(magic);
+            // おやつワゴン（出入口の左）。おなかが空いたらここで取って、談話室で食べる
+            Box("SnackTrolley", new Vector3(-2.2f, 0.4f, -4.35f), new Vector3(0.8f, 0.8f, 0.5f), woodMid);
+            for (int i = 0; i < 3; i++) Box("Snack", new Vector3(-2.45f + i * 0.25f, 0.86f, -4.35f), new Vector3(0.18f, 0.1f, 0.18f), foodMat);
+            blockers0.Add(new Rect(-2.6f, -4.6f, 0.8f, 0.5f));
+            var snackPoi = MakePoi("おやつを取っている", new Vector3(-2.2f, 0.8f, -4.35f), new Vector3(-2.2f, 0f, -3.7f), new Vector3(-1.35f, 0f, -4.3f));
+            snackPoi.snack = true;
+            pois.Add(snackPoi);
+            Label(new Vector3(-2.2f, 1.4f, -4.35f), "おやつワゴン");
 
             AddArea("談話室", new Rect(-HalfW, -HalfD, HalfW * 2f, HalfD * 2f), 0);
         }
@@ -595,9 +612,38 @@ namespace LifeSimProto
                     area = name,
                     position = new Vector3(bcx, Floor2Y, cz - 0.52f),
                     forward = new Vector3(s, 0f, 0f),
-                    approach = new Vector3(s * (outer - 2.6f), Floor2Y, cz - 0.5f)
+                    approach = new Vector3(s * (outer - 2.6f), Floor2Y, cz - 0.5f),
+                    room = room
                 };
                 seats.Add(room.bed);
+                // 来客用：座布団2枚と小さなテーブル、床に敷く布団
+                Box("LowTable_Room", new Vector3(s * 9.25f, Floor2Y + 0.15f, cz + 0.5f), new Vector3(0.5f, 0.3f, 0.5f), woodMid);
+                blockers1.Add(Rect.MinMaxRect(Mathf.Min(s * 9.0f, s * 9.5f), cz + 0.25f, Mathf.Max(s * 9.0f, s * 9.5f), cz + 0.75f));
+                for (int k = 0; k < 2; k++)
+                {
+                    float cx = s * (k == 0 ? 8.7f : 9.8f);
+                    Box("Cushion", new Vector3(cx, Floor2Y + 0.04f, cz + 0.5f), new Vector3(0.5f, 0.08f, 0.5f), fabricGreen);
+                    var cu = new Seat
+                    {
+                        kind = SeatKind.Sit, floorSeat = true, label = "空き部屋", area = name,
+                        position = new Vector3(cx, Floor2Y, cz + 0.5f),
+                        forward = new Vector3(k == 0 ? s : -s, 0f, 0f),
+                        approach = new Vector3(cx, Floor2Y, cz),
+                        room = room
+                    };
+                    room.cushions.Add(cu);
+                    seats.Add(cu);
+                }
+                Box("GuestFuton", new Vector3(s * 9.85f, Floor2Y + 0.05f, cz - 0.55f), new Vector3(1.7f, 0.1f, 0.75f), fabricWhite);
+                room.futon = new Seat
+                {
+                    kind = SeatKind.Bed, floorSeat = true, label = "来客用の布団", area = name,
+                    position = new Vector3(s * 9.85f, Floor2Y, cz - 0.55f),
+                    forward = new Vector3(s, 0f, 0f),
+                    approach = new Vector3(s * 9.85f, Floor2Y, cz),
+                    room = room
+                };
+                seats.Add(room.futon);
                 // 机
                 float deskX = s * (outer - 0.4f);
                 Box("Desk", new Vector3(deskX, Floor2Y + 0.73f, cz + 0.52f), new Vector3(0.6f, 0.05f, 0.8f), woodMid);
@@ -823,6 +869,7 @@ namespace LifeSimProto
     {
         public float amount = 0.15f;
         public float scale = 1f;
+        public bool isFire;
         Light lightRef;
         float baseIntensity;
         float seed;

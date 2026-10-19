@@ -13,6 +13,8 @@ namespace LifeSimProto
         public Vector3 approach;  // 使う前・使った後に立つ場所
         public string label;
         public SeatKind kind = SeatKind.Sit;
+        public bool floorSeat;    // 床に座る（座布団）・床に寝る（布団）
+        public RoomInfo room;     // 個室の中の場所なら、その部屋
         public string area;       // 「食堂」など。食事の席探しに使う
         public int owner = -1;    // ベッドの持ち主
         public SimCharacter occupant;
@@ -28,6 +30,8 @@ namespace LifeSimProto
         public int owner = -1;    // 個室の机など、持ち主だけが使う場所
         public bool counter;      // 食堂の受け取り口
         public int hobby = -1;    // 趣味専用の場所（SimCharacter.HobbyKind）。-1 はだれでも
+        public bool snack;        // 談話室のおやつワゴン
+        public bool dynamicSpot;  // 使い魔など、動く相手のまわり
 
         public int FreeSlot()
         {
@@ -43,6 +47,25 @@ namespace LifeSimProto
     }
 
     public enum WallMode { Auto, Low, All }
+
+    /// <summary>みんなが集まる行事（お茶会・誕生日会・停電のときの暖炉など）や、外出の行事（お祭り・デート）。</summary>
+    public class Gathering
+    {
+        public string key;
+        public string label;        // 頭の上に出す行動（例：「お茶会に参加している」）
+        public string area;         // 集まる区画（外出なら空）
+        public Vector3 focus;       // 集まる中心
+        public double start, end;
+        public bool outing;         // 外出の行事なら true
+        public List<SimCharacter> invited;  // null ならだれでも参加できる
+        public float joinChance = 0.85f;
+        public SimCharacter honoree;
+        public bool processed;
+        public readonly HashSet<SimCharacter> members = new HashSet<SimCharacter>();
+        public readonly HashSet<SimCharacter> declined = new HashSet<SimCharacter>();
+
+        public bool Active(double now) { return now >= start && now < end; }
+    }
 
     /// <summary>
     /// 魔法大学の寮（談話室・食堂・浴場・2階の個室10部屋）を組み立てて、試作を動かす中心の部品。
@@ -63,6 +86,10 @@ namespace LifeSimProto
         public float[] speedOptions = { 1f, 2f, 4f, 10f };
         [Tooltip("全員が寝ている間の速さ（倍）")]
         public float allAsleepSpeed = 30f;
+
+        [Header("暦（1週間7日：光・火・水・風・土・月・星）")]
+        [Tooltip("休日にする曜日（チェックした曜日が休日）。初期値は水の日と星の日")]
+        public bool[] holidayWeekdays = { false, false, true, false, false, false, true };
 
         [Header("開始の時刻")]
         [Tooltip("試作を始める時刻（時）。6.2 = 6時12分")]
@@ -88,6 +115,26 @@ namespace LifeSimProto
         public float userSpeed = 1f;
         public bool autoFast;
 
+        // ---- イベント ----
+        public readonly List<Gathering> gatherings = new List<Gathering>();
+        public readonly List<string> todayNotes = new List<string>();
+        public double blackoutUntil = -1, snackBonusUntil = -1;
+        public bool Blackout { get { return Now < blackoutUntil; } }
+        public bool SnackBonus { get { return Now < snackBonusUntil; } }
+        public bool IsHolidayToday { get { return Calendar.IsHoliday(Day, holidayWeekdays); } }
+        public bool BadWeatherToday { get { return Calendar.BadWeather(Day); } }
+
+        public Gathering ActiveGatheringFor(SimCharacter c)
+        {
+            foreach (var g in gatherings)
+            {
+                if (!g.Active(Now)) continue;
+                if (g.invited != null && !g.invited.Contains(c)) continue;
+                return g;
+            }
+            return null;
+        }
+
         public Vector3 exitPoint = new Vector3(0f, 0f, -13.2f);     // 授業へ出かけるときの行き先（外）
         public Vector3 entrancePoint = new Vector3(0f, 0f, -10.2f); // 帰ってきて最初に立つ場所
 
@@ -107,6 +154,7 @@ namespace LifeSimProto
             Build();
             SpawnCharacters();
             SetupCamera();
+            gameObject.AddComponent<EventDirector>();
             gameObject.AddComponent<SimHud>();
             Log("寮の試作を開始しました（" + Day + "日目 " + ScheduleMaker.Clock(Now) + "）");
         }
@@ -243,6 +291,20 @@ namespace LifeSimProto
                 {
                     float d = result == TalkResult.Fun ? 6f : (result == TalkResult.Normal ? 2f : -3f);
                     ChangeLove(other, d);
+                    // やきもち：Fが楽しそうに話しているのを、Fを好きな子が近くで見ている
+                    if (result == TalkResult.Fun)
+                    {
+                        var f = RomanceTarget;
+                        foreach (var c in characters)
+                        {
+                            if (c == other || c == f || !c.Present || c.LoveStage < 2) continue;
+                            Vector3 dd = c.transform.position - other.transform.position;
+                            if (Mathf.Abs(dd.y) > 1f || dd.sqrMagnitude > 36f) continue;
+                            c.ShowBubble("むぅ…", 2f);
+                            c.loveNeed = Mathf.Min(100f, c.loveNeed + 15f);
+                            Log(c.displayName + "は" + other.displayName + "と" + f.displayName + "を見て、少しやきもち");
+                        }
+                    }
                 }
             }
         }
@@ -313,8 +375,11 @@ namespace LifeSimProto
             c.room = id < rooms.Count ? rooms[id] : null;
             if (c.room != null)
             {
+                c.room.owner = id;
                 c.room.bed.owner = id;
                 c.room.desk.owner = id;
+                foreach (var cu in c.room.cushions) cu.label = name + "の部屋";
+                c.room.futon.label = name + "の部屋の布団";
                 worldLabels.Add(new KeyValuePair<Vector3, string>(c.room.labelPos, name + "の部屋"));
             }
             c.Init(this, body.transform, ring);

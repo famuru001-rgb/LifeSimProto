@@ -29,7 +29,7 @@ namespace LifeSimProto
         Rect TablePanel { get { return new Rect(VW - 492, 108, 480, 372); } }
         Rect LogPanel { get { return new Rect(12, VirtualHeight - 272, 760, 260); } }
         Rect HelpPanel { get { return new Rect(VW - 492, VirtualHeight - 232, 480, 220); } }
-        Rect DetailPanel { get { return new Rect(12, 108, 440, 690); } }
+        Rect DetailPanel { get { return new Rect(12, 108, 560, 690); } }
         Rect RomancePanel { get { return new Rect(VW - 492, 488, 480, 230); } }
 
         void Start()
@@ -219,7 +219,7 @@ namespace LifeSimProto
                 Vector2 g;
                 if (!ToGui(c.transform.position + Vector3.up * c.HeadHeight, s, out g)) continue;
 
-                string tag = c.displayName + "  " + c.actionText;
+                string tag = c.displayName + c.StatusTags() + "  " + c.actionText;
                 Vector2 size = nameTag.CalcSize(new GUIContent(tag));
                 Rect r = new Rect(g.x - size.x / 2f, g.y - size.y, size.x, size.y);
                 Color old = GUI.color;
@@ -272,17 +272,21 @@ namespace LifeSimProto
         {
             Rect r = InfoLine;
             var parts = new List<string>();
+            parts.Add(Calendar.DateText(world.Day, world.holidayWeekdays));
+            if (world.todayNotes.Count > 0) parts.Add("今日：" + string.Join("／", world.todayNotes.ToArray()));
+            if (world.Blackout) parts.Add("停電中");
+            if (world.SnackBonus) parts.Add("差し入れあり");
             if (world.autoFast) parts.Add("全員就寝中：" + world.allAsleepSpeed + "倍速");
             var away = new List<string>();
             var priv = new List<string>();
             foreach (var c in world.characters)
             {
-                if (c.state == SimCharacter.State.Away) away.Add(c.displayName + "（" + c.StateName().Replace("に出ている", "") + "）");
+                if (c.state == SimCharacter.State.Away) away.Add(c.displayName);
                 else if (c.state == SimCharacter.State.Private) priv.Add(c.displayName);
             }
             if (away.Count > 0) parts.Add("外出中：" + string.Join("・", away.ToArray()));
-            if (priv.Count > 0) parts.Add("部屋で二人きり：" + string.Join("・", priv.ToArray()));
-            parts.Add(selected == null ? "キャラをクリックで選択" : selected.displayName + "を選択中：会わせたい相手をクリック");
+            if (priv.Count > 0) parts.Add("部屋で過ごしている：" + string.Join("・", priv.ToArray()));
+            if (selected != null) parts.Add(selected.displayName + "を選択中：会わせたい相手をクリック");
             string text = string.Join("　｜　", parts.ToArray());
             Vector2 size = small.CalcSize(new GUIContent(text));
             GUI.Box(new Rect(r.x, r.y, size.x + 28, r.height), GUIContent.none, panel);
@@ -446,7 +450,7 @@ namespace LifeSimProto
             int shown = 0;
             foreach (var it in c.schedule)
             {
-                if (shown >= 4) break;
+                if (shown >= 3) break;
                 string mark = it.done ? "済 " : "　 ";
                 string time = ScheduleMaker.Clock(it.start) + (it.kind == TaskKind.Class ? "〜" + ScheduleMaker.Clock(it.end) : "");
                 if (it.done && it.end < world.Now && it.kind != TaskKind.Bed) continue;
@@ -455,7 +459,20 @@ namespace LifeSimProto
                 shown++;
             }
 
-            y += 8;
+            y += 4;
+            if (c.statuses.Count > 0)
+            {
+                foreach (var st in c.statuses)
+                {
+                    var def = Statuses.Get(st.kind);
+                    double left = st.until - world.Now;
+                    string remain = left > 1440 * 2 ? "" : (left >= 60 ? "あと" + Mathf.RoundToInt((float)(left / 60)) + "時間" : "あと" + Mathf.RoundToInt((float)left) + "分");
+                    GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "◆" + def.name + "：" + def.desc + "（" + remain + "）", small);
+                    y += 22;
+                }
+            }
+            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "今週の勉強量：" + Mathf.RoundToInt(c.weekStudy), small);
+            y += 26;
             var others = new List<SimCharacter>(world.characters);
             others.Remove(c);
             others.Sort((a, b) => world.rel.Get(c.id, b.id).CompareTo(world.rel.Get(c.id, a.id)));
