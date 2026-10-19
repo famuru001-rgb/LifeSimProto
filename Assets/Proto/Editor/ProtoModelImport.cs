@@ -15,7 +15,7 @@ namespace LifeSimProto.EditorTools
         const string ModelDir = "Assets/Proto/Resources/ProtoModels";
         const string MotionDir = "Assets/Proto/Resources/Motions";
 
-        public override uint GetVersion() { return 3; }
+        public override uint GetVersion() { return 4; }
 
         static bool IsModel(string p) { return p.Replace('\\', '/').StartsWith(ModelDir); }
         static bool IsMotion(string p) { return p.Replace('\\', '/').StartsWith(MotionDir); }
@@ -53,7 +53,7 @@ namespace LifeSimProto.EditorTools
                 c.loopTime = true;
                 c.lockRootRotation = true;      // 向きはゲーム側で決める
                 c.lockRootHeightY = true;       // 高さは元の動きのまま（座る動きで腰が下がる）
-                c.lockRootPositionXZ = true;    // その場で動く
+                c.lockRootPositionXZ = false;   // 前に進む動きは体に焼き込まない（ゲーム側で移動するので、その場で動く）
                 c.keepOriginalOrientation = true;
                 c.keepOriginalPositionY = true;
                 c.keepOriginalPositionXZ = true;

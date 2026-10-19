@@ -1962,6 +1962,8 @@ namespace LifeSimProto
                 if (Random.value < p)
                 {
                     rom.lover[id] = true;
+                    var joy = GetComponent<ProtoBody>();
+                    if (joy != null) joy.Gesture("Joy", 2.5f);
                     rom.Add(id, 10f, world.simTime);
                     world.rel.Add(id, partner.id, 10f, world.simTime);
                     partner.ShowBubble("ありがとう。よろしく", 2.4f);
@@ -2198,6 +2200,12 @@ namespace LifeSimProto
             }
             ShowBubble(a, 1.4f);
             o.ShowBubble(b, 1.4f);
+            // 仲がいいと手を振る（仮モデルに「手を振る」動きがあるとき）
+            if (aff >= 25f)
+            {
+                var pb = GetComponent<ProtoBody>();
+                if (pb != null) pb.Gesture("Wave", 1.2f);
+            }
             world.rel.Add(id, o.id, 0.5f, world.simTime);
             lonely = Mathf.Max(0f, lonely - 5f);
             o.lonely = Mathf.Max(0f, o.lonely - 5f);

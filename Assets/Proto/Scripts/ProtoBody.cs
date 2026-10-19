@@ -95,6 +95,15 @@ namespace LifeSimProto
             }
         }
 
+        // 一瞬の身ぶり（手を振る・喜ぶ）。立っているときだけ、その動きがあれば再生する
+        string gestureName;
+        float gestureUntil;
+        public void Gesture(string clipName, float seconds)
+        {
+            gestureName = clipName;
+            gestureUntil = Time.time + seconds;
+        }
+
         public static ProtoBody Create(GameObject owner, CharLook look)
         {
             var prefab = Resources.Load<GameObject>(look.male ? "ProtoModels/ProtoMale" : "ProtoModels/ProtoFemale");
@@ -366,7 +375,8 @@ namespace LifeSimProto
             {
                 if (pose == BodyPose.Stand)
                 {
-                    if (speed > 0.25f) clip = Clip("Walk");
+                    if (gestureName != null && Time.time < gestureUntil && Clip(gestureName) != null) clip = Clip(gestureName);
+                    else if (speed > 0.25f) clip = Clip("Walk");
                     else if (talking) clip = Clip("Talk") ?? Clip("Idle");
                     else clip = Clip("Idle");
                 }

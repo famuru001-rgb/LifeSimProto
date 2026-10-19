@@ -140,6 +140,39 @@ namespace LifeSimProto
     }
 
 #if UNITY_EDITOR
+    /// <summary>
+    /// 確認用の写真を撮る合図：再生中に F9 キー、または LifeSimProto\Logs\take_photos.txt というファイルを置く（Claudeが外から合図するため）。
+    /// </summary>
+    public class PhotoTrigger : MonoBehaviour
+    {
+        float timer;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        static void Boot()
+        {
+            var go = new GameObject("PhotoTrigger");
+            go.hideFlags = HideFlags.HideInHierarchy;
+            DontDestroyOnLoad(go);
+            go.AddComponent<PhotoTrigger>();
+        }
+
+        static string TriggerPath { get { return Path.GetFullPath(Path.Combine(Application.dataPath, "../Logs/take_photos.txt")); } }
+
+        void Update()
+        {
+            bool go = false;
+            var kb = UnityEngine.InputSystem.Keyboard.current;
+            if (kb != null && kb.f9Key.wasPressedThisFrame) go = true;
+            timer -= Time.unscaledDeltaTime;
+            if (timer <= 0f)
+            {
+                timer = 2f;
+                try { if (File.Exists(TriggerPath)) { File.Delete(TriggerPath); go = true; } } catch { }
+            }
+            if (go && FindAnyObjectByType<ProtoPhotoBooth>() == null) new GameObject("PhotoBooth").AddComponent<ProtoPhotoBooth>();
+        }
+    }
+
     /// <summary>再生中の警告・エラーをファイルにも残す（Claudeが確認するため）。保存先：LifeSimProto\Logs\play_log.txt</summary>
     static class PlayLogFile
     {
