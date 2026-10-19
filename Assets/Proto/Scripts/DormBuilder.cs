@@ -400,6 +400,11 @@ namespace LifeSimProto
             pois.Add(MakePoi("本棚の本を眺めている", new Vector3(-4.1f, 1.5f, 5f), new Vector3(-4.6f, 0f, 3.9f), new Vector3(-3.6f, 0f, 3.9f)));
             pois.Add(MakePoi("本棚の本を眺めている", new Vector3(4.1f, 1.5f, 5f), new Vector3(3.6f, 0f, 3.9f), new Vector3(4.6f, 0f, 3.9f)));
             pois.Add(MakePoi("窓の外を眺めている", new Vector3(6f, 2f, -3.4f), new Vector3(5.2f, 0f, -3.4f)));
+            // 魔法の練習場所（床の魔法陣）。趣味が「魔法の練習」のキャラだけが使う
+            Cyl("MagicCircle", new Vector3(-3.0f, 0.015f, -3.6f), new Vector3(1.8f, 0.004f, 1.8f), Quaternion.identity, ProtoArt.Glow(new Color(0.4f, 0.55f, 1f), 0.6f));
+            var magic = MakePoi("魔法の練習をしている", new Vector3(-3.0f, 1.2f, -3.6f), new Vector3(-3.6f, 0f, -3.2f), new Vector3(-2.4f, 0f, -4.0f));
+            magic.hobby = (int)SimCharacter.HobbyKind.Magic;
+            pois.Add(magic);
 
             AddArea("談話室", new Rect(-HalfW, -HalfD, HalfW * 2f, HalfD * 2f), 0);
         }

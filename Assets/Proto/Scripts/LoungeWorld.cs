@@ -27,6 +27,7 @@ namespace LifeSimProto
         public SimCharacter[] occupants;
         public int owner = -1;    // 個室の机など、持ち主だけが使う場所
         public bool counter;      // 食堂の受け取り口
+        public int hobby = -1;    // 趣味専用の場所（SimCharacter.HobbyKind）。-1 はだれでも
 
         public int FreeSlot()
         {
@@ -73,6 +74,7 @@ namespace LifeSimProto
         // ---- 状態 ----
         public GridNav nav0, nav1;
         public Relationships rel;
+        public Romance romance;
         public readonly List<SimCharacter> characters = new List<SimCharacter>();
         public readonly List<Seat> seats = new List<Seat>();
         public readonly List<Poi> pois = new List<Poi>();
@@ -121,7 +123,8 @@ namespace LifeSimProto
         // ================= 時間 =================
         public static bool IsNight(float minuteOfDay) { return minuteOfDay >= NightStartMin || minuteOfDay < NightEndMin; }
 
-        float GameMinutesPerSecond()
+        /// <summary>1秒（ゲームの時間の流れ）あたりに進むゲーム内の分。</summary>
+        public float GameMinutesPerSecond()
         {
             float nightGame = 1440f - NightStartMin + NightEndMin;  // 450分
             float dayGame = 1440f - nightGame;                       // 990分
@@ -218,30 +221,59 @@ namespace LifeSimProto
             if (log.Count > 80) log.RemoveAt(0);
         }
 
-        public void ReportTalk(SimCharacter a, SimCharacter b, TalkResult result)
+        public SimCharacter RomanceTarget { get { return romance != null && romance.targetId < characters.Count ? characters[romance.targetId] : null; } }
+
+        public void ReportTalk(SimCharacter a, SimCharacter b, TalkResult result, bool koibana = false)
         {
             Vector2Int stage = rel.Apply(a.id, b.id, result, simTime);
+            if (koibana && result == TalkResult.Fun) stage = new Vector2Int(stage.x, rel.Add(a.id, b.id, 3f, simTime).y);
             string word = result == TalkResult.Fun ? "楽しく話した ♪" : (result == TalkResult.Normal ? "ふつうに話した" : "少し気まずかった");
+            if (koibana) word = result == TalkResult.Fun ? "恋バナで盛り上がった ♪" : "恋バナをした";
             Log(a.displayName + "と" + b.displayName + "：" + word + "（好感度 " + Mathf.RoundToInt(rel.Get(a.id, b.id)) + "）");
             if (stage.y > stage.x)
                 Log("★ " + a.displayName + "と" + b.displayName + "が「" + Relationships.StageName(stage.y) + "」になった！");
             else if (stage.y < stage.x)
                 Log(a.displayName + "と" + b.displayName + "の関係が「" + Relationships.StageName(stage.y) + "」に戻った");
+
+            // Fとの会話は恋愛の気持ちも動く
+            if (romance != null)
+            {
+                SimCharacter other = a.id == romance.targetId ? b : (b.id == romance.targetId ? a : null);
+                if (other != null)
+                {
+                    float d = result == TalkResult.Fun ? 6f : (result == TalkResult.Normal ? 2f : -3f);
+                    ChangeLove(other, d);
+                }
+            }
+        }
+
+        public void ChangeLove(SimCharacter c, float delta)
+        {
+            if (romance == null || c.id == romance.targetId) return;
+            Vector2Int st = romance.Add(c.id, delta, simTime);
+            var t = RomanceTarget;
+            string tn = t != null ? t.displayName : "F";
+            if (st.y > st.x && st.y <= 2)
+                Log("♥ " + c.displayName + "が" + tn + "のことを「" + Romance.StageName(st.y) + "」になった");
+            else if (st.y < st.x && st.y < 3)
+                Log(c.displayName + "の" + tn + "への気持ちが「" + Romance.StageName(st.y) + "」に落ち着いた");
         }
 
         // ================= キャラ =================
         void SpawnCharacters()
         {
             rel = new Relationships(6, 12345);
-            AddCharacter(0, "A", "青髪・角", new Color(0.55f, 0.8f, 1f), 0.5f, 0.15f, false);
-            AddCharacter(1, "B", "エルフ", new Color(0.35f, 0.7f, 0.35f), 0.2f, 0.15f, false);
-            AddCharacter(2, "C", "猫耳", new Color(0.85f, 0.2f, 0.2f), 0.85f, 0.85f, false);
-            AddCharacter(3, "D", "黒髪ロング", new Color(0.13f, 0.13f, 0.15f), 0.25f, 0.5f, false);
-            AddCharacter(4, "E", "金髪ツインテール", new Color(0.95f, 0.8f, 0.35f), 0.8f, 0.5f, false);
-            AddCharacter(5, "F", "男性", new Color(0.55f, 0.55f, 0.58f), 0.5f, 0.5f, true);
+            romance = new Romance(6, 5, 777);
+            // 名前・見た目・色・人と話したい度・気まぐれ度・男性か・真面目さ・趣味（試作用の仮の値）
+            AddCharacter(0, "A", "青髪・角", new Color(0.55f, 0.8f, 1f), 0.5f, 0.15f, false, 0.7f, SimCharacter.HobbyKind.Reading);
+            AddCharacter(1, "B", "エルフ", new Color(0.35f, 0.7f, 0.35f), 0.2f, 0.15f, false, 0.8f, SimCharacter.HobbyKind.Magic);
+            AddCharacter(2, "C", "猫耳", new Color(0.85f, 0.2f, 0.2f), 0.85f, 0.85f, false, 0.2f, SimCharacter.HobbyKind.Walk);
+            AddCharacter(3, "D", "黒髪ロング", new Color(0.13f, 0.13f, 0.15f), 0.25f, 0.5f, false, 0.6f, SimCharacter.HobbyKind.Reading);
+            AddCharacter(4, "E", "金髪ツインテール", new Color(0.95f, 0.8f, 0.35f), 0.8f, 0.5f, false, 0.4f, SimCharacter.HobbyKind.Tea);
+            AddCharacter(5, "F", "男性", new Color(0.55f, 0.55f, 0.58f), 0.5f, 0.5f, true, 0.5f, SimCharacter.HobbyKind.Magic);
         }
 
-        void AddCharacter(int id, string name, string note, Color color, float social, float whim, bool male)
+        void AddCharacter(int id, string name, string note, Color color, float social, float whim, bool male, float diligence, SimCharacter.HobbyKind hobby)
         {
             var go = new GameObject("Char_" + name);
             go.transform.SetParent(root, false);
@@ -276,6 +308,8 @@ namespace LifeSimProto
             c.sociability = social;
             c.whim = whim;
             c.male = male;
+            c.diligence = diligence;
+            c.hobby = hobby;
             c.room = id < rooms.Count ? rooms[id] : null;
             if (c.room != null)
             {

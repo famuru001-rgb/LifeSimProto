@@ -29,7 +29,8 @@ namespace LifeSimProto
         Rect TablePanel { get { return new Rect(VW - 492, 108, 480, 372); } }
         Rect LogPanel { get { return new Rect(12, VirtualHeight - 272, 760, 260); } }
         Rect HelpPanel { get { return new Rect(VW - 492, VirtualHeight - 232, 480, 220); } }
-        Rect DetailPanel { get { return new Rect(12, 108, 420, 470); } }
+        Rect DetailPanel { get { return new Rect(12, 108, 440, 690); } }
+        Rect RomancePanel { get { return new Rect(VW - 492, 488, 480, 230); } }
 
         void Start()
         {
@@ -44,7 +45,7 @@ namespace LifeSimProto
 
         bool OverHud(Vector2 v)
         {
-            if (TopBar.Contains(v) || TablePanel.Contains(v) || LogPanel.Contains(v) || HelpPanel.Contains(v)) return true;
+            if (TopBar.Contains(v) || TablePanel.Contains(v) || LogPanel.Contains(v) || HelpPanel.Contains(v) || RomancePanel.Contains(v)) return true;
             if (selected != null && DetailPanel.Contains(v)) return true;
             return false;
         }
@@ -182,6 +183,7 @@ namespace LifeSimProto
             DrawTopBar();
             DrawInfoLine();
             DrawTable();
+            DrawRomance();
             DrawLog();
             DrawHelp();
             if (selected != null) DrawDetail();
@@ -272,8 +274,14 @@ namespace LifeSimProto
             var parts = new List<string>();
             if (world.autoFast) parts.Add("全員就寝中：" + world.allAsleepSpeed + "倍速");
             var away = new List<string>();
-            foreach (var c in world.characters) if (!c.Present) away.Add(c.displayName);
-            if (away.Count > 0) parts.Add("授業に出ている：" + string.Join("・", away.ToArray()));
+            var priv = new List<string>();
+            foreach (var c in world.characters)
+            {
+                if (c.state == SimCharacter.State.Away) away.Add(c.displayName + "（" + c.StateName().Replace("に出ている", "") + "）");
+                else if (c.state == SimCharacter.State.Private) priv.Add(c.displayName);
+            }
+            if (away.Count > 0) parts.Add("外出中：" + string.Join("・", away.ToArray()));
+            if (priv.Count > 0) parts.Add("部屋で二人きり：" + string.Join("・", priv.ToArray()));
             parts.Add(selected == null ? "キャラをクリックで選択" : selected.displayName + "を選択中：会わせたい相手をクリック");
             string text = string.Join("　｜　", parts.ToArray());
             Vector2 size = small.CalcSize(new GUIContent(text));
@@ -330,6 +338,42 @@ namespace LifeSimProto
             DrawLegend(new Rect(r.x + 312, ly, 150, 24), new Color(0.75f, 0.3f, 0.5f), "親友 80〜100");
         }
 
+        void DrawRomance()
+        {
+            var rom = world.romance;
+            var f = world.RomanceTarget;
+            if (rom == null || f == null) return;
+            Rect r = RomancePanel;
+            GUI.Box(r, GUIContent.none, panel);
+            GUI.Label(new Rect(r.x + 14, r.y + 8, 400, 30), f.displayName + "への気持ち", title);
+            float y = r.y + 44;
+            Color old = GUI.color;
+            foreach (var c in world.characters)
+            {
+                if (c.IsTarget) continue;
+                int st = rom.Stage(c.id);
+                float v = rom.love[c.id];
+                GUI.color = c.color;
+                GUI.DrawTexture(new Rect(r.x + 14, y + 4, 4, 18), ProtoArt.White);
+                GUI.color = old;
+                GUI.Label(new Rect(r.x + 24, y, 40, 26), c.displayName, small);
+                Rect bar = new Rect(r.x + 60, y + 6, 240, 14);
+                GUI.DrawTexture(bar, barBg);
+                Color bc = st == 3 ? new Color(1f, 0.35f, 0.55f) : (st == 2 ? new Color(0.95f, 0.5f, 0.65f) : (st == 1 ? new Color(0.85f, 0.65f, 0.75f) : new Color(0.55f, 0.55f, 0.6f)));
+                float since = world.simTime - rom.flashTime[c.id];
+                if (since < 2f) bc = Color.Lerp(new Color(1f, 0.85f, 0.2f), bc, since / 2f);
+                GUI.color = bc;
+                GUI.DrawTexture(new Rect(bar.x, bar.y, bar.width * Mathf.Clamp01(v / 100f), bar.height), ProtoArt.White);
+                GUI.color = new Color(1f, 1f, 1f, 0.35f);
+                GUI.DrawTexture(new Rect(bar.x + bar.width * Romance.ConfessAt / 100f, bar.y - 2, 2, bar.height + 4), ProtoArt.White);
+                GUI.color = old;
+                string label = (st == 3 ? "♥ " : "") + Romance.StageName(st) + "（" + Mathf.RoundToInt(v) + "）";
+                if (st < 3 && world.Now < rom.cooldownUntil[c.id]) label += " 告白後";
+                GUI.Label(new Rect(r.x + 310, y, 160, 26), label, small);
+                y += 34;
+            }
+        }
+
         void DrawLegend(Rect r, Color c, string text)
         {
             Color old = GUI.color;
@@ -381,12 +425,22 @@ namespace LifeSimProto
             string roomName = c.room != null ? "2階・" + c.room.name + "の部屋" : "なし";
             GUI.Label(new Rect(r.x + 14, r.y + 42, r.width - 28, 24), "今：" + c.actionText, small);
             GUI.Label(new Rect(r.x + 14, r.y + 66, r.width - 28, 24), "部屋：" + roomName, small);
-            GUI.Label(new Rect(r.x + 14, r.y + 90, r.width - 28, 24), "人と話したい度 " + Level(c.sociability) + "　気まぐれ度 " + Level(c.whim), small);
-            Bar(new Rect(r.x + 14, r.y + 122, r.width - 28, 22), "さみしさ", c.lonely, new Color(0.45f, 0.6f, 0.95f));
-            Bar(new Rect(r.x + 14, r.y + 150, r.width - 28, 22), "疲れ", c.tired, new Color(0.9f, 0.6f, 0.3f));
-            Bar(new Rect(r.x + 14, r.y + 178, r.width - 28, 22), "退屈", c.bored, new Color(0.6f, 0.85f, 0.4f));
+            GUI.Label(new Rect(r.x + 14, r.y + 90, r.width - 28, 24), "話したい度 " + Level(c.sociability) + "　気まぐれ " + Level(c.whim) + "　真面目さ " + Level(c.diligence), small);
+            string loveText = c.IsTarget ? "（恋愛の相手）" : "恋：" + Romance.StageName(world.romance.Stage(c.id)) + "（" + Mathf.RoundToInt(world.romance.love[c.id]) + "）";
+            GUI.Label(new Rect(r.x + 14, r.y + 114, r.width - 28, 24), "趣味：" + HobbyName(c.hobby) + "　" + loveText, small);
 
-            float y = r.y + 212;
+            float y = r.y + 146;
+            Bar(new Rect(r.x + 14, y, r.width - 28, 22), "さみしさ", c.lonely, new Color(0.45f, 0.6f, 0.95f)); y += 26;
+            Bar(new Rect(r.x + 14, y, r.width - 28, 22), "疲れ", c.tired, new Color(0.9f, 0.6f, 0.3f)); y += 26;
+            Bar(new Rect(r.x + 14, y, r.width - 28, 22), "退屈", c.bored, new Color(0.6f, 0.85f, 0.4f)); y += 26;
+            Bar(new Rect(r.x + 14, y, r.width - 28, 22), "空腹", c.hunger, new Color(0.95f, 0.75f, 0.3f)); y += 26;
+            Bar(new Rect(r.x + 14, y, r.width - 28, 22), "勉強", c.study, new Color(0.5f, 0.75f, 0.9f)); y += 26;
+            Bar(new Rect(r.x + 14, y, r.width - 28, 22), "趣味", c.hobbyNeed, new Color(0.75f, 0.6f, 0.95f)); y += 26;
+            Bar(new Rect(r.x + 14, y, r.width - 28, 22), "睡眠", c.sleepy, new Color(0.55f, 0.55f, 0.8f)); y += 26;
+            if (!c.IsTarget) { Bar(new Rect(r.x + 14, y, r.width - 28, 22), "恋心", c.loveNeed, new Color(1f, 0.5f, 0.65f)); y += 26; }
+            Bar(new Rect(r.x + 14, y, r.width - 28, 22), "性欲", c.desire, new Color(0.85f, 0.4f, 0.55f)); y += 26;
+
+            y += 8;
             GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "今日の予定", small);
             y += 24;
             int shown = 0;
@@ -411,6 +465,17 @@ namespace LifeSimProto
                 GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22),
                     o.displayName + "：" + Relationships.StageName(Relationships.StageOf(v)) + "（" + Mathf.RoundToInt(v) + "）", small);
                 y += 21;
+            }
+        }
+
+        static string HobbyName(SimCharacter.HobbyKind h)
+        {
+            switch (h)
+            {
+                case SimCharacter.HobbyKind.Reading: return "読書";
+                case SimCharacter.HobbyKind.Magic: return "魔法の練習";
+                case SimCharacter.HobbyKind.Tea: return "お茶";
+                default: return "散歩";
             }
         }
 
