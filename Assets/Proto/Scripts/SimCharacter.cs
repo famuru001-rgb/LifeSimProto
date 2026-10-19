@@ -102,6 +102,13 @@ namespace LifeSimProto
         SimCharacter pendingOrder;
         bool hasOrder;
         float baseSpeed;
+        // その場での会話・すれ違いのあいさつ
+        bool chatting;
+        SimCharacter chatPartner;
+        float chatCooldown = 5f;
+        float greetTimer;
+        float chatTime;
+        int chatToken;
         Vector3 destination;
         Vector3 progressPos;
         float progressTimer;
@@ -203,12 +210,42 @@ namespace LifeSimProto
         }
 
         /// <summary>Fがほかの子と楽しそうに話しているのを見た（仲は悪くならない）。</summary>
-        public void SawFWithOther()
+        public void SawFWithOther(SimCharacter f, SimCharacter other)
         {
             if (IsTarget || LoveStage < 2) return;
+            if (!CanSee(f) && !CanSee(other)) return;
             if (!Chance(0.4f)) return;
             Escalate(StatusLine.Jealousy);
             ShowBubble(GetStage(StatusLine.Jealousy) >= 2 ? "むぅ…！" : "むぅ…", 2f);
+        }
+
+        /// <summary>相手が視界に入っているか（同じ階・8m以内・正面から左右70度以内・間に壁がない）。</summary>
+        public bool CanSee(SimCharacter o)
+        {
+            if (o == null || !o.Present || state == State.Sleeping || state == State.Private) return false;
+            Vector3 d = o.transform.position - transform.position;
+            if (Mathf.Abs(d.y) > 1f) return false;
+            d.y = 0f;
+            float dist = d.magnitude;
+            if (dist > 8f) return false;
+            if (dist > 0.5f && Vector3.Angle(transform.forward, d) > 70f) return false;
+            var nav = world.NavAt(transform.position);
+            return WallFree(nav, transform.position, o.transform.position);
+        }
+
+        /// <summary>2点の間に壁がないか（家具は見通せるとして、部屋の外側＝通れないマスが長く続くと壁とみなす）。</summary>
+        static bool WallFree(GridNav nav, Vector3 a, Vector3 b)
+        {
+            float dist = Vector2.Distance(new Vector2(a.x, a.z), new Vector2(b.x, b.z));
+            int steps = Mathf.CeilToInt(dist / 0.2f);
+            int blockedRun = 0;
+            for (int i = 1; i < steps; i++)
+            {
+                Vector3 p = Vector3.Lerp(a, b, i / (float)steps);
+                if (!nav.IsFree(p)) { blockedRun++; if (blockedRun * 0.2f > 1.4f) return false; }
+                else blockedRun = 0;
+            }
+            return true;
         }
 
         IEnumerable<StageEffect> Effects()
@@ -446,6 +483,14 @@ namespace LifeSimProto
                 if (state == State.Activity && poi == null && gathering != null) FaceTowards(gatherFocus, dt);
                 if (state == State.Activity && goal == Goal.None && choice == Choice.Hover && world.RomanceTarget != null) FaceTowards(world.RomanceTarget.transform.position, dt);
                 if (bubble == null && state != State.Sleeping && state != State.Private) IdleBubbles(dt);
+                if (!chatting && (state == State.Eating || state == State.Bathing || state == State.Sitting))
+                {
+                    chatCooldown -= dt;
+                    if (chatCooldown <= 0f) { chatCooldown = Random.Range(6f, 14f); TryAmbientChat(); }
+                }
+                if (chatting) { chatTime += dt; if (chatTime > 20f) EndChat(); } // 念のための安全装置
+                greetTimer -= dt;
+                if (greetTimer <= 0f) { greetTimer = 0.4f; TryGreet(); }
             }
 
             thinkTimer -= dt;
@@ -647,11 +692,14 @@ namespace LifeSimProto
                 Vector3 d = o.transform.position - p;
                 if (Mathf.Abs(d.y) > 1f || d.sqrMagnitude > 3.5f * 3.5f) continue;
                 if (avoid) { b -= 1f; continue; }
-                b += (world.rel.Get(id, o.id) - 30f) / 20f;
-                if (o.IsTarget && LoveStage >= 2) b += 3f;
-                else if (o.IsTarget && LoveStage == 1) b += 1.5f;
-                if (IsTarget && o.LoveStage >= 2) b += 1.5f;
-                if (o == clingTarget) b += 6f;
+                // 近いほど強く効く（となりの席がいちばん）
+                float k = 0.4f + 1.2f * Mathf.Clamp01((3.5f - Mathf.Sqrt(d.x * d.x + d.z * d.z)) / 2.5f);
+                float v = (world.rel.Get(id, o.id) - 30f) / 20f;
+                if (o.IsTarget && LoveStage >= 2) v += 3f;
+                else if (o.IsTarget && LoveStage == 1) v += 1.5f;
+                if (IsTarget && o.LoveStage >= 2) v += 1.5f;
+                if (o == clingTarget) v += 6f;
+                b += v * k;
             }
             return b;
         }
@@ -819,8 +867,13 @@ namespace LifeSimProto
         {
             LeaveCurrentSpot();
             Seat free = null;
+            float bestScore = float.MinValue;
             foreach (var s in world.seats)
-                if (s.kind == SeatKind.Bath && s.occupant == null) { free = s; break; }
+            {
+                if (s.kind != SeatKind.Bath || s.occupant != null) continue;
+                float sc = PlaceBonus(s.position) + Random.value;
+                if (sc > bestScore) { bestScore = sc; free = s; }
+            }
             if (free == null) return;
             seat = free;
             seat.occupant = this;
@@ -987,6 +1040,7 @@ namespace LifeSimProto
         {
             EnsureSchedule();
             double now = world.Now;
+            if (chatting) return; // その場での会話が終わるまで待つ
 
             switch (state)
             {
@@ -1822,7 +1876,7 @@ namespace LifeSimProto
 
         public bool CanStartTalk(SimCharacter by)
         {
-            if (!Present || state == State.Talking || state == State.Bathing || state == State.Private) return false;
+            if (!Present || state == State.Talking || state == State.Bathing || state == State.Private || chatting) return false;
             if (state == State.Sleeping && !sickRest) return false;
             if (hasOrder && target != by) return false;
             if (OnMission) return false;
@@ -2007,6 +2061,145 @@ namespace LifeSimProto
             }
         }
 
+        // ================= その場での会話（食事中・お風呂・座っているとき） =================
+        static readonly string[] MealLines = { "これおいしいね", "今日のスープ好きかも", "おかわりしようかな", "食べたら何する？", "午後の授業さ…", "このパン、焼きたて！", "デザートあるかな" };
+        static readonly string[] BathLines = { "いいお湯〜", "ふぅ…生き返る", "今日も疲れたね", "肩こった〜", "明日の予定は？", "のぼせそう…" };
+        static readonly string[] SnackLines = { "おやつ半分こする？", "このクッキーおいしい", "お茶もう一杯どう？", "甘いもの最高…", "夕飯前なのに食べちゃった" };
+        static readonly string[] SeatLines = { "ねえねえ", "それでさ…", "わかる〜", "ふふっ", "へえ！", "今日どうだった？", "眠くなってきた" };
+
+        bool IsSeatedState(State s) { return s == State.Eating || s == State.Bathing || s == State.Sitting; }
+
+        void TryAmbientChat()
+        {
+            if (NoTalk() || sickRest || dozing || hasOrder) return;
+            if (Random.value > 0.45f * (0.6f + sociability)) return;
+            float range = state == State.Bathing ? 2.6f : 1.8f;
+            SimCharacter best = null;
+            float total = 0f;
+            var cands = new List<SimCharacter>();
+            var ws = new List<float>();
+            foreach (var o in world.characters)
+            {
+                if (o == this || !o.Present || o.chatting || o.dozing || o.sickRest || o.NoTalk() || o.hasOrder) continue;
+                if (!IsSeatedState(o.state)) continue;
+                if ((state == State.Bathing) != (o.state == State.Bathing)) continue;
+                Vector3 d = o.transform.position - transform.position;
+                if (Mathf.Abs(d.y) > 0.5f || Flat(d).magnitude > range) continue;
+                float w = (world.rel.Get(id, o.id) + 10f) / 110f;
+                if (o.IsTarget && LoveStage >= 1) w += 0.5f;
+                cands.Add(o); ws.Add(w); total += w;
+            }
+            if (cands.Count == 0) return;
+            float r = Random.value * total;
+            for (int i = 0; i < cands.Count; i++) { r -= ws[i]; if (r <= 0f) { best = cands[i]; break; } }
+            if (best == null) best = cands[cands.Count - 1];
+            StartCoroutine(AmbientChat(best));
+        }
+
+        bool StillChat(SimCharacter o)
+        {
+            if (!chatting || !o.chatting || o.chatPartner != this) return false;
+            if (!IsSeatedState(state) || !IsSeatedState(o.state)) return false;
+            return (o.transform.position - transform.position).sqrMagnitude < 3.2f * 3.2f;
+        }
+
+        IEnumerator AmbientChat(SimCharacter o)
+        {
+            chatting = true; o.chatting = true;
+            chatPartner = o; o.chatPartner = this;
+            chatTime = 0f; o.chatTime = 0f;
+            int token = ++chatToken;
+            bool eating = state == State.Eating && o.state == State.Eating;
+            bool meal = eating && (act == Act.Meal || o.act == Act.Meal);
+            bool bath = state == State.Bathing;
+            string[] pool = meal ? MealLines : (eating ? SnackLines : (bath ? BathLines : SeatLines));
+            string place = meal ? "食事しながら" : (eating ? "おやつを食べながら" : (bath ? "お風呂の中" : "座りながら"));
+            int lines = Random.Range(2, 5);
+            bool ok = true;
+            for (int i = 0; i < lines; i++)
+            {
+                if (!StillChat(o)) { ok = false; break; }
+                var speaker = i % 2 == 0 ? this : o;
+                speaker.ShowBubble(pool[Random.Range(0, pool.Length)], 1.5f);
+                yield return new WaitForSeconds(1.6f);
+            }
+            if (ok && StillChat(o))
+            {
+                TalkResult result = world.rel.Roll(id, o.id, 0.1f + TalkBonus() + o.TalkBonus());
+                if (result == TalkResult.Fun) { ShowBubble("♪", 1.2f); o.ShowBubble("♪", 1.2f); }
+                world.ReportTalk(this, o, result, false, place);
+                AfterTalkStatuses(o, result);
+                o.AfterTalkStatuses(this, result);
+                lonely = Mathf.Max(0f, lonely - 20f);
+                o.lonely = Mathf.Max(0f, o.lonely - 20f);
+                bored = Mathf.Max(0f, bored - 8f);
+                o.bored = Mathf.Max(0f, o.bored - 8f);
+                if (o.IsTarget) loveNeed = Mathf.Max(0f, loveNeed - 25f);
+                if (IsTarget) o.loveNeed = Mathf.Max(0f, o.loveNeed - 25f);
+            }
+            if (o.chatPartner == this) { o.chatting = false; o.chatPartner = null; o.chatCooldown = Random.Range(8f, 16f); }
+            if (token == chatToken && chatPartner == o) { chatting = false; chatPartner = null; }
+            chatCooldown = Random.Range(8f, 16f);
+        }
+
+        void EndChat()
+        {
+            if (!chatting) return;
+            if (chatPartner != null && chatPartner.chatPartner == this) { chatPartner.chatting = false; chatPartner.chatPartner = null; }
+            chatting = false;
+            chatPartner = null;
+        }
+
+        // ================= すれ違いのあいさつ =================
+        bool CanGreet()
+        {
+            if (!Present || state == State.Private || state == State.Talking || state == State.Sleeping || state == State.Bathing) return false;
+            if (CurrentPose() != Pose.Stand || chatting || NoTalk()) return false;
+            return state == State.Walking || state == State.Approaching || state == State.Idle || state == State.Waiting;
+        }
+
+        void TryGreet()
+        {
+            if (!CanGreet() || !IsMoving) return;
+            foreach (var o in world.characters)
+            {
+                if (o == this || !o.CanGreet()) continue;
+                Vector3 d = o.transform.position - transform.position;
+                if (Mathf.Abs(d.y) > 0.5f || Flat(d).magnitude > 1.6f) continue;
+                if (!world.GreetReady(id, o.id)) continue;
+                world.MarkGreet(id, o.id);
+                if (Random.value > 0.65f) continue;
+                Greet(o);
+                return;
+            }
+        }
+
+        void Greet(SimCharacter o)
+        {
+            float aff = world.rel.Get(id, o.id);
+            float m = world.MinuteOfDay;
+            string hello = m < 600f ? "おはよう" : (m >= 1260f ? "おやすみ" : "やあ");
+            string a, b;
+            if (aff < 25f) { a = "（会釈）"; b = "（会釈）"; }
+            else if (aff < 60f) { a = hello; b = hello == "やあ" ? "おつかれ" : hello; }
+            else { a = "あ、" + o.displayName + "！"; b = Random.value < 0.5f ? "あとで話そ♪" : "ふふっ"; }
+            // Fとのすれ違い
+            SimCharacter girl = IsTarget ? o : (o.IsTarget ? this : null);
+            if (girl != null && girl.LoveStage >= 1)
+            {
+                var f = IsTarget ? this : o;
+                string gl = girl.GetStage(StatusLine.Shy) > 0 ? "っ…（目をそらす）" : (girl.LoveStage >= 2 ? "あ…" + f.displayName + "くん♡" : "あ、" + f.displayName + "くん");
+                if (girl == this) { a = gl; b = hello; } else { a = hello; b = gl; }
+                world.ChangeLove(girl, 0.4f);
+                girl.lastFContact = world.Now;
+            }
+            ShowBubble(a, 1.4f);
+            o.ShowBubble(b, 1.4f);
+            world.rel.Add(id, o.id, 0.5f, world.simTime);
+            lonely = Mathf.Max(0f, lonely - 5f);
+            o.lonely = Mathf.Max(0f, o.lonely - 5f);
+        }
+
         void EndTalk(SimCharacter partner)
         {
             partner.ExitTalk();
@@ -2063,22 +2256,18 @@ namespace LifeSimProto
             if (!arrived.Contains(f) || arrived.Count < 2) { CancelPrivate(group); yield break; }
             foreach (var c in group) if (!arrived.Contains(c)) c.CancelPrivateSelf();
 
-            // 並び：ベッドの縁に2人並んで座る。3人目以降は座布団
+            // 並び：全員ベッドの縁に並んで座る（最大4人）
             Vector3 along = r.bed.forward;
             Vector3 edgeOut = new Vector3(0f, 0f, 1f);
-            var spots = new List<KeyValuePair<Vector3, Vector3>>
-            {
-                new KeyValuePair<Vector3, Vector3>(r.bed.position - along * 0.35f + edgeOut * 0.15f, edgeOut),
-                new KeyValuePair<Vector3, Vector3>(r.bed.position + along * 0.25f + edgeOut * 0.15f, edgeOut),
-                new KeyValuePair<Vector3, Vector3>(r.cushions[0].position, r.cushions[0].forward),
-                new KeyValuePair<Vector3, Vector3>(r.cushions[1].position, r.cushions[1].forward),
-            };
+            float[] offs = arrived.Count <= 2 ? new[] { -0.3f, 0.2f } : (arrived.Count == 3 ? new[] { -0.55f, -0.05f, 0.45f } : new[] { -0.72f, -0.25f, 0.22f, 0.69f });
+            var spots = new List<KeyValuePair<Vector3, Vector3>>();
+            foreach (var o in offs) spots.Add(new KeyValuePair<Vector3, Vector3>(r.bed.position + along * o + edgeOut * 0.15f, edgeOut));
             double until = world.Now + 30.0 + 10.0 * (arrived.Count - 2);
             var names = new List<string>();
             for (int i = 0; i < arrived.Count; i++)
             {
                 var sp = spots[Mathf.Min(i, spots.Count - 1)];
-                arrived[i].EnterPrivate(until, r, sp.Key, sp.Value, i >= 2);
+                arrived[i].EnterPrivate(until, r, sp.Key, sp.Value, false);
                 names.Add(arrived[i].displayName);
             }
             world.Log("♥ " + string.Join("・", names.ToArray()) + "が" + r.AreaName + "で一緒に過ごしている");
@@ -2153,6 +2342,7 @@ namespace LifeSimProto
 
         void EnterTalk(SimCharacter by)
         {
+            EndChat();
             StopAllCoroutines();
             path.Clear();
             bool seated = state == State.Sitting || state == State.Eating || sickRest;
@@ -2417,6 +2607,7 @@ namespace LifeSimProto
 
         void LeaveCurrentSpot()
         {
+            EndChat();
             bool atSeat = seat != null && (state == State.Sitting || state == State.Eating || state == State.Bathing || state == State.Sleeping);
             if (atSeat) transform.position = world.NearestFree(seat.approach);
             ReleaseSeatAndPoi();

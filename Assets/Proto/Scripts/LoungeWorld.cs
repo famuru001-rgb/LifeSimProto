@@ -280,13 +280,25 @@ namespace LifeSimProto
 
         public SimCharacter RomanceTarget { get { return romance != null && romance.targetId < characters.Count ? characters[romance.targetId] : null; } }
 
-        public void ReportTalk(SimCharacter a, SimCharacter b, TalkResult result, bool koibana = false)
+        // すれ違いのあいさつの記録（同じ2人は1時間に1回まで）
+        readonly Dictionary<int, double> greetTimes = new Dictionary<int, double>();
+        public bool GreetReady(int a, int b)
+        {
+            double t;
+            int key = Mathf.Min(a, b) * 100 + Mathf.Max(a, b);
+            return !greetTimes.TryGetValue(key, out t) || Now - t > 60.0;
+        }
+        public void MarkGreet(int a, int b) { greetTimes[Mathf.Min(a, b) * 100 + Mathf.Max(a, b)] = Now; }
+
+        public void ReportTalk(SimCharacter a, SimCharacter b, TalkResult result, bool koibana = false, string place = null)
         {
             Vector2Int stage = rel.Apply(a.id, b.id, result, simTime);
             if (koibana && result == TalkResult.Fun) stage = new Vector2Int(stage.x, rel.Add(a.id, b.id, 3f, simTime).y);
             string word = result == TalkResult.Fun ? "楽しく話した ♪" : (result == TalkResult.Normal ? "ふつうに話した" : "少し気まずかった");
             if (koibana) word = result == TalkResult.Fun ? "恋バナで盛り上がった ♪" : "恋バナをした";
-            Log(a.displayName + "と" + b.displayName + "：" + word + "（好感度 " + Mathf.RoundToInt(rel.Get(a.id, b.id)) + "）");
+            // その場での会話（食事中・お風呂・座ったまま）は、楽しかったときだけ記録する
+            if (place == null || result == TalkResult.Fun)
+                Log(a.displayName + "と" + b.displayName + "：" + (place != null ? place + "で" : "") + word + "（好感度 " + Mathf.RoundToInt(rel.Get(a.id, b.id)) + "）");
             if (stage.y > stage.x)
                 Log("★ " + a.displayName + "と" + b.displayName + "が「" + Relationships.StageName(stage.y) + "」になった！");
             else if (stage.y < stage.x)
@@ -308,8 +320,8 @@ namespace LifeSimProto
                         {
                             if (c == other || c == f || !c.Present || c.InPrivate || c.LoveStage < 2) continue;
                             Vector3 dd = c.transform.position - other.transform.position;
-                            if (Mathf.Abs(dd.y) > 1f || dd.sqrMagnitude > 36f) continue;
-                            c.SawFWithOther();
+                            if (Mathf.Abs(dd.y) > 1f || dd.sqrMagnitude > 81f) continue;
+                            c.SawFWithOther(f, other);
                         }
                     }
                 }
