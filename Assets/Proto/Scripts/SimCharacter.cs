@@ -432,7 +432,10 @@ namespace LifeSimProto
             world = w;
             visual = visualRoot;
             ring = selectionRing;
-            renderers = GetComponentsInChildren<Renderer>(true);
+            // 表示を切り替える対象は、今表示している部品だけ（仮モデルがあるときは仮の人形は出さない）
+            var rl = new List<Renderer>();
+            foreach (var r in GetComponentsInChildren<Renderer>(true)) if (r.enabled) rl.Add(r);
+            renderers = rl.ToArray();
             colliders = GetComponentsInChildren<Collider>(true);
             baseSpeed = male ? 1.35f : 1.2f;
             lonely = Random.Range(10f, 40f);
@@ -2053,8 +2056,8 @@ namespace LifeSimProto
                 if (lv > 0 && lv < 3) Ease(StatusLine.Love);
                 if (GetStage(StatusLine.Jealousy) > 0) Ease(StatusLine.Jealousy);
             }
-            // 風邪がうつる
-            if (other.GetStage(StatusLine.Cold) >= 1 && GetStage(StatusLine.Cold) == 0 && Chance(0.05f))
+            // 風邪がうつる（熱で寝込んでいる＝2段階以上の人からだけ）
+            if (other.GetStage(StatusLine.Cold) >= 2 && GetStage(StatusLine.Cold) == 0 && Chance(0.05f))
             {
                 SetStage(StatusLine.Cold, 1);
                 world.Log(other.displayName + "の風邪が" + displayName + "にうつった");
@@ -2641,6 +2644,12 @@ namespace LifeSimProto
         }
 
         enum Pose { Stand, Sit, SitFloor, Lie, LieFloor, Soak }
+
+        // 仮モデル（ProtoBody）に渡す今の姿勢
+        public BodyPose BodyPoseNow { get { return (BodyPose)(int)CurrentPose(); } }
+        public bool IsTalkingNow { get { return state == State.Talking || chatting; } }
+        public bool IsEatingNow { get { return state == State.Eating; } }
+        public bool IsDozingNow { get { var p = CurrentPose(); return dozing && (p == Pose.Sit || p == Pose.SitFloor); } }
 
         Pose CurrentPose()
         {

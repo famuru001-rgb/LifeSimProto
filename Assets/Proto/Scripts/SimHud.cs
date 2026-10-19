@@ -29,11 +29,11 @@ namespace LifeSimProto
 
         Rect TopBar { get { return new Rect(12, 12, 1400, 50); } }
         Rect InfoLine { get { return new Rect(12, 66, 1400, 32); } }
-        Rect TablePanel { get { return new Rect(VW - 492, 108, 480, 372); } }
+        Rect TablePanel { get { return new Rect(VW - 492, 108, 480, 400); } }
         Rect LogPanel { get { return new Rect(VW - 1260, VirtualHeight - 272, 760, 260); } }
         Rect HelpPanel { get { return new Rect(VW - 492, VirtualHeight - 262, 480, 250); } }
         Rect DetailPanel { get { return new Rect(12, 108, 580, 960); } }
-        Rect RomancePanel { get { return new Rect(VW - 492, 488, 480, 230); } }
+        Rect RomancePanel { get { return new Rect(VW - 492, 516, 480, 292); } }
         Rect ShopPanel { get { return new Rect(VW / 2f - 360f, 130f, 720f, 90f + ItemBook.All.Count * 48f); } }
 
         PlayerControl Player { get { return world != null ? world.player : null; } }
@@ -391,7 +391,7 @@ namespace LifeSimProto
             GUI.Box(r, GUIContent.none, panel);
             GUI.Label(new Rect(r.x + 14, r.y + 8, 300, 30), "関係表（好感度）", title);
             int n = world.characters.Count;
-            float cw = 62, ch = 38;
+            float cw = n <= 6 ? 62 : 42, ch = n <= 6 ? 38 : 28;
             float ox = r.x + 16, oy = r.y + 46;
             Color old = GUI.color;
             for (int i = 0; i < n; i++)
@@ -466,7 +466,7 @@ namespace LifeSimProto
                 string lab = (st == 3 ? "♥ " : "") + Romance.StageName(st) + "（" + Mathf.RoundToInt(v) + "）";
                 if (st < 3 && world.Now < rom.cooldownUntil[c.id]) lab += " 告白後";
                 GUI.Label(new Rect(r.x + 310, y, 160, 26), lab, small);
-                y += 34;
+                y += 26;
             }
         }
 

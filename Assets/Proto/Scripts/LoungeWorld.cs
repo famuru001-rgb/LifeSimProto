@@ -343,8 +343,8 @@ namespace LifeSimProto
         // ================= キャラ =================
         void SpawnCharacters()
         {
-            rel = new Relationships(6, 12345);
-            romance = new Romance(6, 5, 777);
+            rel = new Relationships(10, 12345);
+            romance = new Romance(10, 5, 777);
             // 名前・見た目・色・人と話したい度・気まぐれ度・男性か・真面目さ・趣味（試作用の仮の値）
             AddCharacter(0, "A", "青髪・角", new Color(0.55f, 0.8f, 1f), 0.5f, 0.15f, false, 0.7f, SimCharacter.HobbyKind.Reading);
             AddCharacter(1, "B", "エルフ", new Color(0.35f, 0.7f, 0.35f), 0.2f, 0.15f, false, 0.8f, SimCharacter.HobbyKind.Magic);
@@ -352,6 +352,11 @@ namespace LifeSimProto
             AddCharacter(3, "D", "黒髪ロング", new Color(0.13f, 0.13f, 0.15f), 0.25f, 0.5f, false, 0.6f, SimCharacter.HobbyKind.Reading);
             AddCharacter(4, "E", "金髪ツインテール", new Color(0.95f, 0.8f, 0.35f), 0.8f, 0.5f, false, 0.4f, SimCharacter.HobbyKind.Tea);
             AddCharacter(5, "F", "男性", new Color(0.55f, 0.55f, 0.58f), 0.5f, 0.5f, true, 0.5f, SimCharacter.HobbyKind.Magic);
+            // 第7版で追加（見た目・性格は仮）
+            AddCharacter(6, "G", "銀髪ボブ・眼鏡", new Color(0.82f, 0.84f, 0.9f), 0.3f, 0.3f, false, 0.9f, SimCharacter.HobbyKind.Magic);
+            AddCharacter(7, "H", "茶髪ポニーテール", new Color(0.62f, 0.4f, 0.22f), 0.9f, 0.6f, false, 0.35f, SimCharacter.HobbyKind.Walk);
+            AddCharacter(8, "I", "桃色ロング・狐耳", new Color(1f, 0.6f, 0.75f), 0.6f, 0.7f, false, 0.5f, SimCharacter.HobbyKind.Tea);
+            AddCharacter(9, "J", "紫髪ショート", new Color(0.58f, 0.4f, 0.85f), 0.4f, 0.3f, false, 0.65f, SimCharacter.HobbyKind.Reading);
         }
 
         void AddCharacter(int id, string name, string note, Color color, float social, float whim, bool male, float diligence, SimCharacter.HobbyKind hobby)
@@ -380,6 +385,14 @@ namespace LifeSimProto
             ring.GetComponent<Renderer>().sharedMaterial = ringMat;
             Destroy(ring.GetComponent<Collider>());
             ring.SetActive(false);
+
+            // 仮モデル（Blenderで作った人型）があれば使い、仮の人形は見えなくする（クリック用の当たり判定は残す）
+            var look = CharLook.Get(name, male, color);
+            if (ProtoBody.Create(go, look) != null)
+            {
+                body.GetComponent<Renderer>().enabled = false;
+                face.GetComponent<Renderer>().enabled = false;
+            }
 
             var c = go.AddComponent<SimCharacter>();
             c.id = id;
