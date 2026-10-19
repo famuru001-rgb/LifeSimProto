@@ -91,6 +91,12 @@ namespace LifeSimProto
         [Tooltip("休日にする曜日（チェックした曜日が休日）。初期値は水の日と星の日")]
         public bool[] holidayWeekdays = { false, false, true, false, false, false, true };
 
+        [Header("状態異常")]
+        [Tooltip("1人が同時に持てる状態の数（系統の数）")]
+        public int maxStatuses = 3;
+        [Tooltip("状態が起きる確率の倍率（1 で標準。小さくすると起きにくい）")]
+        public float statusChance = 0.6f;
+
         [Header("開始の時刻")]
         [Tooltip("試作を始める時刻（時）。6.2 = 6時12分")]
         public float startHour = 6.2f;
@@ -123,6 +129,8 @@ namespace LifeSimProto
         public bool SnackBonus { get { return Now < snackBonusUntil; } }
         public bool IsHolidayToday { get { return Calendar.IsHoliday(Day, holidayWeekdays); } }
         public bool BadWeatherToday { get { return Calendar.BadWeather(Day); } }
+        public bool ExamEveToday { get { return Calendar.IsExamEve(Day, holidayWeekdays); } }
+        public PlayerControl player;
 
         public Gathering ActiveGatheringFor(SimCharacter c)
         {
@@ -154,6 +162,7 @@ namespace LifeSimProto
             Build();
             SpawnCharacters();
             SetupCamera();
+            player = gameObject.AddComponent<PlayerControl>();
             gameObject.AddComponent<EventDirector>();
             gameObject.AddComponent<SimHud>();
             Log("寮の試作を開始しました（" + Day + "日目 " + ScheduleMaker.Clock(Now) + "）");
@@ -291,18 +300,16 @@ namespace LifeSimProto
                 {
                     float d = result == TalkResult.Fun ? 6f : (result == TalkResult.Normal ? 2f : -3f);
                     ChangeLove(other, d);
-                    // やきもち：Fが楽しそうに話しているのを、Fを好きな子が近くで見ている
+                    // やきもち：Fが楽しそうに話しているのを、Fを好きな子が近くで見ている（仲は悪くならない）
                     if (result == TalkResult.Fun)
                     {
                         var f = RomanceTarget;
                         foreach (var c in characters)
                         {
-                            if (c == other || c == f || !c.Present || c.LoveStage < 2) continue;
+                            if (c == other || c == f || !c.Present || c.InPrivate || c.LoveStage < 2) continue;
                             Vector3 dd = c.transform.position - other.transform.position;
                             if (Mathf.Abs(dd.y) > 1f || dd.sqrMagnitude > 36f) continue;
-                            c.ShowBubble("むぅ…", 2f);
-                            c.loveNeed = Mathf.Min(100f, c.loveNeed + 15f);
-                            Log(c.displayName + "は" + other.displayName + "と" + f.displayName + "を見て、少しやきもち");
+                            c.SawFWithOther();
                         }
                     }
                 }

@@ -5,7 +5,9 @@ using UnityEngine.InputSystem;
 namespace LifeSimProto
 {
     /// <summary>
-    /// 画面の表示（時計・速さ・頭の上の名前と吹き出し・関係表・記録）と、クリックでの指示。
+    /// 画面の表示（時計・速さ・名前と状態・吹き出し・関係表・記録・購買部）と、クリックでの操作。
+    /// プレイヤーはFを操作する：Fを選んで床をクリックで移動、キャラをクリックで話しかける。
+    /// ほかのキャラを選んで相手をクリックすると、Fが「〇〇に会いに行って」とお願いしに行く。
     /// 試作なので Unity の簡易表示（OnGUI）で作っている。
     /// </summary>
     public class SimHud : MonoBehaviour
@@ -16,21 +18,26 @@ namespace LifeSimProto
         SimCharacter lastClicked;
         float lastClickTime;
         float speedBeforePause = 1f;
+        bool shopOpen;
 
-        GUIStyle panel, label, small, title, bubble, nameTag, cell, button, buttonOn, worldLabel, clock;
+        GUIStyle panel, label, small, tiny, title, bubble, nameTag, cell, button, buttonOn, smallButton, worldLabel, clock, chip;
         Texture2D panelTex, bubbleTex, barBg;
 
         const float VirtualHeight = 1080f;
         float Scale { get { return Mathf.Max(0.55f, Screen.height / VirtualHeight); } }
         float VW { get { return Screen.width / Scale; } }
 
-        Rect TopBar { get { return new Rect(12, 12, 1240, 50); } }
-        Rect InfoLine { get { return new Rect(12, 66, 1240, 32); } }
+        Rect TopBar { get { return new Rect(12, 12, 1400, 50); } }
+        Rect InfoLine { get { return new Rect(12, 66, 1400, 32); } }
         Rect TablePanel { get { return new Rect(VW - 492, 108, 480, 372); } }
-        Rect LogPanel { get { return new Rect(12, VirtualHeight - 272, 760, 260); } }
-        Rect HelpPanel { get { return new Rect(VW - 492, VirtualHeight - 232, 480, 220); } }
-        Rect DetailPanel { get { return new Rect(12, 108, 560, 690); } }
+        Rect LogPanel { get { return new Rect(VW - 1260, VirtualHeight - 272, 760, 260); } }
+        Rect HelpPanel { get { return new Rect(VW - 492, VirtualHeight - 262, 480, 250); } }
+        Rect DetailPanel { get { return new Rect(12, 108, 580, 960); } }
         Rect RomancePanel { get { return new Rect(VW - 492, 488, 480, 230); } }
+        Rect ShopPanel { get { return new Rect(VW / 2f - 360f, 130f, 720f, 90f + ItemBook.All.Count * 48f); } }
+
+        PlayerControl Player { get { return world != null ? world.player : null; } }
+        SimCharacter F { get { return world != null ? world.RomanceTarget : null; } }
 
         void Start()
         {
@@ -47,6 +54,7 @@ namespace LifeSimProto
         {
             if (TopBar.Contains(v) || TablePanel.Contains(v) || LogPanel.Contains(v) || HelpPanel.Contains(v) || RomancePanel.Contains(v)) return true;
             if (selected != null && DetailPanel.Contains(v)) return true;
+            if (shopOpen && ShopPanel.Contains(v)) return true;
             return false;
         }
 
@@ -68,8 +76,9 @@ namespace LifeSimProto
                     if (kb.digit3Key.wasPressedThisFrame && opts.Length > 2) SetSpeed(opts[2]);
                     if (kb.digit4Key.wasPressedThisFrame && opts.Length > 3) SetSpeed(opts[3]);
                 }
-                if (kb.escapeKey.wasPressedThisFrame) Select(null);
+                if (kb.escapeKey.wasPressedThisFrame) { if (shopOpen) shopOpen = false; else Select(null); }
                 if (kb.tabKey.wasPressedThisFrame) CycleWallMode();
+                if (kb.bKey.wasPressedThisFrame) shopOpen = !shopOpen;
             }
 
             var mouse = Mouse.current;
@@ -84,7 +93,14 @@ namespace LifeSimProto
             if (Physics.Raycast(ray, out info, 300f)) hit = info.collider.GetComponentInParent<SimCharacter>();
 
             float now = Time.unscaledTime;
-            if (hit == null) { Select(null); return; }
+            if (hit == null)
+            {
+                // Fを選んでいるときは、床のクリックで移動
+                Vector3 p;
+                if (selected != null && selected.IsTarget && FloorPoint(ray, out p)) { selected.OrderMove(p); return; }
+                Select(null);
+                return;
+            }
 
             bool dbl = hit == lastClicked && now - lastClickTime < 0.35f;
             lastClicked = hit;
@@ -100,9 +116,45 @@ namespace LifeSimProto
                 Select(hit);
                 return;
             }
-            world.Log("指示：" + selected.displayName + "に「" + hit.displayName + "に会いに行って」");
+            if (selected.IsTarget)
+            {
+                // F → だれかに話しかける
+                world.Log("Fへの指示：「" + hit.displayName + "と話す」");
+                selected.OrderTalk(hit);
+                return;
+            }
+            if (hit.IsTarget)
+            {
+                world.Log("Fへの指示：「" + selected.displayName + "と話す」");
+                hit.OrderTalk(selected);
+                Select(null);
+                return;
+            }
+            // ほかのキャラ → 相手：Fが「〇〇に会いに行って」とお願いしに行く
+            world.Log("Fへの指示：" + selected.displayName + "に「" + hit.displayName + "に会いに行って」とお願いする");
             selected.Order(hit);
             Select(null);
+        }
+
+        /// <summary>画面のクリック位置から、歩ける床の点を求める（2階を優先）。</summary>
+        bool FloorPoint(Ray ray, out Vector3 p)
+        {
+            p = Vector3.zero;
+            if (Mathf.Abs(ray.direction.y) < 0.0001f) return false;
+            float t1 = (LoungeWorld.Floor2Y - ray.origin.y) / ray.direction.y;
+            if (t1 > 0f)
+            {
+                Vector3 q = ray.origin + ray.direction * t1;
+                if (world.nav1.IsFree(q)) { p = q; return true; }
+            }
+            float t0 = -ray.origin.y / ray.direction.y;
+            if (t0 > 0f)
+            {
+                Vector3 q = ray.origin + ray.direction * t0;
+                if (world.nav0.IsFree(q)) { p = q; return true; }
+                if (q.x > -14f && q.x < 14f && q.z > -14f && q.z < 6f) { p = world.nav0.NearestFreePoint(q); return true; }
+            }
+            return false;
         }
 
         void Select(SimCharacter c)
@@ -147,6 +199,8 @@ namespace LifeSimProto
             clock = new GUIStyle(label) { fontSize = 22, fontStyle = FontStyle.Bold };
             clock.normal.textColor = new Color(1f, 0.88f, 0.6f);
             small = new GUIStyle(label) { fontSize = 16 };
+            tiny = new GUIStyle(label) { fontSize = 14 };
+            tiny.normal.textColor = new Color(0.85f, 0.82f, 0.75f);
             title = new GUIStyle(label) { fontSize = 22, fontStyle = FontStyle.Bold };
             title.normal.textColor = new Color(1f, 0.85f, 0.55f);
             cell = new GUIStyle(label) { fontSize = 16, alignment = TextAnchor.MiddleCenter };
@@ -162,6 +216,10 @@ namespace LifeSimProto
             nameTag.normal.textColor = Color.white;
             nameTag.padding = new RectOffset(8, 8, 3, 3);
 
+            chip = new GUIStyle(GUI.skin.label) { fontSize = 15, alignment = TextAnchor.MiddleCenter, fontStyle = FontStyle.Bold };
+            chip.normal.textColor = new Color(0.08f, 0.06f, 0.05f);
+            chip.padding = new RectOffset(6, 6, 1, 1);
+
             worldLabel = new GUIStyle(label) { fontSize = 15, alignment = TextAnchor.MiddleCenter };
             worldLabel.normal.textColor = new Color(0.9f, 0.85f, 0.72f, 0.8f);
 
@@ -169,6 +227,7 @@ namespace LifeSimProto
             buttonOn = new GUIStyle(button);
             buttonOn.normal.textColor = new Color(1f, 0.85f, 0.3f);
             buttonOn.fontStyle = FontStyle.Bold;
+            smallButton = new GUIStyle(GUI.skin.button) { fontSize = 15 };
         }
 
         void OnGUI()
@@ -187,6 +246,7 @@ namespace LifeSimProto
             DrawLog();
             DrawHelp();
             if (selected != null) DrawDetail();
+            if (shopOpen) DrawShop();
         }
 
         bool ToGui(Vector3 world3, float s, out Vector2 g)
@@ -208,6 +268,23 @@ namespace LifeSimProto
             }
         }
 
+        /// <summary>状態を小さな札（色つき）で並べて描く。</summary>
+        float DrawChips(float x, float y, List<KeyValuePair<string, Color>> tags, float h = 22f)
+        {
+            Color old = GUI.color;
+            foreach (var t in tags)
+            {
+                Vector2 sz = chip.CalcSize(new GUIContent(t.Key));
+                Rect r = new Rect(x, y, sz.x, h);
+                GUI.color = t.Value;
+                GUI.DrawTexture(r, ProtoArt.White);
+                GUI.color = old;
+                GUI.Label(r, t.Key, chip);
+                x += sz.x + 4;
+            }
+            return x;
+        }
+
         void DrawCharacters(float s)
         {
             var list = new List<SimCharacter>(world.characters);
@@ -219,7 +296,7 @@ namespace LifeSimProto
                 Vector2 g;
                 if (!ToGui(c.transform.position + Vector3.up * c.HeadHeight, s, out g)) continue;
 
-                string tag = c.displayName + c.StatusTags() + "  " + c.actionText;
+                string tag = c.displayName + (c.IsTarget ? "（あなた）" : "") + "  " + c.actionText;
                 Vector2 size = nameTag.CalcSize(new GUIContent(tag));
                 Rect r = new Rect(g.x - size.x / 2f, g.y - size.y, size.x, size.y);
                 Color old = GUI.color;
@@ -232,6 +309,10 @@ namespace LifeSimProto
                     GUI.DrawTexture(new Rect(r.x, r.yMax - 3, r.width, 3), ProtoArt.White);
                 }
                 GUI.color = old;
+
+                // 状態異常の札（名前の右）
+                var tags = c.StatusTagList();
+                if (tags.Count > 0) DrawChips(r.xMax + 4, r.y + 1, tags, r.height - 2);
 
                 if (!string.IsNullOrEmpty(c.bubble))
                 {
@@ -263,9 +344,18 @@ namespace LifeSimProto
             x += 16;
             if (GUI.Button(new Rect(x, r.y + 8, 130, 34), WallModeName(world.wallMode), button)) CycleWallMode();
             x += 138;
-            if (GUI.Button(new Rect(x, r.y + 8, 80, 34), "1階", button) && rig != null) rig.LookAtFloor(0);
-            x += 88;
-            if (GUI.Button(new Rect(x, r.y + 8, 80, 34), "2階", button) && rig != null) rig.LookAtFloor(1);
+            if (GUI.Button(new Rect(x, r.y + 8, 70, 34), "1階", button) && rig != null) rig.LookAtFloor(0);
+            x += 76;
+            if (GUI.Button(new Rect(x, r.y + 8, 70, 34), "2階", button) && rig != null) rig.LookAtFloor(1);
+            x += 90;
+            if (Player != null)
+            {
+                GUI.Label(new Rect(x, r.y + 11, 130, 30), "銀貨 " + Player.money, clock);
+                x += 130;
+                if (GUI.Button(new Rect(x, r.y + 8, 100, 34), "購買部", shopOpen ? buttonOn : button)) shopOpen = !shopOpen;
+                x += 108;
+                if (F != null && GUI.Button(new Rect(x, r.y + 8, 80, 34), "Fを選ぶ", selected == F ? buttonOn : button)) Select(F);
+            }
         }
 
         void DrawInfoLine()
@@ -274,6 +364,9 @@ namespace LifeSimProto
             var parts = new List<string>();
             parts.Add(Calendar.DateText(world.Day, world.holidayWeekdays));
             if (world.todayNotes.Count > 0) parts.Add("今日：" + string.Join("／", world.todayNotes.ToArray()));
+            int withA = 0, doneA = 0;
+            foreach (var c in world.characters) if (c.hasAssignment) { withA++; if (c.assignProgress >= 100f) doneA++; }
+            if (withA > 0) parts.Add("課題：" + doneA + "/" + withA + "人が終了");
             if (world.Blackout) parts.Add("停電中");
             if (world.SnackBonus) parts.Add("差し入れあり");
             if (world.autoFast) parts.Add("全員就寝中：" + world.allAsleepSpeed + "倍速");
@@ -286,7 +379,6 @@ namespace LifeSimProto
             }
             if (away.Count > 0) parts.Add("外出中：" + string.Join("・", away.ToArray()));
             if (priv.Count > 0) parts.Add("部屋で過ごしている：" + string.Join("・", priv.ToArray()));
-            if (selected != null) parts.Add(selected.displayName + "を選択中：会わせたい相手をクリック");
             string text = string.Join("　｜　", parts.ToArray());
             Vector2 size = small.CalcSize(new GUIContent(text));
             GUI.Box(new Rect(r.x, r.y, size.x + 28, r.height), GUIContent.none, panel);
@@ -371,9 +463,9 @@ namespace LifeSimProto
                 GUI.color = new Color(1f, 1f, 1f, 0.35f);
                 GUI.DrawTexture(new Rect(bar.x + bar.width * Romance.ConfessAt / 100f, bar.y - 2, 2, bar.height + 4), ProtoArt.White);
                 GUI.color = old;
-                string label = (st == 3 ? "♥ " : "") + Romance.StageName(st) + "（" + Mathf.RoundToInt(v) + "）";
-                if (st < 3 && world.Now < rom.cooldownUntil[c.id]) label += " 告白後";
-                GUI.Label(new Rect(r.x + 310, y, 160, 26), label, small);
+                string lab = (st == 3 ? "♥ " : "") + Romance.StageName(st) + "（" + Mathf.RoundToInt(v) + "）";
+                if (st < 3 && world.Now < rom.cooldownUntil[c.id]) lab += " 告白後";
+                GUI.Label(new Rect(r.x + 310, y, 160, 26), lab, small);
                 y += 34;
             }
         }
@@ -411,78 +503,166 @@ namespace LifeSimProto
             {
                 "右ドラッグ：視点を回す　ホイール：近づく/離れる",
                 "WASD：移動　Q/E：回す　R/F：上下　中ドラッグ：平行移動",
-                "キャラをクリック → 相手をクリック：会いに行かせる",
-                "キャラをダブルクリック：追いかける（Escで解除）",
-                "スペース：一時停止/再開　1〜4：速さ　Tab：壁の表示",
-                "全員が寝ている間は自動で早送り",
+                "Fを選ぶ → 床をクリック：移動／キャラをクリック：話す",
+                "キャラを選ぶ → 相手をクリック：Fがお願いしに行く",
+                "キャラを選ぶと、お願い・渡す のボタン",
+                "ダブルクリック：追いかける（Escで解除）",
+                "スペース：一時停止　1〜4：速さ　Tab：壁　B：購買部",
             };
             float y = r.y + 42;
             foreach (var l in lines) { GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), l, small); y += 28; }
         }
 
+        void DrawShop()
+        {
+            var pc = Player;
+            if (pc == null) return;
+            Rect r = ShopPanel;
+            GUI.Box(r, GUIContent.none, panel);
+            GUI.Label(new Rect(r.x + 14, r.y + 8, 400, 30), "購買部（銀貨 " + pc.money + "）", title);
+            if (GUI.Button(new Rect(r.xMax - 92, r.y + 8, 80, 30), "閉じる", smallButton)) shopOpen = false;
+            float y = r.y + 50;
+            foreach (var d in ItemBook.All)
+            {
+                GUI.Label(new Rect(r.x + 14, y, 190, 24), d.name + "（" + d.price + "）", small);
+                GUI.Label(new Rect(r.x + 14, y + 22, 560, 20), d.desc, tiny);
+                GUI.Label(new Rect(r.x + 520, y + 4, 70, 24), "所持 " + pc.Count(d.kind), small);
+                GUI.enabled = pc.money >= d.price;
+                if (GUI.Button(new Rect(r.xMax - 112, y + 4, 96, 34), "買う", button)) pc.Buy(d.kind);
+                GUI.enabled = true;
+                y += 48;
+            }
+        }
+
         void DrawDetail()
         {
             Rect r = DetailPanel;
-            GUI.Box(r, GUIContent.none, panel);
             var c = selected;
-            GUI.Label(new Rect(r.x + 14, r.y + 8, r.width - 28, 30), c.displayName + "（" + c.note + "）", title);
+            float y = r.y + 8;
+            GUI.Box(r, GUIContent.none, panel);
+            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 30), c.displayName + "（" + c.note + "）" + (c.IsTarget ? "　あなたが操作" : ""), title);
+            y += 34;
+            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "今：" + c.actionText, small); y += 22;
             string roomName = c.room != null ? "2階・" + c.room.name + "の部屋" : "なし";
-            GUI.Label(new Rect(r.x + 14, r.y + 42, r.width - 28, 24), "今：" + c.actionText, small);
-            GUI.Label(new Rect(r.x + 14, r.y + 66, r.width - 28, 24), "部屋：" + roomName, small);
-            GUI.Label(new Rect(r.x + 14, r.y + 90, r.width - 28, 24), "話したい度 " + Level(c.sociability) + "　気まぐれ " + Level(c.whim) + "　真面目さ " + Level(c.diligence), small);
             string loveText = c.IsTarget ? "（恋愛の相手）" : "恋：" + Romance.StageName(world.romance.Stage(c.id)) + "（" + Mathf.RoundToInt(world.romance.love[c.id]) + "）";
-            GUI.Label(new Rect(r.x + 14, r.y + 114, r.width - 28, 24), "趣味：" + HobbyName(c.hobby) + "　" + loveText, small);
+            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "部屋：" + roomName + "　趣味：" + HobbyName(c.hobby) + "　" + loveText, small); y += 22;
+            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "話したい度 " + Level(c.sociability) + "　気まぐれ " + Level(c.whim) + "　真面目さ " + Level(c.diligence), small); y += 22;
+            string assign = c.hasAssignment ? "　課題 " + Mathf.RoundToInt(c.assignProgress) + "%（締切 " + ScheduleMaker.Clock(c.assignDeadline) + "）" : "";
+            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "学力 " + Mathf.RoundToInt(c.academic) + "　魔力 " + Mathf.RoundToInt(c.mana) + "　今週の勉強 " + Mathf.RoundToInt(c.weekStudy) + assign, small); y += 28;
 
-            float y = r.y + 146;
-            Bar(new Rect(r.x + 14, y, r.width - 28, 22), "さみしさ", c.lonely, new Color(0.45f, 0.6f, 0.95f)); y += 26;
-            Bar(new Rect(r.x + 14, y, r.width - 28, 22), "疲れ", c.tired, new Color(0.9f, 0.6f, 0.3f)); y += 26;
-            Bar(new Rect(r.x + 14, y, r.width - 28, 22), "退屈", c.bored, new Color(0.6f, 0.85f, 0.4f)); y += 26;
-            Bar(new Rect(r.x + 14, y, r.width - 28, 22), "空腹", c.hunger, new Color(0.95f, 0.75f, 0.3f)); y += 26;
-            Bar(new Rect(r.x + 14, y, r.width - 28, 22), "勉強", c.study, new Color(0.5f, 0.75f, 0.9f)); y += 26;
-            Bar(new Rect(r.x + 14, y, r.width - 28, 22), "趣味", c.hobbyNeed, new Color(0.75f, 0.6f, 0.95f)); y += 26;
-            Bar(new Rect(r.x + 14, y, r.width - 28, 22), "睡眠", c.sleepy, new Color(0.55f, 0.55f, 0.8f)); y += 26;
-            if (!c.IsTarget) { Bar(new Rect(r.x + 14, y, r.width - 28, 22), "恋心", c.loveNeed, new Color(1f, 0.5f, 0.65f)); y += 26; }
-            Bar(new Rect(r.x + 14, y, r.width - 28, 22), "性欲", c.desire, new Color(0.85f, 0.4f, 0.55f)); y += 26;
+            // 状態異常
+            if (c.statuses.Count == 0) { GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "状態：ふつう", small); y += 24; }
+            foreach (var st in c.statuses)
+            {
+                var def = StatusBook.Get(st.line);
+                var one = new List<KeyValuePair<string, Color>> { new KeyValuePair<string, Color>(def.NameOf(st.stage), def.Color) };
+                float x = DrawChips(r.x + 14, y, one);
+                string remain = st.until > 0 ? "（あと" + FormatLeft(st.until - world.Now) + "）" : "";
+                GUI.Label(new Rect(x + 4, y, r.xMax - x - 18, 22), def.EffectOf(st.stage).desc + remain, tiny);
+                y += 26;
+            }
+            y += 4;
 
-            y += 8;
-            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "今日の予定", small);
-            y += 24;
+            Bar(new Rect(r.x + 14, y, r.width - 28, 20), "さみしさ", c.lonely, new Color(0.45f, 0.6f, 0.95f)); y += 23;
+            Bar(new Rect(r.x + 14, y, r.width - 28, 20), "疲れ", c.tired, new Color(0.9f, 0.6f, 0.3f)); y += 23;
+            Bar(new Rect(r.x + 14, y, r.width - 28, 20), "退屈", c.bored, new Color(0.6f, 0.85f, 0.4f)); y += 23;
+            Bar(new Rect(r.x + 14, y, r.width - 28, 20), "空腹", c.hunger, new Color(0.95f, 0.75f, 0.3f)); y += 23;
+            Bar(new Rect(r.x + 14, y, r.width - 28, 20), "勉強", c.study, new Color(0.5f, 0.75f, 0.9f)); y += 23;
+            Bar(new Rect(r.x + 14, y, r.width - 28, 20), "趣味", c.hobbyNeed, new Color(0.75f, 0.6f, 0.95f)); y += 23;
+            Bar(new Rect(r.x + 14, y, r.width - 28, 20), "睡眠", c.sleepy, new Color(0.55f, 0.55f, 0.8f)); y += 23;
+            if (!c.IsTarget) { Bar(new Rect(r.x + 14, y, r.width - 28, 20), "恋心", c.loveNeed, new Color(1f, 0.5f, 0.65f)); y += 23; }
+            Bar(new Rect(r.x + 14, y, r.width - 28, 20), "性欲", c.desire, new Color(0.85f, 0.4f, 0.55f)); y += 27;
+
+            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "今日の予定", small);
+            y += 22;
             int shown = 0;
             foreach (var it in c.schedule)
             {
                 if (shown >= 3) break;
-                string mark = it.done ? "済 " : "　 ";
-                string time = ScheduleMaker.Clock(it.start) + (it.kind == TaskKind.Class ? "〜" + ScheduleMaker.Clock(it.end) : "");
                 if (it.done && it.end < world.Now && it.kind != TaskKind.Bed) continue;
-                GUI.Label(new Rect(r.x + 24, y, r.width - 38, 22), mark + time + "　" + it.Label, small);
-                y += 22;
+                string time = ScheduleMaker.Clock(it.start) + (it.kind == TaskKind.Class ? "〜" + ScheduleMaker.Clock(it.end) : "");
+                GUI.Label(new Rect(r.x + 24, y, r.width - 38, 20), (it.done ? "済 " : "　 ") + time + "　" + it.Label, tiny);
+                y += 20;
                 shown++;
             }
+            y += 10;
 
-            y += 4;
-            if (c.statuses.Count > 0)
+            if (c.IsTarget) DrawFActions(r, ref y);
+            else DrawGirlActions(r, c, ref y);
+        }
+
+        void DrawFActions(Rect r, ref float y)
+        {
+            var pc = Player;
+            var f = selected;
+            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "Fの行動（銀貨 " + (pc != null ? pc.money : 0) + "）", title); y += 32;
+            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "床をクリックで移動・キャラをクリックで話しかける", tiny); y += 24;
+            if (GUI.Button(new Rect(r.x + 14, y, 180, 32), "寮の手伝い（+20）", smallButton)) f.OrderWork();
+            if (GUI.Button(new Rect(r.x + 202, y, 200, 32), "街のアルバイト（+70）", smallButton)) f.OrderPartTime();
+            if (GUI.Button(new Rect(r.x + 410, y, 150, 32), "購買部を開く", smallButton)) shopOpen = true;
+            y += 40;
+            if (pc == null) return;
+            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "持ち物（自分に使う）", small); y += 24;
+            float x = r.x + 14;
+            bool any = false;
+            foreach (var d in ItemBook.All)
             {
-                foreach (var st in c.statuses)
+                int n = pc.Count(d.kind);
+                if (n <= 0) continue;
+                any = true;
+                if (!d.selfUse) { GUI.Label(new Rect(x, y + 4, 170, 24), d.name + "×" + n, tiny); }
+                else if (GUI.Button(new Rect(x, y, 170, 30), d.name + "×" + n + " 使う", smallButton))
                 {
-                    var def = Statuses.Get(st.kind);
-                    double left = st.until - world.Now;
-                    string remain = left > 1440 * 2 ? "" : (left >= 60 ? "あと" + Mathf.RoundToInt((float)(left / 60)) + "時間" : "あと" + Mathf.RoundToInt((float)left) + "分");
-                    GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "◆" + def.name + "：" + def.desc + "（" + remain + "）", small);
-                    y += 22;
+                    if (pc.Take(d.kind)) f.ApplyItem(d.kind, f);
                 }
+                x += 178;
+                if (x > r.xMax - 180) { x = r.x + 14; y += 34; }
             }
-            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "今週の勉強量：" + Mathf.RoundToInt(c.weekStudy), small);
-            y += 26;
-            var others = new List<SimCharacter>(world.characters);
-            others.Remove(c);
-            others.Sort((a, b) => world.rel.Get(c.id, b.id).CompareTo(world.rel.Get(c.id, a.id)));
-            foreach (var o in others)
+            if (!any) GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "なし（購買部で買える）", tiny);
+        }
+
+        void DrawGirlActions(Rect r, SimCharacter c, ref float y)
+        {
+            var pc = Player;
+            var f = F;
+            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "Fから", title); y += 32;
+            if (f == null) return;
+            if (GUI.Button(new Rect(r.x + 14, y, 150, 32), "話しかける", smallButton)) { f.OrderTalk(c); world.Log("Fへの指示：「" + c.displayName + "と話す」"); }
+            if (GUI.Button(new Rect(r.x + 172, y, 180, 32), "お願い：勉強して", smallButton)) { f.OrderRequest(c, RequestKind.Study, null); world.Log("Fへの指示：" + c.displayName + "に「勉強して」とお願いする"); }
+            if (GUI.Button(new Rect(r.x + 360, y, 180, 32), "お願い：休んで", smallButton)) { f.OrderRequest(c, RequestKind.Rest, null); world.Log("Fへの指示：" + c.displayName + "に「休んで」とお願いする"); }
+            y += 38;
+            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "ほかのキャラをクリック → 「その子に会いに行って」とお願い", tiny); y += 24;
+            if (pc != null) GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "最近のお願い：" + pc.RecentRequests(c) + "回（多いと断られやすい）", tiny);
+            y += 28;
+            if (pc == null) return;
+            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "渡す（Fが持っていく）", small); y += 24;
+            float x = r.x + 14;
+            bool any = false;
+            foreach (var d in ItemBook.All)
             {
-                float v = world.rel.Get(c.id, o.id);
-                GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22),
-                    o.displayName + "：" + Relationships.StageName(Relationships.StageOf(v)) + "（" + Mathf.RoundToInt(v) + "）", small);
-                y += 21;
+                int n = pc.Count(d.kind);
+                if (n <= 0) continue;
+                any = true;
+                GUI.enabled = pc.CanUseToday(d.kind);
+                if (GUI.Button(new Rect(x, y, 170, 30), d.name + "×" + n + " 渡す", smallButton))
+                {
+                    if (pc.Take(d.kind))
+                    {
+                        world.Log("Fへの指示：" + c.displayName + "に「" + d.name + "」を渡す");
+                        f.OrderGive(c, d.kind);
+                    }
+                }
+                GUI.enabled = true;
+                x += 178;
+                if (x > r.xMax - 180) { x = r.x + 14; y += 34; }
             }
+            if (!any) GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "持ち物なし（購買部で買える）", tiny);
+        }
+
+        static string FormatLeft(double minutes)
+        {
+            if (minutes >= 60) return Mathf.RoundToInt((float)(minutes / 60)) + "時間";
+            return Mathf.Max(1, Mathf.RoundToInt((float)minutes)) + "分";
         }
 
         static string HobbyName(SimCharacter.HobbyKind h)
@@ -503,7 +683,7 @@ namespace LifeSimProto
 
         void Bar(Rect r, string name, float value, Color c)
         {
-            GUI.Label(new Rect(r.x, r.y - 2, 90, r.height + 4), name, small);
+            GUI.Label(new Rect(r.x, r.y - 3, 90, r.height + 4), name, small);
             Rect bar = new Rect(r.x + 90, r.y + 3, r.width - 90, r.height - 6);
             GUI.DrawTexture(bar, barBg);
             Color old = GUI.color;

@@ -65,10 +65,10 @@ namespace LifeSimProto
             if (Calendar.IsExamDay(day, hol)) world.todayNotes.Add("試験（午前）・結果発表 18:00");
             if (Calendar.IsExamEve(day, hol))
             {
-                world.todayNotes.Add("明日は試験");
-                foreach (var c in world.characters) c.AddStatus(StatusKind.ExamEve, DayStart + 1440 - world.Now);
+                world.todayNotes.Add("明日は試験（みんな勉強ぎみ）");
                 world.Log("明日は試験。みんな少しそわそわしている");
             }
+            if (Calendar.Weekday(day) == 5) world.todayNotes.Add("課題が出る 9:00（光の日 23:00 まで）");
             if (Calendar.IsFestival(day))
             {
                 string fn = Calendar.FestivalNames[Calendar.Season(day)];
@@ -78,7 +78,7 @@ namespace LifeSimProto
             foreach (var c in world.characters)
             {
                 if (!Calendar.IsBirthday(c.id, day)) continue;
-                c.AddStatus(StatusKind.Birthday, DayStart + 1440 - world.Now);
+                c.PositiveEvent(1f);
                 world.todayNotes.Add(c.displayName + "の誕生日会 19:45");
                 world.Log("今日は" + c.displayName + "の誕生日");
             }
@@ -122,19 +122,27 @@ namespace LifeSimProto
                 }
             }
 
+            // ---- 課題（全員に出る。学力と進み具合で行動が変わる）----
+            if (Calendar.Weekday(day) == 5 && m >= 540f && Once("assign"))
+            {
+                double deadline = ScheduleMaker.DayStart(day + 2) + 23 * 60;
+                foreach (var c in world.characters) c.GiveAssignment(deadline);
+                world.Log("課題が出た！（光の日 23:00 まで）");
+            }
+
             // ---- 試験の結果発表 ----
             if (Calendar.IsExamDay(day, hol) && m >= 1080f && Once("exam"))
             {
                 var parts = new List<string>();
                 foreach (var c in world.characters)
                 {
-                    float score = c.weekStudy * 0.5f + c.diligence * 30f + Random.Range(0f, 20f);
-                    if (c.HasStatus(StatusKind.SleepDeprived)) score -= 10f;
+                    float score = c.academic * 0.6f + c.weekStudy * 0.25f + Random.Range(0f, 15f) - c.GetStage(StatusLine.Sleep) * 5f;
                     string mark;
-                    if (score >= 60f) { mark = "◎"; c.AddStatus(StatusKind.Cheerful, 480); }
-                    else if (score < 30f) { mark = "×"; c.AddStatus(StatusKind.Down, 360); }
+                    if (score >= 55f) { mark = "◎"; c.PositiveEvent(0.8f); c.academic += 1f; }
+                    else if (score < 35f) { mark = "×"; c.NegativeEvent(0.8f); }
                     else mark = "○";
                     parts.Add(c.displayName + mark);
+                    if (c.IsTarget && world.player != null) world.player.Earn(mark == "◎" ? 50 : (mark == "○" ? 20 : 0), "試験の成績");
                 }
                 world.Log("試験の結果発表：" + string.Join("　", parts.ToArray()));
             }
@@ -236,7 +244,7 @@ namespace LifeSimProto
                 {
                     foreach (var a in list)
                     {
-                        if (g.key == "festival" || g.key == "date" || g.key == "birthday") a.AddStatus(StatusKind.Cheerful, 360);
+                        if (g.key == "festival" || g.key == "date" || g.key == "birthday") a.PositiveEvent(0.8f);
                         foreach (var b in list) if (a.id < b.id) world.rel.Add(a.id, b.id, g.key == "date" ? 6f : 2f, world.simTime);
                         if (g.honoree != null && a != g.honoree) world.rel.Add(a.id, g.honoree.id, 3f, world.simTime);
                     }

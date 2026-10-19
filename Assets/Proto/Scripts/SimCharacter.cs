@@ -5,19 +5,20 @@ using UnityEngine;
 namespace LifeSimProto
 {
     /// <summary>
-    /// 仮の人形1体。1日の予定（食事・授業・お風呂・就寝）と行事を優先し、空き時間は9つの欲求で行動を選ぶ。
+    /// 仮の人形1体。1日の予定と行事を優先し、空き時間は9つの欲求と状態異常で行動を選ぶ。
     /// 欲求：さみしさ・疲れ・退屈・空腹・勉強・趣味・恋心・睡眠・性欲（性欲は「好き」以上のみ。描写はしない）
-    /// 欲求を満たす場所は、仲のいい子・好きな人・恋人がいる所を選びやすい。勉強・趣味・昼寝・二人きりの時間は他の人の部屋も使う。
+    /// パラメータ：学力（課題の進み方・試験の成績）、魔力（たまると魔力過多・暴走）
+    /// Fはプレイヤーが操作できる（指示がないときは自分で動く）。
     /// </summary>
     public class SimCharacter : MonoBehaviour
     {
         public enum State { Idle, Walking, Sitting, Activity, Approaching, Waiting, Talking, Eating, Bathing, Sleeping, Away, Private }
         public enum HobbyKind { Reading, Magic, Tea, Walk }
-        enum Goal { None, Seat, Poi, Wander, Counter, DiningSeat, Bath, Bed, Nap, Exit, Return, Private, Gather }
-        enum Act { None, Rest, Fun, Study, Hobby, Meal, Snack, Tea }
-        enum Intent { Talk, Love, Private, Gift }
-        enum Choice { None, Social, Rest, Fun, Snack, Study, Hobby, Love, Nap, Private }
-        enum AwayKind { Class, Stroll, Outing }
+        enum Goal { None, Seat, Poi, Wander, Counter, DiningSeat, Bath, Bed, Nap, Exit, Return, Private, Gather, Hover, Follow, MoveTo }
+        enum Act { None, Rest, Fun, Study, Hobby, Meal, Snack, Tea, Work }
+        enum Intent { Talk, Love, Private, Bake, Give, Request }
+        enum Choice { None, Social, Rest, Fun, Snack, Study, Hobby, Love, Nap, Private, Hover, Cling }
+        enum AwayKind { Class, Stroll, Outing, Job }
 
         // ---- 設定 ----
         public int id;
@@ -33,7 +34,13 @@ namespace LifeSimProto
 
         // ---- 欲求（0〜100）----
         public float lonely, tired, bored, hunger, study, hobbyNeed, loveNeed, sleepy, desire;
-        public float weekStudy; // 今週どれだけ勉強したか（試験の結果に使う）
+        // ---- パラメータ ----
+        public float academic;        // 学力（0〜100）
+        public float mana;            // 魔力（0〜100）
+        public float weekStudy;       // 今週の勉強量
+        public bool hasAssignment;
+        public float assignProgress;  // 課題の進み具合（0〜100）
+        public double assignDeadline;
 
         // ---- 状態 ----
         public State state = State.Idle;
@@ -44,17 +51,30 @@ namespace LifeSimProto
         public Vector3 approachGoal;
         public readonly List<ActiveStatus> statuses = new List<ActiveStatus>();
 
-        // ---- 予定・行事 ----
+        // ---- 予定・行事・用事 ----
         public List<ScheduleItem> schedule = new List<ScheduleItem>();
         int scheduleDay = -1;
-        double sleepUntil, awayUntil, eatUntil, bathUntil, privateUntil;
-        bool mealPending, readingPick, snackPick, bakePending, privatePending, privateArrived, sickRest, napping;
+        double sleepUntil, awayUntil, eatUntil, bathUntil, privateUntil, workUntil, lastFContact;
+        bool mealPending, readingPick, snackPick, bakePending, privatePending, privateArrived, sickRest, napping, dozing, deepSleep, nightOwlLogged;
         AwayKind awayKind;
         string awayLabel;
+        int classBlocks;
         ScheduleItem bedItem;
         RoomInfo privateRoom;
         Gathering gathering;
         Vector3 gatherFocus;
+        SimCharacter clingTarget;
+        float statusCheck, focusMin, highLonelyMin, highBoredMin, desireHighMin;
+        int taughtDay = -1;
+
+        // ---- プレイヤーの指示（F）・お願い ----
+        ItemKind giftItem;
+        RequestKind requestKind;
+        SimCharacter requestMeet;
+        RequestKind pendingRequestKind;
+        SimCharacter pendingRequestMeet;
+        bool hasPendingRequest;
+        float requestEffort = -1f;   // 0〜1。-1 はお願いではない
 
         LoungeWorld world;
         Transform visual;
@@ -89,15 +109,17 @@ namespace LifeSimProto
 
         public SimCharacter TalkPartner { get { return talkPartner; } }
         public bool HasOrder { get { return hasOrder; } }
-        public bool Present { get { return state != State.Away && state != State.Private; } }
+        /// <summary>寮の中にいる（外出していない）。部屋で過ごしている間も寮の中。</summary>
+        public bool Present { get { return state != State.Away; } }
         public bool IsMoving { get { return (state == State.Walking || state == State.Approaching) && path.Count > 0; } }
         public bool IsSick { get { return sickRest; } }
+        public bool InPrivate { get { return state == State.Private; } }
         bool OnMission
         {
             get
             {
                 return mealPending || snackPick || bakePending || privatePending || goal == Goal.Counter || goal == Goal.DiningSeat || goal == Goal.Bath
-                    || goal == Goal.Bed || goal == Goal.Nap || goal == Goal.Exit || goal == Goal.Return || goal == Goal.Private;
+                    || goal == Goal.Bed || goal == Goal.Nap || goal == Goal.Exit || goal == Goal.Return || goal == Goal.Private || goal == Goal.MoveTo || act == Act.Work;
             }
         }
 
@@ -106,66 +128,265 @@ namespace LifeSimProto
         public int LoveStage { get { return IsTarget ? -1 : world.romance.Stage(id); } }
         public bool IsLover { get { return !IsTarget && world.romance.lover[id]; } }
 
-        /// <summary>話しかけられる状態か（寝ている・出かけている・入浴中・急いでいるときは不可。風邪で寝込んでいるときはお見舞い可）。</summary>
+        /// <summary>話しかけられる状態か。</summary>
         public bool AvailableForTalk
         {
             get
             {
-                if (!Present || state == State.Bathing || state == State.Talking) return false;
+                if (!Present || state == State.Bathing || state == State.Talking || state == State.Private) return false;
                 if (state == State.Sleeping && !sickRest) return false;
                 if (OnMission || hasOrder) return false;
                 return true;
             }
         }
 
-        // ================= 状態（ステータス） =================
-        public bool HasStatus(StatusKind k)
+        // ================= 状態異常 =================
+        public int GetStage(StatusLine l)
         {
-            foreach (var s in statuses) if (s.kind == k) return true;
-            return false;
+            foreach (var s in statuses) if (s.line == l) return s.stage;
+            return 0;
         }
 
-        /// <summary>状態をつける（minutes はゲーム内の分）。すでにあれば長い方に延ばす。</summary>
-        public void AddStatus(StatusKind k, double minutes)
+        bool Chance(float p) { return Random.value < p * world.statusChance; }
+
+        /// <summary>状態の段階を決める。新しい系統は、同時に持てる数の上限を超えるとつかない（force なら上限を無視）。</summary>
+        public bool SetStage(StatusLine l, int stage, bool force = false, bool quiet = false)
         {
-            if (minutes <= 0) return;
-            double until = world.Now + minutes;
-            foreach (var s in statuses)
-                if (s.kind == k) { if (until > s.until) s.until = until; return; }
-            statuses.Add(new ActiveStatus { kind = k, until = until });
-            if (k == StatusKind.Cheerful) RemoveStatus(StatusKind.Down);
-            if (k == StatusKind.Down) RemoveStatus(StatusKind.Cheerful);
+            var def = StatusBook.Get(l);
+            stage = Mathf.Clamp(stage, 0, def.MaxStage);
+            ActiveStatus cur = null;
+            foreach (var s in statuses) if (s.line == l) { cur = s; break; }
+            if (stage == 0)
+            {
+                if (cur != null) statuses.Remove(cur);
+                return true;
+            }
+            if (cur == null)
+            {
+                if (!force && statuses.Count >= Mathf.Max(1, world.maxStatuses)) return false;
+                cur = new ActiveStatus { line = l };
+                statuses.Add(cur);
+            }
+            bool changed = cur.stage != stage;
+            int before = cur.stage;
+            cur.stage = stage;
+            float mins = def.minutes[Mathf.Clamp(stage, 1, def.minutes.Length) - 1];
+            cur.until = mins > 0f ? world.Now + mins : 0;
+            if (changed && !quiet)
+            {
+                string word = before == 0 ? "になった" : (stage > before ? "に悪化した" : "に軽くなった");
+                if (def.polarity == StatusPolarity.Positive && stage > before) word = before == 0 ? "になった" : "に上がった";
+                world.Log(displayName + "が［" + def.NameOf(stage) + "］" + word);
+            }
+            if (l == StatusLine.MoodUp && stage > 0) SetStage(StatusLine.MoodDown, 0, false, true);
+            if (l == StatusLine.MoodDown && stage > 0) SetStage(StatusLine.MoodUp, 0, false, true);
+            return true;
         }
 
-        public void RemoveStatus(StatusKind k) { statuses.RemoveAll(s => s.kind == k); }
+        public void Escalate(StatusLine l, bool force = false) { SetStage(l, GetStage(l) + 1, force); }
+        public void Ease(StatusLine l) { int s = GetStage(l); if (s > 0) SetStage(l, s - 1); }
+
+        /// <summary>嫌なことがあった（落ち込みがつく／悪化する）。</summary>
+        public void NegativeEvent(float p)
+        {
+            if (GetStage(StatusLine.MoodUp) > 0) { Ease(StatusLine.MoodUp); return; }
+            int st = GetStage(StatusLine.MoodDown);
+            if (st > 0) { if (Chance(Mathf.Min(1f, p + 0.2f))) Escalate(StatusLine.MoodDown); }
+            else if (Chance(p)) SetStage(StatusLine.MoodDown, 1);
+        }
+
+        /// <summary>うれしいことがあった（ご機嫌がつく／上がる）。</summary>
+        public void PositiveEvent(float p)
+        {
+            if (GetStage(StatusLine.MoodDown) > 0) { Ease(StatusLine.MoodDown); return; }
+            if (Chance(p)) Escalate(StatusLine.MoodUp);
+        }
+
+        /// <summary>Fがほかの子と楽しそうに話しているのを見た（仲は悪くならない）。</summary>
+        public void SawFWithOther()
+        {
+            if (IsTarget || LoveStage < 2) return;
+            if (!Chance(0.4f)) return;
+            Escalate(StatusLine.Jealousy);
+            ShowBubble(GetStage(StatusLine.Jealousy) >= 2 ? "むぅ…！" : "むぅ…", 2f);
+        }
+
+        IEnumerable<StageEffect> Effects()
+        {
+            foreach (var s in statuses) yield return StatusBook.Get(s.line).EffectOf(s.stage);
+        }
 
         float RateMul(NeedKind n)
         {
             float m = 1f;
-            foreach (var s in statuses) { float v; if (Statuses.Get(s.kind).rate.TryGetValue(n, out v)) m *= v; }
+            foreach (var e in Effects()) { float v; if (e.rate.TryGetValue(n, out v)) m *= v; }
             return m;
         }
 
-        float StatusProduct(System.Func<StatusDef, float> f)
+        float Prod(System.Func<StageEffect, float> f)
         {
             float m = 1f;
-            foreach (var s in statuses) m *= f(Statuses.Get(s.kind));
+            foreach (var e in Effects()) m *= f(e);
             return m;
         }
 
         public float TalkBonus()
         {
             float b = 0f;
-            foreach (var s in statuses) b += Statuses.Get(s.kind).talkBonus;
+            foreach (var e in Effects()) b += e.talkBonus;
             return b;
         }
 
-        public string StatusTags()
+        bool NoTalk()
         {
-            if (statuses.Count == 0) return "";
-            var names = new List<string>();
-            foreach (var s in statuses) names.Add(Statuses.Get(s.kind).name);
-            return "［" + string.Join("・", names.ToArray()) + "］";
+            foreach (var e in Effects()) if (e.noTalk) return true;
+            return false;
+        }
+
+        public List<KeyValuePair<string, Color>> StatusTagList()
+        {
+            var l = new List<KeyValuePair<string, Color>>();
+            foreach (var s in statuses)
+            {
+                var d = StatusBook.Get(s.line);
+                l.Add(new KeyValuePair<string, Color>(d.NameOf(s.stage), d.Color));
+            }
+            return l;
+        }
+
+        /// <summary>時間切れ・発動条件の判定（ゲーム内30分ごと）。</summary>
+        void UpdateStatuses(float gm)
+        {
+            double now = world.Now;
+            for (int i = statuses.Count - 1; i >= 0; i--)
+            {
+                var s = statuses[i];
+                if (s.until <= 0 || now < s.until) continue;
+                var def = StatusBook.Get(s.line);
+                if (def.decays && s.stage > 1) SetStage(s.line, s.stage - 1);
+                else SetStage(s.line, 0, false, true);
+            }
+
+            statusCheck += gm;
+            if (statusCheck < 30f) return;
+            statusCheck = 0f;
+
+            // 孤独
+            highLonelyMin = lonely > 80f ? highLonelyMin + 30f : 0f;
+            int lo = GetStage(StatusLine.Lonely);
+            if (lo == 0 && highLonelyMin >= 90f && Chance(0.4f)) SetStage(StatusLine.Lonely, 1);
+            else if (lo == 1 && lonely > 90f && highLonelyMin >= 180f && Chance(0.4f)) SetStage(StatusLine.Lonely, 2);
+            if (lo > 0 && lonely < 30f) SetStage(StatusLine.Lonely, 0);
+
+            // 鬱憤
+            highBoredMin = bored > 85f ? highBoredMin + 30f : 0f;
+            int fr = GetStage(StatusLine.Frustration);
+            if (fr == 0 && highBoredMin >= 120f && Chance(0.35f)) SetStage(StatusLine.Frustration, 1);
+            else if (fr == 1 && highBoredMin >= 240f && Chance(0.35f)) SetStage(StatusLine.Frustration, 2);
+            else if (fr == 2 && highBoredMin >= 360f && CanActNow() && Chance(0.4f)) Explode();
+            if (fr > 0 && bored < 40f) SetStage(StatusLine.Frustration, 0);
+
+            // 恋（Fを「好き」以上の子だけ。きっかけは本人の気持ち）
+            if (!IsTarget && LoveStage >= 2)
+            {
+                int lv = GetStage(StatusLine.Love);
+                desireHighMin = desire > 60f ? desireHighMin + 30f : 0f;
+                if (lv == 0 && loveNeed > 70f && Chance(0.3f)) SetStage(StatusLine.Love, 1);
+                else if (lv == 1 && loveNeed > 85f && now - lastFContact > 120 && Chance(0.25f)) SetStage(StatusLine.Love, 2);
+                else if (lv == 2 && desireHighMin >= 120f && Chance(0.2f)) SetStage(StatusLine.Love, 3);
+                if (lv > 0 && loveNeed < 20f && lv < 3) Ease(StatusLine.Love);
+            }
+
+            // 風邪の悪化
+            if (GetStage(StatusLine.Cold) == 1 && tired > 80f && CanActNow() && Chance(0.25f)) StartFever();
+
+            // 魔力（量で段階が決まる）
+            int target = mana >= 95f ? 3 : (mana >= 80f ? 2 : (mana >= 60f ? 1 : 0));
+            int ms = GetStage(StatusLine.Mana);
+            if (target != ms && GetStage(StatusLine.ManaOut) == 0)
+            {
+                if (target == 3 && Present && state != State.Sleeping && state != State.Private) ManaBurst();
+                else if (target < 3) SetStage(StatusLine.Mana, target, false, target < ms);
+            }
+
+            // 集中は続けている間だけ
+            bool working = (state == State.Sitting || state == State.Activity) && (act == Act.Study || act == Act.Hobby);
+            if (!working) { focusMin = 0f; if (GetStage(StatusLine.Focus) > 0) SetStage(StatusLine.Focus, 0, false, true); }
+            else
+            {
+                int fo = GetStage(StatusLine.Focus);
+                if (fo == 0 && focusMin >= 20f && Chance(0.5f)) SetStage(StatusLine.Focus, 1);
+                else if (fo == 1 && focusMin >= 40f && Chance(0.4f)) SetStage(StatusLine.Focus, 2);
+                else if (fo == 2 && focusMin >= 60f && Chance(0.25f)) SetStage(StatusLine.Focus, 3);
+            }
+
+            // 課題の締め切り
+            if (hasAssignment && now >= assignDeadline)
+            {
+                hasAssignment = false;
+                if (assignProgress < 100f)
+                {
+                    world.Log(displayName + "は課題が間に合わなかった（" + Mathf.RoundToInt(assignProgress) + "%）");
+                    academic = Mathf.Max(0f, academic - 2f);
+                    NegativeEvent(0.9f);
+                }
+            }
+        }
+
+        /// <summary>会話・外出・入浴・睡眠・部屋で過ごしている最中でなければ true。</summary>
+        bool CanActNow()
+        {
+            return state == State.Idle || state == State.Walking || state == State.Sitting || state == State.Activity || state == State.Waiting;
+        }
+
+        void Explode()
+        {
+            SetStage(StatusLine.Frustration, 3, true);
+            ShowBubble("もう無理っ！", 2f);
+            world.Log(displayName + "の鬱憤が爆発！ 寮を飛び出していった");
+            bored = 0f;
+            SetStage(StatusLine.Frustration, 0, false, true);
+            awayUntil = world.Now + 40;
+            awayKind = AwayKind.Stroll;
+            awayLabel = "飛び出していった";
+            StartLeave("寮を飛び出す");
+        }
+
+        void ManaBurst()
+        {
+            ShowBubble("ボンッ！", 1.8f);
+            world.Log("★ " + displayName + "の魔力が暴走した！");
+            foreach (var o in world.characters)
+            {
+                if (o == this || !o.Present) continue;
+                if ((o.transform.position - transform.position).sqrMagnitude < 25f) { o.ShowBubble("わっ！", 1.5f); o.bored = Mathf.Max(0f, o.bored - 20f); }
+            }
+            if (state != State.Talking && state != State.Eating && state != State.Bathing && LoungeWorld.OnFloorLevel(transform.position))
+            {
+                LeaveCurrentSpot();
+                var area = world.AreaAt(transform.position);
+                Vector3 p = area != null ? world.NavAt(transform.position).RandomFreePoint(area.rect) : transform.position;
+                transform.position = p;
+                SetState(State.Idle);
+                actionText = "目を回している";
+            }
+            mana = 0f;
+            SetStage(StatusLine.Mana, 0, false, true);
+            SetStage(StatusLine.ManaOut, 1, true);
+        }
+
+        void StartFever()
+        {
+            SetStage(StatusLine.Cold, 2, true);
+            world.Log(displayName + "が熱を出して寝込んだ");
+            if (room == null) return;
+            LeaveCurrentSpot();
+            sickRest = true;
+            seat = room.bed;
+            seat.occupant = this;
+            goal = Goal.Nap;
+            actionText = "熱で部屋に戻る";
+            if (!GoTo(seat.approach, State.Walking)) { SnapToSeat(); SetState(State.Sleeping); }
         }
 
         // ================= 初期化 =================
@@ -184,7 +405,10 @@ namespace LifeSimProto
             study = Random.Range(10f, 40f);
             hobbyNeed = Random.Range(10f, 40f);
             loveNeed = Random.Range(0f, 30f);
+            academic = 20f + diligence * 40f + Random.Range(0f, 15f);
+            mana = Random.Range(10f, 40f);
             thinkTimer = Random.Range(0.2f, 1.5f);
+            lastFContact = -1000;
 
             EnsureSchedule();
             if (room != null)
@@ -219,13 +443,9 @@ namespace LifeSimProto
                 if (state == State.Waiting) UpdateWaiting(dt);
                 if (state == State.Talking && talkPartner != null) FaceTowards(talkPartner.transform.position, dt);
                 if (state == State.Activity && poi != null) FaceTowards(poi.lookAt, dt);
-                if (state == State.Activity && poi == null && goal == Goal.None && gathering != null) FaceTowards(gatherFocus, dt);
-                if (bubble == null && state != State.Sleeping)
-                {
-                    if (state == State.Activity && act == Act.Hobby && hobby == HobbyKind.Magic && Random.value < dt * 0.4f) ShowBubble("✦", 1.0f);
-                    else if (HasStatus(StatusKind.Lovesick) && Random.value < dt * 0.12f) ShowBubble("…♡", 1.4f);
-                    else if (HasStatus(StatusKind.SleepDeprived) && Random.value < dt * 0.08f) ShowBubble("ふぁ…", 1.2f);
-                }
+                if (state == State.Activity && poi == null && gathering != null) FaceTowards(gatherFocus, dt);
+                if (state == State.Activity && goal == Goal.None && choice == Choice.Hover && world.RomanceTarget != null) FaceTowards(world.RomanceTarget.transform.position, dt);
+                if (bubble == null && state != State.Sleeping && state != State.Private) IdleBubbles(dt);
             }
 
             thinkTimer -= dt;
@@ -248,20 +468,33 @@ namespace LifeSimProto
             }
         }
 
+        /// <summary>状態や作業が、行動や吹き出しでそれとなくわかるようにする。</summary>
+        void IdleBubbles(float dt)
+        {
+            float r = Random.value;
+            if (state == State.Activity && act == Act.Hobby && hobby == HobbyKind.Magic && r < dt * 0.4f) ShowBubble("✦", 1.0f);
+            else if (GetStage(StatusLine.Mana) >= 2 && r < dt * 0.2f) ShowBubble("（ぱちぱち）", 1.2f);
+            else if (GetStage(StatusLine.Love) >= 1 && r < dt * 0.1f) ShowBubble(GetStage(StatusLine.Love) >= 3 ? "…はぁ♡" : "…♡", 1.4f);
+            else if (GetStage(StatusLine.Sleep) >= 1 && r < dt * 0.08f) ShowBubble("ふぁ…", 1.2f);
+            else if (GetStage(StatusLine.MoodDown) >= 2 && r < dt * 0.06f) ShowBubble("はぁ…", 1.4f);
+            else if (GetStage(StatusLine.Frustration) >= 1 && r < dt * 0.06f) ShowBubble("むしゃくしゃ…", 1.4f);
+            else if (act == Act.Study && hasAssignment && assignProgress < 100f && r < dt * 0.08f)
+                ShowBubble(assignProgress < 50f && (assignDeadline - world.Now) < 1440 ? "終わらない…！" : "課題、課題…", 1.4f);
+        }
+
         // ================= 欲求 =================
         void UpdateNeeds(float dt)
         {
             float gm = dt * world.GameMinutesPerSecond(); // 進んだゲーム内の分
-            double now = world.Now;
-            statuses.RemoveAll(s => s.until <= now);
+            UpdateStatuses(gm);
 
-            // 時間とともに増えるもの（ゲーム内の時間で）
             hunger += gm * 0.2f * RateMul(NeedKind.Hunger);
             study += gm * 0.05f * (0.5f + diligence) * RateMul(NeedKind.Study);
             hobbyNeed += gm * 0.09f * RateMul(NeedKind.Hobby);
             sleepy += gm * 0.075f * RateMul(NeedKind.Sleepy);
             if (!IsTarget && LoveStage >= 1) loveNeed += gm * 0.05f * (0.5f + world.romance.love[id] / 50f) * RateMul(NeedKind.Love);
             desire += gm * DesireRate();
+            if (GetStage(StatusLine.ManaOut) == 0) mana += gm * (hobby == HobbyKind.Magic ? 0.035f : 0.02f);
 
             float lonelyMul = RateMul(NeedKind.Lonely), tiredMul = RateMul(NeedKind.Tired), boredMul = RateMul(NeedKind.Bored);
             switch (state)
@@ -269,15 +502,16 @@ namespace LifeSimProto
                 case State.Away:
                     if (awayKind == AwayKind.Stroll) { hobbyNeed -= gm * 2.5f; bored -= gm * 2f; }
                     else if (awayKind == AwayKind.Outing) { bored -= gm * 2f; lonely -= gm * 1f; hobbyNeed -= gm * 0.5f; }
-                    else { study -= gm * 0.35f; weekStudy += gm * 0.35f; }
+                    else if (awayKind == AwayKind.Job) { tired += gm * 0.15f; bored += gm * 0.05f; }
+                    else { study -= gm * 0.35f; weekStudy += gm * 0.35f; academic += gm * 0.004f; }
                     break;
                 case State.Private:
-                    desire -= gm * 4f; lonely -= gm * 2f; loveNeed -= gm * 3f; break;
+                    desire -= gm * 4f; lonely -= gm * 2f; loveNeed -= gm * 3f; lastFContact = world.Now; break;
                 case State.Sleeping:
                 {
-                    // 性欲が高いまま夜を迎えると、眠りが浅くなる
                     float recover = 0.6f;
-                    if (!napping && !sickRest && LoungeWorld.IsNight(world.MinuteOfDay) && desire >= 60f) recover *= 0.25f;
+                    if (!napping && !sickRest && !deepSleep && LoungeWorld.IsNight(world.MinuteOfDay) && desire >= 60f) recover *= 0.25f;
+                    if (deepSleep) recover *= 1.5f;
                     sleepy -= gm * recover; tired -= dt * 5f; bored -= dt * 2f; lonely += dt * 0.1f;
                     break;
                 }
@@ -288,8 +522,8 @@ namespace LifeSimProto
                 case State.Sitting:
                     lonely += dt * 0.9f * (0.4f + sociability) * lonelyMul;
                     tired -= dt * 3.5f;
-                    if (act == Act.Study) Studying(dt);
-                    else if (act == Act.Hobby) { hobbyNeed -= dt * 3f; bored -= dt * 2f; }
+                    if (act == Act.Study) Studying(dt, gm);
+                    else if (act == Act.Hobby) { hobbyNeed -= dt * 3f; bored -= dt * 2f; focusMin += gm; }
                     else if (act == Act.Fun) { bored -= dt * 2.5f; lonely -= dt * 1.2f; }
                     else bored += dt * (0.5f + whim * 0.4f) * boredMul;
                     break;
@@ -304,8 +538,13 @@ namespace LifeSimProto
                 case State.Activity:
                     lonely += dt * 0.9f * (0.4f + sociability) * lonelyMul;
                     tired += dt * 0.3f * tiredMul;
-                    if (act == Act.Study) Studying(dt);
-                    else if (act == Act.Hobby) { hobbyNeed -= dt * 3f; bored -= dt * 3f; }
+                    if (act == Act.Study) Studying(dt, gm);
+                    else if (act == Act.Hobby)
+                    {
+                        hobbyNeed -= dt * 3f; bored -= dt * 3f; focusMin += gm;
+                        if (hobby == HobbyKind.Magic && poi != null && poi.hobby >= 0) mana -= dt * 4f;
+                    }
+                    else if (act == Act.Work) { tired += dt * 0.5f; }
                     else { bored -= dt * 4f; if (gathering != null) lonely -= dt * 1.2f; }
                     break;
                 case State.Talking:
@@ -318,12 +557,13 @@ namespace LifeSimProto
 
             // Fの近くにいると恋心が落ち着き、気持ちが少しずつ育つ
             var f = world.RomanceTarget;
-            if (!IsTarget && f != null && f.Present && Present)
+            if (!IsTarget && f != null && f.Present && Present && state != State.Private)
             {
                 Vector3 d = f.transform.position - transform.position;
                 if (Mathf.Abs(d.y) < 1f && d.sqrMagnitude < 9f)
                 {
                     loveNeed -= gm * 0.3f;
+                    lastFContact = world.Now;
                     world.ChangeLove(this, gm * 0.015f);
                 }
             }
@@ -337,20 +577,48 @@ namespace LifeSimProto
             loveNeed = Mathf.Clamp(loveNeed, 0f, 100f);
             sleepy = Mathf.Clamp(sleepy, 0f, 100f);
             desire = Mathf.Clamp(desire, 0f, 100f);
-
-            // 状態の自動のつけ外し
-            if (!IsTarget && LoveStage >= 2 && loveNeed > 70f && !HasStatus(StatusKind.Lovesick)) AddStatus(StatusKind.Lovesick, 600);
-            if (HasStatus(StatusKind.Lovesick) && loveNeed < 25f) RemoveStatus(StatusKind.Lovesick);
-            if (HasStatus(StatusKind.Assignment) && study < 15f) { RemoveStatus(StatusKind.Assignment); world.Log(displayName + "が課題を終わらせた"); }
+            mana = Mathf.Clamp(mana, 0f, 100f);
+            academic = Mathf.Clamp(academic, 0f, 100f);
         }
 
-        void Studying(float dt)
+        void Studying(float dt, float gm)
         {
-            float eff = StatusProduct(d => d.studyEfficiency);
+            float eff = Prod(e => e.studyEfficiency) * (requestEffort >= 0f ? 0.7f + requestEffort * 0.6f : 1f);
             float amount = dt * 2.5f * eff;
             study -= amount;
             weekStudy += amount * 0.4f;
+            academic += amount * 0.003f;
+            focusMin += gm;
             bored += dt * 0.3f;
+            if (hasAssignment && assignProgress < 100f)
+            {
+                assignProgress += amount * 0.45f * (0.5f + academic / 100f);
+                if (assignProgress >= 100f)
+                {
+                    assignProgress = 100f;
+                    academic += 1f;
+                    world.Log(displayName + "が課題を終わらせた");
+                    ShowBubble("終わった〜！", 1.8f);
+                    PositiveEvent(0.3f);
+                }
+            }
+            // 近くで課題をしている子に教える（学力が高い子ほど）
+            foreach (var o in world.characters)
+            {
+                if (o == this || !o.hasAssignment || o.assignProgress >= 100f || o.act != Act.Study) continue;
+                if (o.state != State.Sitting && o.state != State.Activity) continue;
+                if (academic < o.academic + 10f) continue;
+                Vector3 d = o.transform.position - transform.position;
+                if (Mathf.Abs(d.y) > 0.5f || d.sqrMagnitude > 2.5f * 2.5f) continue;
+                o.assignProgress += amount * 0.15f * (academic / 100f);
+                world.rel.Add(id, o.id, amount * 0.02f, world.simTime);
+                if (taughtDay != world.Day)
+                {
+                    taughtDay = world.Day;
+                    ShowBubble("ここはね…", 1.5f);
+                    world.Log(displayName + "が" + o.displayName + "に課題を教えている");
+                }
+            }
         }
 
         /// <summary>性欲の増え方。「好き」以上だけが増え、気持ちが強いほど加速度的に速くなる。Fは自分を好きな子の気持ちで増える。</summary>
@@ -369,41 +637,66 @@ namespace LifeSimProto
             return 0.025f * l * l * l * RateMul(NeedKind.Desire);
         }
 
-        /// <summary>その場所のまわりに、仲のいい子・好きな人・恋人がいるほど高くなる。</summary>
         float PlaceBonus(Vector3 p)
         {
             float b = 0f;
+            bool avoid = GetStage(StatusLine.MoodDown) >= 2;
             foreach (var o in world.characters)
             {
-                if (o == this || !o.Present) continue;
+                if (o == this || !o.Present || o.InPrivate) continue;
                 Vector3 d = o.transform.position - p;
                 if (Mathf.Abs(d.y) > 1f || d.sqrMagnitude > 3.5f * 3.5f) continue;
+                if (avoid) { b -= 1f; continue; }
                 b += (world.rel.Get(id, o.id) - 30f) / 20f;
                 if (o.IsTarget && LoveStage >= 2) b += 3f;
                 else if (o.IsTarget && LoveStage == 1) b += 1.5f;
                 if (IsTarget && o.LoveStage >= 2) b += 1.5f;
+                if (o == clingTarget) b += 6f;
             }
             return b;
         }
 
-        /// <summary>その部屋に遊びに行ってよいか（部屋の主が部屋にいて、仲がいい／好きな相手）。</summary>
         bool CanVisitRoom(RoomInfo r)
         {
             if (r == null || r.owner < 0 || r.owner == id || r.owner >= world.characters.Count) return false;
             var owner = world.characters[r.owner];
-            if (!owner.Present || world.AreaName(owner.transform.position) != r.AreaName) return false;
+            if (!owner.Present || owner.InPrivate || world.AreaName(owner.transform.position) != r.AreaName) return false;
             if (owner.IsTarget) return LoveStage >= 2;
             if (IsTarget) return owner.LoveStage >= 2;
             return world.rel.Get(id, owner.id) >= 40f;
+        }
+
+        // ================= 課題 =================
+        public void GiveAssignment(double deadline)
+        {
+            hasAssignment = true;
+            assignProgress = 0f;
+            assignDeadline = deadline;
+            nightOwlLogged = false;
+            study = Mathf.Max(study, 40f);
+        }
+
+        /// <summary>課題の急ぎ具合（0〜1）。締め切りが近く、進んでいないほど大きい。</summary>
+        float AssignmentUrgency()
+        {
+            if (!hasAssignment || assignProgress >= 100f) return 0f;
+            float hoursLeft = (float)((assignDeadline - world.Now) / 60.0);
+            float left = 1f - assignProgress / 100f;
+            float time = Mathf.Clamp01(1f - hoursLeft / 54f);
+            return left * (0.25f + 0.75f * time) * (0.6f + 0.8f * diligence * (1f - time) + time);
         }
 
         // ================= 予定 =================
         void EnsureSchedule()
         {
             if (scheduleDay == world.Day) return;
+            // 日付が変わっても、まだ寝ていなければ前の日の「就寝」を引き継ぐ
+            ScheduleItem carry = null;
+            foreach (var it in schedule) if (it.kind == TaskKind.Bed && !it.done && state != State.Sleeping) carry = it;
             scheduleDay = world.Day;
             schedule = ScheduleMaker.Make(id, scheduleDay, world.holidayWeekdays);
             foreach (var it in schedule) if (it.kind != TaskKind.Bed && it.end < world.Now) it.done = true;
+            if (carry != null) schedule.Insert(0, carry);
         }
 
         bool NearMeal(double minutes)
@@ -417,10 +710,9 @@ namespace LifeSimProto
             return false;
         }
 
-        /// <summary>予定の時刻になっていれば、その行動を始める。始めたら true。</summary>
         bool HandleSchedule(double now)
         {
-            if (hasOrder || privatePending) return false;
+            if (hasOrder || privatePending || sickRest) return false;
             foreach (var it in schedule)
             {
                 if (it.done) continue;
@@ -433,6 +725,7 @@ namespace LifeSimProto
                         it.done = true;
                         awayUntil = it.end;
                         awayKind = AwayKind.Class;
+                        classBlocks = Mathf.Max(1, Mathf.RoundToInt((float)((it.end - it.start) / 100.0)));
                         awayLabel = it.Label == "試験" ? "試験を受けている" : "授業に出ている";
                         StartLeave(it.Label == "試験" ? "試験を受けに行く" : "授業に出かける");
                         return true;
@@ -441,6 +734,7 @@ namespace LifeSimProto
                     case TaskKind.Dinner:
                         if (now > it.start + 60) { it.done = true; continue; }
                         it.done = true;
+                        if (GetStage(StatusLine.MoodDown) >= 3 && Random.value < 0.5f) { world.Log(displayName + "は食欲がなくて" + it.Label + "を抜いた"); continue; }
                         StartMeal(Act.Meal, it.Label);
                         return true;
                     case TaskKind.Bath:
@@ -449,8 +743,17 @@ namespace LifeSimProto
                         StartBath();
                         return true;
                     case TaskKind.Bed:
-                        if (state == State.Sleeping && !napping) { it.done = true; return false; }
+                        if (state == State.Sleeping && !napping && !dozing) { it.done = true; return false; }
                         if (goal == Goal.Bed) return true;
+                        // 課題が終わっていなければ夜ふかし（22時〜2時）
+                        float m = world.MinuteOfDay;
+                        bool nightStudy = m >= 1320f || m < 120f;
+                        if (nightStudy && AssignmentUrgency() > 0.45f && assignProgress < 90f)
+                        {
+                            if (!nightOwlLogged) { nightOwlLogged = true; world.Log(displayName + "が夜ふかしして課題をしている"); }
+                            if (state != State.Sitting && state != State.Activity && goal == Goal.None) StartStudy();
+                            return true;
+                        }
                         bedItem = it;
                         StartBed();
                         return true;
@@ -503,7 +806,6 @@ namespace LifeSimProto
             if (!GoTo(seat.approach, State.Walking)) { goal = Goal.None; SetState(State.Idle); }
         }
 
-        /// <summary>おやつ：談話室のワゴンで取って、仲のいい子の近くに座って食べる。</summary>
         bool StartSnack()
         {
             Poi trolley = FindPoi(p => p.snack && p.FreeSlot() >= 0);
@@ -538,7 +840,6 @@ namespace LifeSimProto
             if (!GoTo(seat.approach, State.Walking)) { goal = Goal.None; }
         }
 
-        /// <summary>昼寝：自分のベッドか、仲のいい子・好きな人の部屋の来客用の布団で。</summary>
         bool StartNap()
         {
             Seat best = null;
@@ -572,65 +873,55 @@ namespace LifeSimProto
         {
             transform.position = world.exitPoint;
             SetVisible(true);
-            string what = awayKind == AwayKind.Stroll ? "散歩" : (awayKind == AwayKind.Outing ? "おでかけ" : (awayLabel == "試験を受けている" ? "試験" : "授業"));
+            string what = awayKind == AwayKind.Stroll ? "散歩" : (awayKind == AwayKind.Outing ? "おでかけ" : (awayKind == AwayKind.Job ? "アルバイト" : (awayLabel == "試験を受けている" ? "試験" : "授業")));
+            if (awayLabel == "飛び出していった") what = "外";
             world.Log(displayName + "が" + what + "から帰ってきた");
             goal = Goal.Return;
             actionText = what + "から帰ってきた";
             if (awayKind == AwayKind.Class)
             {
                 float m = world.MinuteOfDay;
-                if (m >= 12.5f * 60f && m <= 16.5f * 60f) hunger = Mathf.Min(hunger, 25f); // 学内で昼食
-                if (awayLabel != "試験を受けている" && Random.value < 0.2f)
-                {
-                    AddStatus(StatusKind.Assignment, 3 * 1440);
-                    study = Mathf.Max(study, 50f);
-                    world.Log(displayName + "は課題が出たらしい");
-                }
+                if (m >= 12.5f * 60f && m <= 16.5f * 60f) hunger = Mathf.Min(hunger, 25f);
+                if (IsTarget && world.player != null) world.player.Earn(15 * classBlocks, "授業に出た");
             }
+            if (awayKind == AwayKind.Job && world.player != null && IsTarget) world.player.Earn(70, "街のアルバイト");
             gathering = null;
+            hasOrder = false;
             if (!GoTo(world.entrancePoint, State.Walking)) { goal = Goal.None; SetState(State.Idle); }
         }
 
         void WakeUp()
         {
-            bool fromNight = !napping && !sickRest;
+            bool fromNight = !napping && !sickRest && !dozing;
             napping = false;
+            dozing = false;
             if (sickRest)
             {
                 sickRest = false;
-                RemoveStatus(StatusKind.Cold);
-                world.Log(displayName + "の風邪が治った");
+                if (GetStage(StatusLine.Cold) >= 2) SetStage(StatusLine.Cold, 1, true);
+                else SetStage(StatusLine.Cold, 0);
             }
-            // 風邪をひく（寝不足だとひきやすい）
-            if (fromNight && room != null && seat == room.bed)
+            if (fromNight)
             {
-                float p = 0.03f + (sleepy > 30f ? 0.07f : 0f);
-                if (Random.value < p)
-                {
-                    sickRest = true;
-                    sleepUntil = ScheduleMaker.WakeTime(id, world.Day + 1, world.holidayWeekdays);
-                    AddStatus(StatusKind.Cold, sleepUntil - world.Now);
-                    actionText = "風邪で寝込んでいる";
-                    ShowBubble("けほっ", 2f);
-                    world.Log(displayName + "が風邪をひいて寝込んでいる");
-                    SetState(State.Sleeping);
-                    return;
-                }
+                // 寝不足：起きたときの眠気で段階が決まる（安眠のお香を使った夜はならない）
+                int sl = deepSleep ? 0 : (sleepy > 70f ? 3 : (sleepy > 50f ? 2 : (sleepy > 30f ? 1 : 0)));
+                SetStage(StatusLine.Sleep, sl, true);
+                deepSleep = false;
+                // 風邪（寝不足だとひきやすい）
+                if (GetStage(StatusLine.Cold) == 0 && Chance(0.03f + sl * 0.04f)) SetStage(StatusLine.Cold, 1);
             }
-            if (fromNight && sleepy > 30f)
-            {
-                double untilNight = ScheduleMaker.DayStart(world.Day) + 1380 - world.Now;
-                AddStatus(StatusKind.SleepDeprived, untilNight);
-            }
+            else if (GetStage(StatusLine.Sleep) > 0) Ease(StatusLine.Sleep);
+
             if (seat != null && seat.occupant == this)
             {
-                transform.position = world.NearestFree(seat.approach);
-                seat.occupant = null;
+                if (seat.kind == SeatKind.Bed) transform.position = world.NearestFree(seat.approach);
+                if (seat.kind == SeatKind.Bed) seat.occupant = null;
             }
-            seat = null;
+            if (seat != null && seat.kind == SeatKind.Bed) seat = null;
             EnsureSchedule();
+            if (seat != null && seat.kind == SeatKind.Sit) { SetState(State.Sitting); actionText = "目をこすっている"; return; }
             actionText = "起きた";
-            ShowBubble(HasStatus(StatusKind.SleepDeprived) ? "ねむい…" : "ふあ〜", 2f);
+            ShowBubble(GetStage(StatusLine.Sleep) > 0 ? "ねむい…" : "ふあ〜", 2f);
             SetState(State.Idle);
             thinkTimer = Random.Range(1f, 3f);
         }
@@ -646,9 +937,9 @@ namespace LifeSimProto
         void JoinGathering(Gathering g)
         {
             g.members.Add(this);
-            gathering = g;
             if (g.outing)
             {
+                gathering = g;
                 awayKind = AwayKind.Outing;
                 awayLabel = g.label;
                 awayUntil = g.end;
@@ -667,10 +958,9 @@ namespace LifeSimProto
             if (best != null && Vector3.Distance(best.position, g.focus) < 4.5f)
             {
                 StartSitAt(best, Act.Fun, g.label);
-                gathering = g; // StartSitAt の中で一度外れるので、あとで設定し直す
+                gathering = g;
                 return;
             }
-            // 座る場所がなければ、中心のまわりに立つ
             LeaveCurrentSpot();
             gathering = g;
             float a = Random.value * Mathf.PI * 2f;
@@ -682,7 +972,6 @@ namespace LifeSimProto
             if (!GoTo(p, State.Walking)) SetState(State.Idle);
         }
 
-        /// <summary>手作りお菓子：食堂で作って、Fに渡しに行く。</summary>
         public bool StartBaking()
         {
             if (!AvailableForTalk || state == State.Sleeping) return false;
@@ -704,6 +993,12 @@ namespace LifeSimProto
                 case State.Talking:
                     return;
                 case State.Sleeping:
+                    // 上機嫌・絶好調なら、眠気がなくなった時点で早起きする
+                    if (!napping && !sickRest && !dozing && sleepy <= 0f && GetStage(StatusLine.MoodUp) >= 2 && world.MinuteOfDay >= 330f && world.MinuteOfDay < 600f && now < sleepUntil)
+                    {
+                        world.Log(displayName + "はすっきり早起きした");
+                        sleepUntil = now;
+                    }
                     if (now >= sleepUntil) WakeUp();
                     return;
                 case State.Away:
@@ -715,6 +1010,12 @@ namespace LifeSimProto
                 case State.Eating:
                     if (now < eatUntil) return;
                     ShowBubble(act == Act.Tea ? "ほっ…" : "ごちそうさま", 1.8f);
+                    // 満腹
+                    if (hunger < 5f)
+                    {
+                        if (act == Act.Snack && GetStage(StatusLine.Full) >= 1) Escalate(StatusLine.Full);
+                        else if (Chance(0.3f)) SetStage(StatusLine.Full, 1);
+                    }
                     LeaveCurrentSpot();
                     SetState(State.Idle);
                     actionText = "ぼんやりしている";
@@ -745,12 +1046,22 @@ namespace LifeSimProto
                         if (!StartReadingSeat()) SetState(State.Idle);
                         return;
                     }
+                    if (act == Act.Work)
+                    {
+                        if (now < workUntil) return;
+                        if (world.player != null) world.player.Earn(20, "寮の手伝い");
+                        hasOrder = false;
+                        LeaveCurrentSpot();
+                        SetState(State.Idle);
+                        actionText = "手伝いを終えた";
+                        return;
+                    }
                     if (bakePending)
                     {
                         if (stateTime < activityDuration) return;
                         bakePending = false;
                         var f = world.RomanceTarget;
-                        if (f != null && f.AvailableForTalk) { BeginApproach(f, false, Intent.Gift); return; }
+                        if (f != null && f.AvailableForTalk) { BeginApproach(f, false, Intent.Bake); return; }
                         world.Log(displayName + "はお菓子を渡しそびれた");
                         LeaveCurrentSpot();
                         SetState(State.Idle);
@@ -758,9 +1069,47 @@ namespace LifeSimProto
                     break;
             }
 
+            if (hasPendingRequest && state != State.Talking) { ExecuteRequest(); return; }
             if (privatePending) return;
             if (HandleSchedule(now)) return;
             if (state == State.Approaching || state == State.Waiting || state == State.Walking) return;
+            if (hasOrder) return; // プレイヤーの指示を実行中
+
+            // ---- 限界：その場で居眠り ----
+            if (GetStage(StatusLine.Sleep) >= 3 && Random.value < 0.08f)
+            {
+                if (state == State.Sitting && seat != null)
+                {
+                    dozing = true;
+                    sleepUntil = now + 25;
+                    SetState(State.Sleeping);
+                    actionText = "居眠りしている";
+                    ShowBubble("zzz", 1.5f);
+                    return;
+                }
+                if (StartNap()) { choice = Choice.Nap; return; }
+            }
+
+            // ---- 赤面：Fが近いと離れる ----
+            var fx = world.RomanceTarget;
+            if (GetStage(StatusLine.Shy) >= 2 && fx != null && fx.Present && !fx.InPrivate && fx.state != State.Talking)
+            {
+                Vector3 d = fx.transform.position - transform.position;
+                if (Mathf.Abs(d.y) < 1f && d.sqrMagnitude < 4f && state != State.Sitting && Random.value < 0.5f)
+                {
+                    ShowBubble("っ…！", 1.2f);
+                    StartWander();
+                    return;
+                }
+            }
+
+            // ---- 嫉妬：Fがほかの子と話していたら、そばへ行って待つ ----
+            if (GetStage(StatusLine.Jealousy) >= 3 && fx != null && fx.state == State.Talking && fx.TalkPartner != null && fx.TalkPartner != this && Random.value < 0.5f)
+            {
+                BeginApproach(fx, false, Intent.Love);
+                actionText = fx.displayName + "の会話が気になる";
+                return;
+            }
 
             // ---- 行事 ----
             if (gathering != null)
@@ -774,29 +1123,41 @@ namespace LifeSimProto
                 if (g.members.Contains(this)) { if (!g.outing) { JoinGathering(g); return; } }
                 else
                 {
-                    float chance = g.joinChance * (HasStatus(StatusKind.Down) ? 0.5f : 1f) * (0.7f + 0.3f * sociability);
+                    float chance = g.joinChance * (GetStage(StatusLine.MoodDown) > 0 ? 0.5f : 1f) * (0.7f + 0.3f * sociability);
                     if (g.invited != null) chance = 1f;
                     if (Random.value < chance) { JoinGathering(g); return; }
                     g.declined.Add(this);
                 }
             }
 
+            // ---- 孤独：仲のいい子にべったり ----
+            if (GetStage(StatusLine.Lonely) >= 2)
+            {
+                if (clingTarget == null || !clingTarget.Present || clingTarget.InPrivate) clingTarget = BestFriendPresent();
+                if (clingTarget != null && FollowCling()) return;
+            }
+            else clingTarget = null;
+
             // ---- 空き時間：いちばん強い欲求を選ぶ ----
             float noise = 40f * whim;
             var scores = new Dictionary<Choice, float>();
-            scores[Choice.Social] = lonely * (0.7f + 0.6f * sociability) * StatusProduct(d => d.socialScore);
+            scores[Choice.Social] = lonely * (0.7f + 0.6f * sociability) * Prod(e => e.socialScore);
             scores[Choice.Rest] = tired;
-            scores[Choice.Fun] = bored * StatusProduct(d => d.funScore);
+            scores[Choice.Fun] = bored * Prod(e => e.funScore) * (world.ExamEveToday ? 0.8f : 1f);
             bool hungry = hunger > 55f || (world.SnackBonus && hunger > 30f);
-            scores[Choice.Snack] = (hungry && !NearMeal(45)) ? hunger * 0.9f + (world.SnackBonus ? 30f : 0f) : 0f;
-            scores[Choice.Study] = study * (0.6f + 0.8f * diligence) * StatusProduct(d => d.studyScore);
+            scores[Choice.Snack] = (hungry && !NearMeal(45) && GetStage(StatusLine.Full) == 0) ? hunger * 0.9f + (world.SnackBonus ? 30f : 0f) : 0f;
+            float studyBase = study * (0.6f + 0.8f * diligence) * Prod(e => e.studyScore) * (world.ExamEveToday ? 1.4f : 1f);
+            scores[Choice.Study] = studyBase + AssignmentUrgency() * 110f;
             scores[Choice.Hobby] = hobbyNeed;
             var target0 = world.RomanceTarget;
-            scores[Choice.Love] = (!IsTarget && LoveStage >= 1 && target0 != null && target0.AvailableForTalk) ? loveNeed * 1.1f : 0f;
-            float napAt = HasStatus(StatusKind.SleepDeprived) ? 70f : 85f;
+            bool fFree = !IsTarget && LoveStage >= 1 && target0 != null && target0.AvailableForTalk;
+            float loveScore = fFree ? loveNeed * 1.1f * Prod(e => e.loveScore) : 0f;
+            if (GetStage(StatusLine.Shy) > 0 || (GetStage(StatusLine.Love) >= 2 && Random.value < 0.4f)) { scores[Choice.Hover] = loveScore; scores[Choice.Love] = 0f; }
+            else scores[Choice.Love] = loveScore;
+            float napAt = 85f - GetStage(StatusLine.Sleep) * 10f;
             scores[Choice.Nap] = sleepy > napAt ? sleepy : 0f;
             SimCharacter privatePartner = PrivatePartner();
-            scores[Choice.Private] = privatePartner != null ? desire * 1.1f : 0f;
+            scores[Choice.Private] = privatePartner != null ? desire * 1.1f * Prod(e => e.privateScore) : 0f;
 
             Choice best = Choice.None;
             float bestScore = 0f;
@@ -822,6 +1183,7 @@ namespace LifeSimProto
                 return;
             }
 
+            requestEffort = -1f;
             bool ok;
             switch (best)
             {
@@ -832,6 +1194,7 @@ namespace LifeSimProto
                 case Choice.Study: ok = StartStudy(); break;
                 case Choice.Hobby: ok = StartHobby(); break;
                 case Choice.Love: BeginApproach(target0, false, Intent.Love); ok = true; break;
+                case Choice.Hover: ok = StartHover(); break;
                 case Choice.Nap: ok = StartNap(); break;
                 case Choice.Private: BeginApproach(privatePartner, false, Intent.Private); ok = true; break;
                 default: ok = false; break;
@@ -840,7 +1203,57 @@ namespace LifeSimProto
             else { StartWander(); choice = Choice.None; }
         }
 
-        /// <summary>二人きり（以上）の時間を過ごせる相手。どちらも「好き」以上の関係で、気持ちが高まっていて、手が空いているとき。</summary>
+        SimCharacter BestFriendPresent()
+        {
+            SimCharacter best = null;
+            float bestA = -1f;
+            foreach (var o in world.characters)
+            {
+                if (o == this || !o.Present || o.InPrivate || o.state == State.Sleeping) continue;
+                float a = world.rel.Get(id, o.id) + (o.IsTarget && LoveStage >= 1 ? 20f : 0f);
+                if (a > bestA) { bestA = a; best = o; }
+            }
+            return best;
+        }
+
+        /// <summary>孤独：相手のそばについて回る。相手が座っていれば近くの席に座る。</summary>
+        bool FollowCling()
+        {
+            var t = clingTarget;
+            Vector3 d = t.transform.position - transform.position;
+            bool near = Mathf.Abs(d.y) < 0.5f && Flat(d).magnitude < 2.2f;
+            if (near && (state == State.Sitting || state == State.Activity)) return true;
+            if (near && t.AvailableForTalk && lonely > 50f && Random.value < 0.3f) { BeginApproach(t, false, Intent.Talk); return true; }
+            if (near && (t.state == State.Sitting || t.state == State.Eating))
+            {
+                Seat s = BestSeat(x => Vector3.Distance(x.position, t.transform.position) < 2.5f);
+                if (s != null && StartSitAt(s, Act.Rest, t.displayName + "にべったり")) { choice = Choice.Cling; return true; }
+            }
+            if (near) { SetState(State.Activity); actionText = t.displayName + "にべったり"; activityDuration = 5f; choice = Choice.Cling; return true; }
+            LeaveCurrentSpot();
+            Vector3 behind = t.transform.position - t.transform.forward * 1.0f;
+            goal = Goal.Follow;
+            act = Act.None;
+            actionText = t.displayName + "について行く";
+            choice = Choice.Cling;
+            return GoTo(world.NearestFree(behind), State.Walking);
+        }
+
+        /// <summary>恋の病・照れ：Fに話しかけずに、少し離れて目で追う。</summary>
+        bool StartHover()
+        {
+            var f = world.RomanceTarget;
+            if (f == null || !f.Present || f.InPrivate) return false;
+            float r = GetStage(StatusLine.Shy) > 0 ? 3.5f : 2.8f;
+            float a = Random.value * Mathf.PI * 2f;
+            Vector3 p = world.NearestFree(f.transform.position + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * r);
+            LeaveCurrentSpot();
+            goal = Goal.Hover;
+            act = Act.None;
+            actionText = f.displayName + "のほうを見ている";
+            return GoTo(p, State.Walking);
+        }
+
         SimCharacter PrivatePartner()
         {
             if (desire < 60f) return null;
@@ -848,9 +1261,10 @@ namespace LifeSimProto
             {
                 if (LoveStage < 2) return null;
                 var f = world.RomanceTarget;
-                if (f != null && f.AvailableForTalk && f.desire >= 40f) return f;
+                if (f != null && f.AvailableForTalk && f.desire >= 40f && !f.hasOrder) return f;
                 return null;
             }
+            if (hasOrder) return null;
             SimCharacter best = null;
             foreach (var c in world.characters)
             {
@@ -866,17 +1280,18 @@ namespace LifeSimProto
             float total = 0f;
             var weights = new float[others.Count];
             float shy = 1f - sociability;
+            bool anyone = GetStage(StatusLine.Lonely) >= 1;
             for (int i = 0; i < others.Count; i++)
             {
                 var o = others[i];
                 if (o == this || !o.AvailableForTalk) continue;
                 float a = world.rel.Get(id, o.id);
                 if (o.sickRest && a < 40f) continue;
-                float w = Mathf.Pow((a + 10f) / 110f, 1f + shy * 3f);
+                float w = anyone ? 1f : Mathf.Pow((a + 10f) / 110f, 1f + shy * 3f);
                 float dist = Vector3.Distance(transform.position, o.transform.position);
                 w *= 1f / (1f + dist / 8f);
                 if (IsTarget && o.LoveStage >= 2) w *= 1.5f;
-                if (o.sickRest) w *= 3f; // お見舞い
+                if (o.sickRest) w *= 3f;
                 foreach (var c in others)
                     if (c != this && c.state == State.Approaching && c.target == o) { w *= 0.25f; break; }
                 weights[i] = w;
@@ -958,15 +1373,15 @@ namespace LifeSimProto
             return GoToPoi(chosen, Act.Fun, chosen.label, Random.Range(8f, 16f));
         }
 
-        /// <summary>勉強：自分の机・談話室の大きなテーブル・仲のいい子や好きな人の部屋から、いちばん居心地のよい所を選ぶ。</summary>
         bool StartStudy()
         {
             float bestScore = float.MinValue;
             Seat bestSeat = null;
             bool useDesk = false;
+            float mul = requestEffort >= 0f ? 0.5f + requestEffort : 1f;
             if (room != null && room.desk.FreeSlot() >= 0)
             {
-                bestScore = 1f + PlaceBonus(room.desk.slots[0]) * 0.5f + Random.value;
+                bestScore = 1f + PlaceBonus(room.desk.slots[0]) * 0.5f + Random.value + AssignmentUrgency() * 2f;
                 useDesk = true;
             }
             foreach (var s in world.seats)
@@ -978,9 +1393,10 @@ namespace LifeSimProto
                 float score = PlaceBonus(s.position) * 0.6f + (visit ? 1.5f : 0.5f) + Random.value - Vector3.Distance(transform.position, s.position) * 0.05f;
                 if (score > bestScore) { bestScore = score; bestSeat = s; useDesk = false; }
             }
-            if (useDesk) return GoToPoi(room.desk, Act.Study, "机で勉強している", Random.Range(18f, 30f));
+            string what = hasAssignment && assignProgress < 100f ? "課題をしている" : "勉強している";
+            if (useDesk) return GoToPoi(room.desk, Act.Study, "机で" + what, Random.Range(18f, 30f) * mul);
             if (bestSeat == null) return false;
-            string label = bestSeat.room != null ? bestSeat.label + "で勉強している" : "勉強している";
+            string label = bestSeat.room != null ? bestSeat.label + "で" + what : what;
             return StartSitAt(bestSeat, Act.Study, label);
         }
 
@@ -994,7 +1410,7 @@ namespace LifeSimProto
         bool StartHobby()
         {
             HobbyKind h = hobby;
-            if (h == HobbyKind.Magic && HasStatus(StatusKind.ManaDepleted)) h = HobbyKind.Reading;
+            if (h == HobbyKind.Magic && GetStage(StatusLine.ManaOut) > 0) h = HobbyKind.Reading;
             if (h == HobbyKind.Walk && world.BadWeatherToday) h = HobbyKind.Reading;
             switch (h)
             {
@@ -1055,6 +1471,202 @@ namespace LifeSimProto
             if (!GoTo(p, State.Walking)) SetState(State.Idle);
         }
 
+        // ================= プレイヤーの操作（F） =================
+        bool CanTakeOrder()
+        {
+            if (!Present || state == State.Bathing || state == State.Private || sickRest) return false;
+            if (state == State.Sleeping) return false;
+            return true;
+        }
+
+        string BusyReason()
+        {
+            if (state == State.Away) return StateName();
+            if (sickRest) return "体調が悪い";
+            return StateName();
+        }
+
+        public void OrderMove(Vector3 p)
+        {
+            if (!CanTakeOrder()) { world.Log(displayName + "は今は動けない（" + BusyReason() + "）"); return; }
+            if (state == State.Talking) return;
+            LeaveCurrentSpot();
+            hasOrder = true;
+            goal = Goal.MoveTo;
+            act = Act.None;
+            actionText = "移動している（指示）";
+            if (!GoTo(world.NearestFree(p), State.Walking)) { hasOrder = false; SetState(State.Idle); }
+        }
+
+        public void OrderTalk(SimCharacter g) { OrderApproach(g, Intent.Talk); }
+
+        public void OrderGive(SimCharacter g, ItemKind item)
+        {
+            giftItem = item;
+            OrderApproach(g, Intent.Give);
+        }
+
+        public void OrderRequest(SimCharacter g, RequestKind kind, SimCharacter meet)
+        {
+            requestKind = kind;
+            requestMeet = meet;
+            OrderApproach(g, Intent.Request);
+        }
+
+        void OrderApproach(SimCharacter g, Intent why)
+        {
+            if (g == null || g == this) return;
+            if (!CanTakeOrder()) { world.Log(displayName + "は今は動けない（" + BusyReason() + "）"); RefundGift(why); return; }
+            bool asleepOk = g.state == State.Sleeping && g.sickRest;
+            if (!g.Present || g.InPrivate || g.state == State.Bathing || (g.state == State.Sleeping && !asleepOk))
+            {
+                ShowBubble(g.displayName + "は今いないみたい", 2.2f);
+                world.Log(g.displayName + "は今会えない（" + g.StateName() + "）");
+                RefundGift(why);
+                return;
+            }
+            if (state == State.Talking) { world.Log(displayName + "は会話中。終わってからもう一度"); RefundGift(why); return; }
+            ShowBubble("！", 1.2f);
+            BeginApproach(g, true, why);
+        }
+
+        void RefundGift(Intent why)
+        {
+            if (why == Intent.Give && world.player != null) world.player.Refund(giftItem);
+        }
+
+        public void OrderWork()
+        {
+            if (!CanTakeOrder() || state == State.Talking) { world.Log(displayName + "は今は手伝えない"); return; }
+            Poi counter = FindPoi(p => p.counter && p.FreeSlot() >= 0);
+            if (counter == null) { world.Log("食堂の受け取り口が混んでいる"); return; }
+            hasOrder = true;
+            workUntil = world.Now + 60;
+            if (!GoToPoi(counter, Act.Work, "寮の手伝いをしている", 60f)) { hasOrder = false; return; }
+            workUntil = world.Now + 60 + 20;
+        }
+
+        public void OrderPartTime()
+        {
+            if (!CanTakeOrder() || state == State.Talking) { world.Log(displayName + "は今は出かけられない"); return; }
+            float m = world.MinuteOfDay;
+            if (m < 480f || m > 1140f) { world.Log("アルバイトは 8:00〜19:00 の間だけ"); return; }
+            hasOrder = true;
+            awayUntil = world.Now + 180;
+            awayKind = AwayKind.Job;
+            awayLabel = "街でアルバイトしている";
+            StartLeave("街のアルバイトに出かける");
+        }
+
+        /// <summary>アイテムの効果。giver はくれた人（自分で使うなら自分）。</summary>
+        public void ApplyItem(ItemKind k, SimCharacter giver)
+        {
+            var d = ItemBook.Get(k);
+            bool gift = giver != null && giver != this;
+            switch (k)
+            {
+                case ItemKind.Sweets:
+                    if (gift) world.rel.Add(id, giver.id, 3f, world.simTime);
+                    hunger = Mathf.Max(0f, hunger - 30f);
+                    if (hunger < 5f) SetStage(StatusLine.Full, Mathf.Max(1, GetStage(StatusLine.Full)));
+                    break;
+                case ItemKind.Bouquet:
+                    if (gift) world.rel.Add(id, giver.id, 6f, world.simTime);
+                    if (gift && giver.IsTarget && LoveStage >= 0) world.ChangeLove(this, 5f);
+                    PositiveEvent(0.5f);
+                    break;
+                case ItemKind.Present:
+                    if (gift) world.rel.Add(id, giver.id, 10f, world.simTime);
+                    if (gift && giver.IsTarget && LoveStage >= 0) world.ChangeLove(this, 8f);
+                    if (GetStage(StatusLine.MoodDown) > 0) Ease(StatusLine.MoodDown); else Escalate(StatusLine.MoodUp, true);
+                    break;
+                case ItemKind.CheerPotion:
+                    if (GetStage(StatusLine.MoodDown) > 0) Ease(StatusLine.MoodDown); else SetStage(StatusLine.MoodUp, Mathf.Max(1, GetStage(StatusLine.MoodUp)), true);
+                    tired = Mathf.Max(0f, tired - 30f);
+                    break;
+                case ItemKind.WakePotion:
+                    SetStage(StatusLine.Sleep, 0);
+                    sleepy = Mathf.Max(0f, sleepy - 50f);
+                    break;
+                case ItemKind.SleepIncense:
+                    deepSleep = true;
+                    break;
+                case ItemKind.ColdMedicine:
+                    if (GetStage(StatusLine.Cold) >= 2) { SetStage(StatusLine.Cold, 1, true); sickRest = false; if (state == State.Sleeping) sleepUntil = world.Now; }
+                    else SetStage(StatusLine.Cold, 0);
+                    break;
+                case ItemKind.LoveCharm:
+                    if (!IsTarget && LoveStage >= 1)
+                    {
+                        loveNeed = Mathf.Min(100f, loveNeed + 30f);
+                        world.ChangeLove(this, 5f);
+                        if (GetStage(StatusLine.Love) == 0) SetStage(StatusLine.Love, 1, true);
+                    }
+                    else
+                    {
+                        world.Log("恋のおまじないは" + displayName + "には効かなかった");
+                        return;
+                    }
+                    break;
+            }
+            world.Log((gift ? giver.displayName + "が" + displayName + "に" : displayName + "が") + "「" + d.name + "」を" + (gift ? "渡した" : "使った"));
+        }
+
+        // ---- お願い：引き受けるか・どのくらい気合を入れるか ----
+        void DecideRequest(SimCharacter from, RequestKind kind, SimCharacter meet)
+        {
+            var pc = world.player;
+            int recent = pc != null ? pc.RecentRequests(this) : 0;
+            if (pc != null) pc.NoteRequest(this);
+            float p = 0.35f + world.rel.Get(id, from.id) / 150f;
+            if (!IsTarget && from.IsTarget) p += world.romance.love[id] / 200f + (IsLover ? 0.2f : 0f);
+            p += GetStage(StatusLine.MoodUp) * 0.1f - GetStage(StatusLine.MoodDown) * 0.15f;
+            p -= GetStage(StatusLine.Sleep) * 0.1f + (tired > 70f ? 0.2f : 0f) + recent * 0.12f;
+            if (kind == RequestKind.Study) p += diligence * 0.2f - (study < 20f ? 0.15f : 0f);
+            if (kind == RequestKind.Rest) p += tired / 200f;
+            if (kind == RequestKind.Meet && meet != null) p += (world.rel.Get(id, meet.id) - 40f) / 200f;
+            p = Mathf.Clamp(p, 0.05f, 0.95f);
+            float roll = Random.value;
+            string what = PlayerControl.RequestName(kind, meet);
+            if (roll >= p)
+            {
+                ShowBubble(recent >= 2 ? "また？ ごめん…" : "ごめん、今はちょっと…", 2f);
+                world.Log(displayName + "は「" + what + "」を断った");
+                return;
+            }
+            float effort = Mathf.Clamp01((p - roll) / p);
+            string mood = effort > 0.6f ? "張り切って" : (effort > 0.25f ? "" : "しぶしぶ");
+            ShowBubble(effort > 0.6f ? "まかせて！" : (effort > 0.25f ? "いいよ" : "…わかった"), 1.8f);
+            world.Log(displayName + "は「" + what + "」を" + (mood.Length > 0 ? mood : "") + "引き受けた");
+            hasPendingRequest = true;
+            pendingRequestKind = kind;
+            pendingRequestMeet = meet;
+            requestEffort = effort;
+        }
+
+        void ExecuteRequest()
+        {
+            hasPendingRequest = false;
+            switch (pendingRequestKind)
+            {
+                case RequestKind.Meet:
+                    if (pendingRequestMeet != null && pendingRequestMeet.Present && !pendingRequestMeet.InPrivate)
+                    {
+                        BeginApproach(pendingRequestMeet, true, Intent.Talk);
+                        actionText = pendingRequestMeet.displayName + "に会いに行く（お願い）";
+                    }
+                    break;
+                case RequestKind.Study:
+                    if (!StartStudy()) requestEffort = -1f;
+                    else choice = Choice.Study;
+                    break;
+                default:
+                    if (!(tired > 50f && StartNap()) && !StartRest()) requestEffort = -1f;
+                    else choice = Choice.Rest;
+                    break;
+            }
+        }
+
         // ================= 会いに行く =================
         void BeginApproach(SimCharacter who, bool order, Intent why)
         {
@@ -1066,42 +1678,34 @@ namespace LifeSimProto
             approachTimer = 0f;
             repathTimer = 0f;
             slotOffset = 0f;
-            string verb = why == Intent.Love ? "に会いたくて向かう" : (why == Intent.Private ? "のところへ向かう" : (why == Intent.Gift ? "にお菓子を渡しに行く" : "に会いに行く"));
+            string verb;
+            switch (why)
+            {
+                case Intent.Love: verb = "に会いたくて向かう"; break;
+                case Intent.Private: verb = "のところへ向かう"; break;
+                case Intent.Bake: verb = "にお菓子を渡しに行く"; break;
+                case Intent.Give: verb = "に渡し物をしに行く"; break;
+                case Intent.Request: verb = "にお願いをしに行く"; break;
+                default: verb = "に会いに行く"; break;
+            }
             actionText = who.displayName + verb + (order ? "（指示）" : "");
             SetState(State.Approaching);
             RepathToTarget();
         }
 
-        /// <summary>プレイヤーからの指示「〇〇に会いに行って」。</summary>
+        /// <summary>だれかへの「お願い」（ほかのキャラを選んで相手をクリックしたとき）。Fが頼みに行く。</summary>
         public void Order(SimCharacter who)
         {
-            if (who == null || who == this) return;
-            if (!Present || (state == State.Sleeping && !sickRest) || state == State.Bathing || sickRest)
-            {
-                world.Log(displayName + "は今は動けない（" + StateName() + "）");
-                return;
-            }
-            if (!who.Present || (who.state == State.Sleeping && !who.sickRest) || who.state == State.Bathing)
-            {
-                ShowBubble(who.displayName + "は今いないみたい", 2.2f);
-                world.Log(who.displayName + "は今会えない（" + who.StateName() + "）");
-                return;
-            }
-            if (state == State.Talking || privatePending)
-            {
-                pendingOrder = who;
-                ShowBubble("！（あとで行くね）", 1.8f);
-                return;
-            }
-            ShowBubble("！", 1.5f);
-            BeginApproach(who, true, Intent.Talk);
+            var f = world.RomanceTarget;
+            if (f == null || f == this) { OrderTalk(who); return; }
+            f.OrderRequest(this, RequestKind.Meet, who);
         }
 
         public string StateName()
         {
             switch (state)
             {
-                case State.Sleeping: return sickRest ? "風邪で寝込んでいる" : (napping ? "昼寝している" : "寝ている");
+                case State.Sleeping: return sickRest ? "熱で寝込んでいる" : (dozing ? "居眠りしている" : (napping ? "昼寝している" : "寝ている"));
                 case State.Away: return awayLabel ?? "出かけている";
                 case State.Private: return "部屋で過ごしている";
                 case State.Bathing: return "お風呂";
@@ -1113,7 +1717,8 @@ namespace LifeSimProto
 
         void UpdateApproach(float dt)
         {
-            if (target == null || !target.Present || (target.state == State.Sleeping && !target.sickRest) || target.state == State.Bathing) { GiveUp(); return; }
+            bool sickOk = target != null && target.state == State.Sleeping && target.sickRest;
+            if (target == null || !target.Present || target.InPrivate || (target.state == State.Sleeping && !sickOk) || target.state == State.Bathing) { GiveUp(); return; }
             approachTimer += dt;
             repathTimer -= dt;
             Vector3 d3 = target.transform.position - transform.position;
@@ -1153,13 +1758,12 @@ namespace LifeSimProto
         void UpdateWaiting(float dt)
         {
             waitTimer += dt;
-            if (target == null || !target.Present) { GiveUp(); return; }
+            if (target == null || !target.Present || target.InPrivate) { GiveUp(); return; }
             FaceTowards(target.transform.position, dt);
             if (target.CanStartTalk(this))
             {
                 Vector3 d3 = target.transform.position - transform.position;
                 if (Flat(d3).magnitude <= 1.8f && Mathf.Abs(d3.y) < 0.5f) { BeginInteraction(); return; }
-                actionText = target.displayName + "に会いに行く" + (hasOrder ? "（指示）" : "");
                 SetState(State.Approaching);
                 RepathToTarget();
                 return;
@@ -1170,15 +1774,16 @@ namespace LifeSimProto
         void GiveUp()
         {
             if (target != null) world.Log(displayName + "は" + target.displayName + "に会うのをあきらめた");
+            if (intent == Intent.Give) RefundGift(intent);
             target = null;
             hasOrder = false;
+            intent = Intent.Talk;
             bored += 10f;
             path.Clear();
             SetState(State.Idle);
             actionText = "ぼんやりしている";
         }
 
-        /// <summary>相手のまわりの、ほかの人とかぶらない立ち位置を選ぶ。</summary>
         Vector3 ApproachPoint()
         {
             Vector3 tp = target.transform.position;
@@ -1217,15 +1822,16 @@ namespace LifeSimProto
 
         public bool CanStartTalk(SimCharacter by)
         {
-            if (!Present || state == State.Talking || state == State.Bathing) return false;
+            if (!Present || state == State.Talking || state == State.Bathing || state == State.Private) return false;
             if (state == State.Sleeping && !sickRest) return false;
             if (hasOrder && target != by) return false;
             if (OnMission) return false;
+            if (NoTalk() && !(by != null && by.IsTarget && by.hasOrder)) return false;
             return true;
         }
 
         // ================= 会話 =================
-        static readonly string[] Topics = { "授業の話", "魔法の練習", "食堂のメニュー", "読んでいる本", "寮のうわさ", "週末の予定", "試験の話", "故郷の話", "使い魔の話", "図書館の話" };
+        static readonly string[] Topics = { "授業の話", "魔法の練習", "食堂のメニュー", "読んでいる本", "寮のうわさ", "週末の予定", "試験の話", "故郷の話", "使い魔の話", "図書館の話", "課題の話" };
         static readonly string[] Chatter = { "それでね…", "へえ！", "ほんとに？", "うんうん", "わかる〜", "そうなの？", "ふふっ", "なるほど", "えっ！", "それで？" };
         static readonly string[] KoibanaLines = { "Fくんってさ…", "えっ、わかる！", "きゃー", "内緒だよ？", "応援する！", "ふふ、顔赤いよ" };
 
@@ -1236,9 +1842,36 @@ namespace LifeSimProto
             SetState(State.Talking);
             partner.EnterTalk(this);
             var rom = world.romance;
+            if (IsTarget) partner.lastFContact = world.Now;
+            if (partner.IsTarget) lastFContact = world.Now;
+
+            // ---- Fからの渡し物 ----
+            if (intent == Intent.Give)
+            {
+                actionText = partner.displayName + "に渡している";
+                ShowBubble("これ、どうぞ", 1.6f);
+                yield return new WaitForSeconds(1.7f);
+                partner.ShowBubble(giftItem == ItemKind.Present || giftItem == ItemKind.Bouquet ? "わぁ…ありがとう！" : "ありがとう", 1.8f);
+                partner.ApplyItem(giftItem, this);
+                yield return new WaitForSeconds(1.9f);
+                EndTalk(partner);
+                yield break;
+            }
+
+            // ---- Fからのお願い ----
+            if (intent == Intent.Request)
+            {
+                actionText = partner.displayName + "にお願いしている";
+                ShowBubble("お願いがあるんだけど…", 1.8f);
+                yield return new WaitForSeconds(1.9f);
+                partner.DecideRequest(this, requestKind, requestMeet);
+                yield return new WaitForSeconds(2.0f);
+                EndTalk(partner);
+                yield break;
+            }
 
             // ---- 手作りお菓子を渡す ----
-            if (intent == Intent.Gift && partner.IsTarget)
+            if (intent == Intent.Bake && partner.IsTarget)
             {
                 actionText = partner.displayName + "にお菓子を渡している";
                 partner.actionText = displayName + "からお菓子をもらっている";
@@ -1248,7 +1881,7 @@ namespace LifeSimProto
                 yield return new WaitForSeconds(2.1f);
                 world.ChangeLove(this, 5f);
                 world.rel.Add(id, partner.id, 5f, world.simTime);
-                AddStatus(StatusKind.Cheerful, 240);
+                PositiveEvent(0.8f);
                 world.Log("♥ " + displayName + "が" + partner.displayName + "に手作りのお菓子を渡した");
                 EndTalk(partner);
                 yield break;
@@ -1276,7 +1909,7 @@ namespace LifeSimProto
                     world.rel.Add(id, partner.id, 10f, world.simTime);
                     partner.ShowBubble("ありがとう。よろしく", 2.4f);
                     ShowBubble("♥", 2.4f);
-                    AddStatus(StatusKind.Cheerful, 480);
+                    SetStage(StatusLine.MoodUp, 2, true);
                     world.Log("★♥ " + displayName + "が" + partner.displayName + "に告白して恋人になった！");
                 }
                 else
@@ -1286,7 +1919,8 @@ namespace LifeSimProto
                     world.ChangeLove(this, -25f);
                     world.rel.Add(id, partner.id, -5f, world.simTime);
                     rom.cooldownUntil[id] = world.Now + 1440.0 * 2.0;
-                    AddStatus(StatusKind.Down, 1440);
+                    SetStage(StatusLine.Love, 0, false, true);
+                    NegativeEvent(1f);
                     world.Log(displayName + "の告白は実らなかった…（2日後までは告白しない）");
                 }
                 loveNeed = 0f;
@@ -1316,6 +1950,7 @@ namespace LifeSimProto
 
             float bonus = (koibana ? 0.3f : 0f) + (visit ? 0.3f : 0f) + TalkBonus() + partner.TalkBonus();
             if ((IsTarget && partner.IsLover) || (IsLover && partner.IsTarget)) bonus += 0.15f;
+            if (requestEffort >= 0f && hasOrder) bonus += (requestEffort - 0.4f) * 0.4f;
             TalkResult result = world.rel.Roll(id, partner.id, bonus);
             string icon = result == TalkResult.Fun ? "♪ ♥" : (result == TalkResult.Normal ? "…" : "（汗）");
             ShowBubble(icon, 2.2f);
@@ -1326,12 +1961,8 @@ namespace LifeSimProto
                 world.rel.Add(id, partner.id, 3f, world.simTime);
                 world.Log(displayName + "が" + partner.displayName + "のお見舞いに来た");
             }
-            if (result == TalkResult.Fun && world.rel.Get(id, partner.id) >= 60f && Random.value < 0.1f)
-            {
-                AddStatus(StatusKind.Cheerful, 240);
-                partner.AddStatus(StatusKind.Cheerful, 240);
-            }
-            if (result == TalkResult.Awkward && Random.value < 0.15f) AddStatus(StatusKind.Down, 180);
+            AfterTalkStatuses(partner, result);
+            partner.AfterTalkStatuses(this, result);
 
             float relief = result == TalkResult.Fun ? 45f : (result == TalkResult.Normal ? 30f : 20f);
             lonely = Mathf.Max(0f, lonely - relief);
@@ -1345,6 +1976,37 @@ namespace LifeSimProto
             EndTalk(partner);
         }
 
+        /// <summary>会話のあとの状態の変化。</summary>
+        void AfterTalkStatuses(SimCharacter other, TalkResult result)
+        {
+            float aff = world.rel.Get(id, other.id);
+            if (result == TalkResult.Fun)
+            {
+                if (aff >= 60f && GetStage(StatusLine.MoodDown) > 0) Ease(StatusLine.MoodDown);
+                else if (Chance(0.12f)) Escalate(StatusLine.MoodUp);
+                if (GetStage(StatusLine.Lonely) > 0) Ease(StatusLine.Lonely);
+                if (other.GetStage(StatusLine.MoodUp) >= 3 && GetStage(StatusLine.MoodUp) == 0 && Chance(0.5f)) SetStage(StatusLine.MoodUp, 1);
+                if (other.IsTarget && LoveStage >= 1 && Chance(0.25f)) Escalate(StatusLine.Shy);
+            }
+            else if (result == TalkResult.Normal)
+            {
+                if (GetStage(StatusLine.Lonely) > 0 && Chance(0.5f)) Ease(StatusLine.Lonely);
+            }
+            else if (Chance(0.15f)) NegativeEvent(1f);
+            if (other.IsTarget)
+            {
+                int lv = GetStage(StatusLine.Love);
+                if (lv > 0 && lv < 3) Ease(StatusLine.Love);
+                if (GetStage(StatusLine.Jealousy) > 0) Ease(StatusLine.Jealousy);
+            }
+            // 風邪がうつる
+            if (other.GetStage(StatusLine.Cold) >= 1 && GetStage(StatusLine.Cold) == 0 && Chance(0.05f))
+            {
+                SetStage(StatusLine.Cold, 1);
+                world.Log(other.displayName + "の風邪が" + displayName + "にうつった");
+            }
+        }
+
         void EndTalk(SimCharacter partner)
         {
             partner.ExitTalk();
@@ -1354,7 +2016,7 @@ namespace LifeSimProto
             intent = Intent.Talk;
         }
 
-        // ---- 二人きり（以上）の時間：個室へ行き、画面から消える（描写はしない） ----
+        // ---- 二人きり（以上）の時間：個室へ行き、寄り添って過ごす（描写はしない） ----
         IEnumerator PrivateRoutine(SimCharacter partner)
         {
             path.Clear();
@@ -1366,7 +2028,6 @@ namespace LifeSimProto
             var f = IsTarget ? this : partner;
             var girl = IsTarget ? partner : this;
 
-            // 同じ気持ちの子も誘う（最大でFと女の子3人）
             var group = new List<SimCharacter> { this, partner };
             foreach (var c in world.characters)
             {
@@ -1385,8 +2046,8 @@ namespace LifeSimProto
             talkPartner = null;
             partner.talkPartner = null;
             if (r == null) { CancelPrivate(group); yield break; }
-            var spots = new List<Vector3> { r.bed.approach, r.futon.approach, r.cushions[0].approach, r.cushions[1].approach };
-            for (int i = 0; i < group.Count; i++) group[i].GoPrivate(spots[i % spots.Count]);
+            var walkTo = new List<Vector3> { r.bed.approach, r.futon.approach, r.cushions[0].approach, r.cushions[1].approach };
+            for (int i = 0; i < group.Count; i++) group[i].GoPrivate(walkTo[i % walkTo.Count]);
 
             float t = 0f;
             while (true)
@@ -1401,9 +2062,25 @@ namespace LifeSimProto
             var arrived = group.FindAll(c => c.privateArrived);
             if (!arrived.Contains(f) || arrived.Count < 2) { CancelPrivate(group); yield break; }
             foreach (var c in group) if (!arrived.Contains(c)) c.CancelPrivateSelf();
+
+            // 並び：ベッドの縁に2人並んで座る。3人目以降は座布団
+            Vector3 along = r.bed.forward;
+            Vector3 edgeOut = new Vector3(0f, 0f, 1f);
+            var spots = new List<KeyValuePair<Vector3, Vector3>>
+            {
+                new KeyValuePair<Vector3, Vector3>(r.bed.position - along * 0.35f + edgeOut * 0.15f, edgeOut),
+                new KeyValuePair<Vector3, Vector3>(r.bed.position + along * 0.25f + edgeOut * 0.15f, edgeOut),
+                new KeyValuePair<Vector3, Vector3>(r.cushions[0].position, r.cushions[0].forward),
+                new KeyValuePair<Vector3, Vector3>(r.cushions[1].position, r.cushions[1].forward),
+            };
             double until = world.Now + 30.0 + 10.0 * (arrived.Count - 2);
             var names = new List<string>();
-            foreach (var c in arrived) { c.EnterPrivate(until, r); names.Add(c.displayName); }
+            for (int i = 0; i < arrived.Count; i++)
+            {
+                var sp = spots[Mathf.Min(i, spots.Count - 1)];
+                arrived[i].EnterPrivate(until, r, sp.Key, sp.Value, i >= 2);
+                names.Add(arrived[i].displayName);
+            }
             world.Log("♥ " + string.Join("・", names.ToArray()) + "が" + r.AreaName + "で一緒に過ごしている");
         }
 
@@ -1432,27 +2109,31 @@ namespace LifeSimProto
             if (!GoTo(world.NearestFree(dest), State.Walking)) { privateArrived = true; SetState(State.Idle); }
         }
 
-        void EnterPrivate(double until, RoomInfo r)
+        bool privateOnFloor;
+
+        void EnterPrivate(double until, RoomInfo r, Vector3 pos, Vector3 facing, bool floorSpot)
         {
             privatePending = false;
             privateArrived = false;
             privateUntil = until;
             privateRoom = r;
+            privateOnFloor = floorSpot;
             goal = Goal.None;
             target = null;
             ReleaseSeatAndPoi();
-            SetVisible(false);
+            transform.position = pos;
+            transform.rotation = Quaternion.LookRotation(facing);
             SetState(State.Private);
-            actionText = "部屋で過ごしている";
+            actionText = "一緒に過ごしている";
         }
 
         void EndPrivate()
         {
-            SetVisible(true);
             if (privateRoom != null) transform.position = world.NearestFree(privateRoom.bed.approach + new Vector3(Random.Range(-0.5f, 0.5f), 0f, Random.Range(-0.4f, 0.6f)));
             desire = 0f;
             lonely = Mathf.Max(0f, lonely - 40f);
             loveNeed = 0f;
+            if (GetStage(StatusLine.Love) >= 3) SetStage(StatusLine.Love, 0);
             if (!IsTarget)
             {
                 world.ChangeLove(this, 4f);
@@ -1476,9 +2157,10 @@ namespace LifeSimProto
             path.Clear();
             bool seated = state == State.Sitting || state == State.Eating || sickRest;
             if (!seated) ReleaseSeatAndPoi();
-            goal = Goal.None;
+            if (!sickRest) goal = Goal.None;
             target = null;
             hasOrder = false;
+            dozing = false;
             talkPartner = by;
             SetState(State.Talking);
         }
@@ -1489,7 +2171,7 @@ namespace LifeSimProto
             if (sickRest)
             {
                 SetState(State.Sleeping);
-                actionText = "風邪で寝込んでいる";
+                actionText = "熱で寝込んでいる";
                 return;
             }
             bool atSeat = seat != null && seat.occupant == this && Flat(transform.position - seat.position).magnitude < 0.3f;
@@ -1550,7 +2232,8 @@ namespace LifeSimProto
             Vector3 pos = transform.position;
             Vector3 next = path[0];
             Vector3 to = next - pos;
-            float step = baseSpeed * StatusProduct(d => d.speed) * dt;
+            float effort = (requestEffort >= 0f && hasOrder) ? 0.9f + requestEffort * 0.3f : 1f;
+            float step = baseSpeed * Prod(e => e.speed) * effort * dt;
             if (to.magnitude <= step)
             {
                 transform.position = next;
@@ -1563,7 +2246,6 @@ namespace LifeSimProto
             }
         }
 
-        /// <summary>しばらく進めていなければ、道を探し直す。それでもだめなら諦める。</summary>
         void CheckStuck(float dt)
         {
             if (path.Count == 0 || !LoungeWorld.OnFloorLevel(transform.position)) { progressTimer = 0f; progressPos = transform.position; return; }
@@ -1588,6 +2270,7 @@ namespace LifeSimProto
                 path.Clear();
                 if (goal == Goal.Private) { privateArrived = true; SetState(State.Idle); return; }
                 LeaveCurrentSpot();
+                hasOrder = false;
                 SetState(State.Idle);
                 actionText = "ぼんやりしている";
                 return;
@@ -1614,11 +2297,7 @@ namespace LifeSimProto
                             eatUntil = world.Now + 12.0;
                             SetState(State.Eating);
                             actionText = sitLabel ?? "おやつを食べている";
-                            if (world.SnackBonus && Random.value < 0.25f)
-                            {
-                                AddStatus(StatusKind.VigorPotion, 240);
-                                ShowBubble("元気出てきた！", 1.8f);
-                            }
+                            if (world.SnackBonus && Random.value < 0.25f) PositiveEvent(1f);
                         }
                         else
                         {
@@ -1629,12 +2308,31 @@ namespace LifeSimProto
                     else SetState(State.Idle);
                     break;
                 case Goal.Poi:
-                    if (poi != null) { SetState(State.Activity); actionText = sitLabel ?? poi.label; }
+                    if (poi != null)
+                    {
+                        SetState(State.Activity);
+                        actionText = sitLabel ?? poi.label;
+                        if (act == Act.Work) workUntil = world.Now + 60;
+                    }
                     else SetState(State.Idle);
                     break;
                 case Goal.Gather:
                     SetState(State.Activity);
                     actionText = sitLabel;
+                    break;
+                case Goal.Hover:
+                    SetState(State.Activity);
+                    activityDuration = 10f;
+                    var f = world.RomanceTarget;
+                    actionText = f != null ? f.displayName + "を目で追っている" : "ぼんやりしている";
+                    break;
+                case Goal.Follow:
+                    SetState(State.Idle);
+                    break;
+                case Goal.MoveTo:
+                    hasOrder = false;
+                    SetState(State.Idle);
+                    actionText = "着いた";
                     break;
                 case Goal.Counter:
                     if (poi != null) { SetState(State.Activity); actionText = "料理を受け取っている"; mealPending = true; }
@@ -1678,6 +2376,13 @@ namespace LifeSimProto
                     if (seat != null)
                     {
                         SnapToSeat();
+                        if (sickRest)
+                        {
+                            sleepUntil = ScheduleMaker.WakeTime(id, world.Day + 1, world.holidayWeekdays);
+                            actionText = "熱で寝込んでいる";
+                            SetState(State.Sleeping);
+                            break;
+                        }
                         napping = true;
                         sleepUntil = world.Now + 40.0;
                         actionText = seat.room == room ? "昼寝している" : seat.label + "で昼寝している";
@@ -1712,21 +2417,16 @@ namespace LifeSimProto
 
         void LeaveCurrentSpot()
         {
-            // 魔法の練習のあとは、ときどき暴発して魔力切れになる
-            if (state == State.Activity && act == Act.Hobby && hobby == HobbyKind.Magic && poi != null && poi.hobby >= 0 && stateTime > 8f && Random.value < 0.15f)
-            {
-                AddStatus(StatusKind.ManaDepleted, 360);
-                ShowBubble("ボンッ！", 1.5f);
-                world.Log(displayName + "の魔法が暴発した！（魔力切れ）");
-            }
             bool atSeat = seat != null && (state == State.Sitting || state == State.Eating || state == State.Bathing || state == State.Sleeping);
             if (atSeat) transform.position = world.NearestFree(seat.approach);
             ReleaseSeatAndPoi();
-            goal = Goal.None;
+            if (goal != Goal.MoveTo) goal = Goal.None;
             mealPending = false;
             readingPick = false;
             snackPick = false;
             bakePending = false;
+            dozing = false;
+            if (act == Act.Work) act = Act.None;
             if (gathering != null && !gathering.outing) gathering = null;
         }
 
@@ -1754,6 +2454,8 @@ namespace LifeSimProto
         Pose CurrentPose()
         {
             bool onFloor = seat != null && seat.floorSeat;
+            if (state == State.Private) return privateOnFloor ? Pose.SitFloor : Pose.Sit;
+            if (dozing && state == State.Sleeping) return onFloor ? Pose.SitFloor : Pose.Sit;
             if (state == State.Sleeping || (state == State.Talking && sickRest)) return onFloor ? Pose.LieFloor : Pose.Lie;
             if (state == State.Bathing) return Pose.Soak;
             if (state == State.Sitting || state == State.Eating) return onFloor ? Pose.SitFloor : Pose.Sit;
@@ -1826,10 +2528,6 @@ namespace LifeSimProto
 
         static Vector3 Flat(Vector3 v) { v.y = 0f; return v; }
 
-        /// <summary>
-        /// 重なり防止。止まっている人に歩いている人が近づいたら、歩いている人が横にずれる。
-        /// 歩いている人同士なら、番号が大きい方が横によける。止まっている人同士は少しずつ離れる。
-        /// </summary>
         void LateUpdate()
         {
             if (Time.deltaTime <= 0f || CurrentPose() != Pose.Stand || !Present) return;
