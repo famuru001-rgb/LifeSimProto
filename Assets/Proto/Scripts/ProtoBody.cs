@@ -321,7 +321,12 @@ namespace LifeSimProto
                 graph.SetTimeUpdateMode(DirectorUpdateMode.GameTime);
                 var output = AnimationPlayableOutput.Create(graph, "Out", anim);
                 mixer = AnimationMixerPlayable.Create(graph, 2);
-                output.SetSourcePlayable(mixer);
+                // 2段重ね：下の段＝全身の動き、上の段＝腕だけの身ぶり（歩きながら手を振るため）
+                layers = AnimationLayerMixerPlayable.Create(graph, 2);
+                graph.Connect(mixer, 0, layers, 0);
+                layers.SetInputWeight(0, 1f);
+                layers.SetLayerMaskFromAvatarMask(1, ArmsMask());
+                output.SetSourcePlayable(layers);
                 graph.Play();
             }
             if (!anim.enabled) { anim.enabled = true; anim.Rebind(); }
@@ -339,6 +344,46 @@ namespace LifeSimProto
             mixer.SetInputWeight(1, curClip == null ? 0f : 1f);
             fade = curClip == null ? 1f : 0f;
             curClip = c;
+        }
+
+        // ---- 腕だけの身ぶり（上の段） ----
+        AnimationLayerMixerPlayable layers;
+        AnimationClipPlayable upperPlay;
+        AnimationClip upperClip;
+        float upperW;
+        static AvatarMask armsMask;
+
+        static AvatarMask ArmsMask()
+        {
+            if (armsMask != null) return armsMask;
+            armsMask = new AvatarMask();
+            for (var part = AvatarMaskBodyPart.Root; part < AvatarMaskBodyPart.LastBodyPart; part++)
+            {
+                bool arm = part == AvatarMaskBodyPart.LeftArm || part == AvatarMaskBodyPart.RightArm ||
+                           part == AvatarMaskBodyPart.LeftFingers || part == AvatarMaskBodyPart.RightFingers;
+                armsMask.SetHumanoidBodyPartActive(part, arm);
+            }
+            return armsMask;
+        }
+
+        void SetUpper(AnimationClip want, float dt)
+        {
+            if (!graph.IsValid()) return;
+            if (want != null && want != upperClip)
+            {
+                if (upperPlay.IsValid()) { graph.Disconnect(layers, 1); upperPlay.Destroy(); }
+                upperPlay = AnimationClipPlayable.Create(graph, want);
+                graph.Connect(upperPlay, 0, layers, 1);
+                upperClip = want;
+            }
+            upperW = Mathf.MoveTowards(upperW, want != null ? 1f : 0f, dt / 0.2f);
+            if (upperPlay.IsValid()) layers.SetInputWeight(1, upperW);
+            if (want == null && upperW <= 0f && upperPlay.IsValid())
+            {
+                graph.Disconnect(layers, 1);
+                upperPlay.Destroy();
+                upperClip = null;
+            }
         }
 
         void StopClips()
@@ -395,7 +440,8 @@ namespace LifeSimProto
             {
                 if (pose == BodyPose.Stand)
                 {
-                    if (gestureName != null && Time.time < gestureUntil && Clip(gestureName) != null) clip = Clip(gestureName);
+                    // 手を振るのは腕だけ（上の段）。喜ぶ（ジャンプ）は全身
+                    if (gestureName != null && gestureName != "Wave" && Time.time < gestureUntil && Clip(gestureName) != null) clip = Clip(gestureName);
                     else if (speed > 0.25f) clip = Clip("Walk");
                     else if (talking) clip = Clip("Talk") ?? Clip("Idle");
                     else clip = Clip("Idle");
@@ -414,6 +460,8 @@ namespace LifeSimProto
                     mixer.SetInputWeight(0, fade);
                     mixer.SetInputWeight(1, 1f - fade);
                 }
+                bool waving = pose == BodyPose.Stand && gestureName == "Wave" && Time.time < gestureUntil;
+                SetUpper(waving ? Clip("Wave") : null, dt);
             }
             else
             {

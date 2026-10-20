@@ -824,6 +824,28 @@ namespace LifeSimProto
         }
 
         // ================= 壁の表示 =================
+        // 床の高さごとの床の部品（下から見上げたときに透かす）
+        List<KeyValuePair<float, List<Renderer>>> floorGroups;
+        static readonly string[] Floor0Names = { "Ground", "Path_Outside", "Lounge_Floor", "Floor_Wood", "RugBorder", "Rug", "Floor_Dining", "Floor_Corridor", "Floor_Bath" };
+        static readonly string[] Floor1Names = { "Wing_Base", "Wing_Floor", "Landing" };
+
+        void CollectFloors()
+        {
+            var f0 = new List<Renderer>();
+            var f1 = new List<Renderer>();
+            foreach (var r in root.GetComponentsInChildren<Renderer>(true))
+            {
+                string n = r.gameObject.name;
+                if (System.Array.IndexOf(Floor0Names, n) >= 0) f0.Add(r);
+                else if (System.Array.IndexOf(Floor1Names, n) >= 0) f1.Add(r);
+            }
+            floorGroups = new List<KeyValuePair<float, List<Renderer>>>
+            {
+                new KeyValuePair<float, List<Renderer>>(0.02f, f0),
+                new KeyValuePair<float, List<Renderer>>(Floor2Y, f1),
+            };
+        }
+
         void UpdateCutaway()
         {
             if (mainCamera == null) return;
@@ -839,6 +861,13 @@ namespace LifeSimProto
                 else hide = SegmentsCross(p1, p2, w.a, w.b, 0.8f);
                 var mode = hide ? UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly : UnityEngine.Rendering.ShadowCastingMode.On;
                 foreach (var r in w.upper) if (r != null && r.shadowCastingMode != mode) r.shadowCastingMode = mode;
+            }
+            // 床：カメラが床より下にあるとき（下から見上げるとき）は透けて見えるようにする
+            if (floorGroups == null) CollectFloors();
+            foreach (var fg in floorGroups)
+            {
+                var mode = cam.y < fg.Key ? UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly : UnityEngine.Rendering.ShadowCastingMode.On;
+                foreach (var r in fg.Value) if (r != null && r.shadowCastingMode != mode) r.shadowCastingMode = mode;
             }
             bool hideCeiling = cam.y > RoomH - 0.4f || wallMode == WallMode.Low;
             foreach (var r in ceilingRenderers)

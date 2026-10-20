@@ -5,7 +5,7 @@ namespace LifeSimProto
 {
     /// <summary>
     /// 自由に動かせる視点。
-    /// 右ドラッグ：回す / ホイール：近づく・離れる / WASD：移動 / 中ドラッグ：平行移動 / Q・E：左右に回す / R・F：上下
+    /// 右ドラッグ：回す（下向きにドラッグすると床の下から見上げられる） / ホイール：近づく・離れる / WASD：移動 / 中ドラッグ：平行移動 / Q・E：左右に回す / R・F：上下
     /// キャラをダブルクリックで追いかける（Escで解除）。時間を止めていても動かせる。
     /// </summary>
     public class CameraRig : MonoBehaviour
@@ -36,7 +36,7 @@ namespace LifeSimProto
                 if (mouse.rightButton.isPressed)
                 {
                     yaw += delta.x * 0.25f;
-                    pitch = Mathf.Clamp(pitch - delta.y * 0.25f, 3f, 88f);
+                    pitch = Mathf.Clamp(pitch - delta.y * 0.25f, -70f, 88f); // マイナスは下から見上げる
                 }
                 if (mouse.middleButton.isPressed)
                 {
@@ -84,7 +84,7 @@ namespace LifeSimProto
 
             Quaternion rot = Quaternion.Euler(pitch, yaw, 0f);
             Vector3 pos = pivot - rot * Vector3.forward * distance;
-            if (pos.y < 0.3f) pos.y = 0.3f;
+            if (pos.y < -12f) pos.y = -12f; // 床の下まで下がれる（床は下から見ると透ける）
             transform.position = pos;
             transform.rotation = Quaternion.LookRotation(pivot - pos);
         }

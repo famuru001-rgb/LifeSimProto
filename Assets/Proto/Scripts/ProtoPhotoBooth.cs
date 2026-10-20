@@ -58,7 +58,7 @@ namespace LifeSimProto
                 foreach (var c in world.characters)
                     if (Resources.Load<GameObject>("Chars/" + c.displayName + "/Char" + c.displayName) != null) letters.Add(c.displayName);
             if (letters.Count == 0) { letters.Add("A"); letters.Add("F"); }
-            var items = new[] { "立つ", "歩く", "話す", "椅子", "食べる", "正座", "居眠り", "寝る", "お風呂",
+            var items = new[] { "立つ", "歩く", "歩きながら手を振る", "話す", "椅子", "食べる", "正座", "居眠り", "寝る", "お風呂",
                                 "服_タオル", "服_私服", "服_寝間着",
                                 "顔_ふつう", "顔_笑顔", "顔_目を閉じる", "顔_話す口", "顔_困り", "顔_怒り", "顔_驚き", "顔_照れ" };
             var made = new List<KeyValuePair<string, ProtoBody>>();
@@ -83,6 +83,7 @@ namespace LifeSimProto
                     switch (it)
                     {
                         case "歩く": pb.testSpeed = 1.2f; break;
+                        case "歩きながら手を振る": pb.testSpeed = 1.2f; pb.Gesture("Wave", 9999f); break;
                         case "話す": pb.testTalk = true; break;
                         case "椅子": pb.testPose = BodyPose.Sit; break;
                         case "食べる": pb.testPose = BodyPose.Sit; pb.testEat = true; break;
@@ -116,13 +117,49 @@ namespace LifeSimProto
                     continue;
                 }
                 bool lie = n.EndsWith("寝る");
-                bool stand = n.EndsWith("立つ") || n.EndsWith("歩く") || n.EndsWith("話す") || n.Contains("_服_");
+                bool stand = n.EndsWith("立つ") || n.EndsWith("歩く") || n.EndsWith("手を振る") || n.EndsWith("話す") || n.Contains("_服_");
                 Vector3 center = go.transform.position + Vector3.up * (lie ? 0.6f : (stand ? 0.9f : 0.55f));
                 Shoot(go, center + Vector3.forward * 3.2f + Vector3.up * 0.4f, center, "見本_" + n + "_前.png", true);
                 Shoot(go, center + Vector3.right * 3.2f + Vector3.up * 0.4f, center, "見本_" + n + "_横.png", true);
                 if (lie) Shoot(go, center + Vector3.up * 3.2f + Vector3.forward * 0.01f, center, "見本_" + n + "_上.png", true);
             }
             foreach (var kv in made) Destroy(kv.Value.gameObject);
+
+            // ゲームのカメラで、床の下から見上げた様子（床が透けるか）
+            if (world != null && world.mainCamera != null)
+            {
+                var rig = world.mainCamera.GetComponent<CameraRig>();
+                if (rig != null)
+                {
+                    var keep = new float[] { rig.pitch, rig.yaw, rig.distance };
+                    Vector3 keepPivot = rig.pivot;
+                    var keepFollow = rig.follow;
+                    var shots = new[] { new Vector4(-35f, 0f, 14f, 1.0f), new Vector4(-25f, 90f, 12f, 3.8f), new Vector4(40f, 0f, 24f, 1.5f) };
+                    for (int i = 0; i < shots.Length; i++)
+                    {
+                        rig.follow = null;
+                        rig.pitch = shots[i].x; rig.yaw = shots[i].y; rig.distance = shots[i].z;
+                        rig.pivot = new Vector3(0f, shots[i].w, -2f);
+                        for (int f = 0; f < 3; f++) yield return null;
+                        var mc = world.mainCamera;
+                        var prevT = mc.targetTexture;
+                        var wide = new RenderTexture(1280, 720, 24);
+                        mc.targetTexture = wide;
+                        mc.Render();
+                        mc.targetTexture = prevT;
+                        var prev = RenderTexture.active;
+                        RenderTexture.active = wide;
+                        var tex = new Texture2D(wide.width, wide.height, TextureFormat.RGB24, false);
+                        tex.ReadPixels(new Rect(0, 0, wide.width, wide.height), 0, 0);
+                        tex.Apply();
+                        RenderTexture.active = prev;
+                        File.WriteAllBytes(Path.Combine(OutDir, "カメラ_" + (i == 0 ? "床下から見上げ" : (i == 1 ? "2階の床下から" : "ふつう")) + ".png"), tex.EncodeToPNG());
+                        Destroy(tex);
+                        wide.Release();
+                    }
+                    rig.pitch = keep[0]; rig.yaw = keep[1]; rig.distance = keep[2]; rig.pivot = keepPivot; rig.follow = keepFollow;
+                }
+            }
 
             File.WriteAllText(Path.Combine(OutDir, "報告.txt"), report.ToString(), Encoding.UTF8);
             Debug.Log("確認用の写真を保存しました：" + OutDir);
