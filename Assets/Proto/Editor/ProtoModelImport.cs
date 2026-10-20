@@ -16,7 +16,7 @@ namespace LifeSimProto.EditorTools
         const string MotionDir = "Assets/Proto/Resources/Motions";
         const string CharDir = "Assets/Proto/Resources/Chars";   // 本番キャラ（Codex 制作）
 
-        public override uint GetVersion() { return 5; }
+        public override uint GetVersion() { return 10; }
 
         static bool IsModel(string p) { p = p.Replace('\\', '/'); return p.StartsWith(ModelDir) || p.StartsWith(CharDir); }
         static bool IsMotion(string p) { return p.Replace('\\', '/').StartsWith(MotionDir); }
@@ -41,6 +41,29 @@ namespace LifeSimProto.EditorTools
                 mi.importAnimation = true;
                 mi.materialImportMode = ModelImporterMaterialImportMode.None;
             }
+        }
+
+        // 本番キャラのテクスチャ：名前が _Normal で終わるものは法線マップ、_ORM は色ではないデータとして読む
+        void OnPreprocessTexture()
+        {
+            string p = assetPath.Replace('\\', '/');
+            if (!p.StartsWith(CharDir)) return;
+            var ti = (TextureImporter)assetImporter;
+            string n = Path.GetFileNameWithoutExtension(p).ToLowerInvariant();
+            if (n.EndsWith("_normal")) ti.textureType = TextureImporterType.NormalMap;
+            else if (n.EndsWith("_orm")) ti.sRGBTexture = false;
+        }
+
+        // 本番キャラの材質：金属っぽく見えないように、金属度の画像を外して金属度0・なめらかさ控えめにする
+        // （Blender の ORM 画像が金属度として割り当てられると、肌がまだらな灰色に見えるため）
+        void OnPostprocessMaterial(Material m)
+        {
+            if (!assetPath.Replace('\\', '/').StartsWith(CharDir)) return;
+            if (m.HasProperty("_MetallicGlossMap")) m.SetTexture("_MetallicGlossMap", null);
+            m.DisableKeyword("_METALLICSPECGLOSSMAP");
+            if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0f);
+            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.25f);
+            if (m.HasProperty("_Glossiness")) m.SetFloat("_Glossiness", 0.25f);
         }
 
         void OnPreprocessAnimation()

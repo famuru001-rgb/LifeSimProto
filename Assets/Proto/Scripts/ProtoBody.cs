@@ -186,7 +186,7 @@ namespace LifeSimProto
             for (int i = 0; i < boneList.Length; i++) restRot[i] = boneList[i].localRotation;
             hipsRest = hips.localPosition;
 
-            if (real) SetupOutfits(); else SetupLook();
+            if (real) { SetupOutfits(); ApplyToon(); } else SetupLook();
             SetupFace();
             SetupSprings();
 
@@ -472,7 +472,82 @@ namespace LifeSimProto
             bool speaking = testMode ? testTalk : sim.IsSpeakingNow;
             string face = testMode ? testFace : sim.FaceNow;
             UpdateFace(dt, eyesClosed, speaking, face);
+            UpdateCorrectives(dt, pose);
             UpdateSprings(dt);
+        }
+
+        // ================= トゥーン表示（本番モデル） =================
+        // 本番キャラの材質を、アニメ調の陰影と輪郭線の表示（Resources/Shaders/LifeSimToon.shader）に置き換える。
+        // false にすると、元の表示（写実的な陰影）に戻る。
+        public static bool ToonEnabled = true;
+        static Shader toonShader;
+        static bool toonLooked;
+        static readonly Dictionary<Material, Material> toonCache = new Dictionary<Material, Material>();
+        // 顔の部品（Face_）用：輪郭線なし（目や口の部品の縁に線が出るため）
+        static readonly Dictionary<Material, Material> toonCacheNoLine = new Dictionary<Material, Material>();
+
+        // 再生のたびに作り直す（再生終了で材質が消えるため。前回の材質を使うとピンク色になる）
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetToon() { toonCache.Clear(); toonCacheNoLine.Clear(); toonShader = null; toonLooked = false; }
+
+        void ApplyToon()
+        {
+            if (!ToonEnabled) return;
+            if (!toonLooked)
+            {
+                toonLooked = true;
+                toonShader = Shader.Find("LifeSim/Toon");
+                if (toonShader == null || !toonShader.isSupported) { Debug.LogWarning("トゥーン表示のシェーダーが使えません"); toonShader = null; }
+            }
+            if (toonShader == null) return;
+            foreach (var r in model.GetComponentsInChildren<Renderer>(true))
+            {
+                var ms = r.sharedMaterials;
+                bool changed = false;
+                for (int i = 0; i < ms.Length; i++)
+                {
+                    var src = ms[i];
+                    if (src == null) continue;
+                    Material t;
+                    if (!toonCache.TryGetValue(src, out t) || t == null)
+                    {
+                        t = new Material(toonShader);
+                        t.name = src.name + "_Toon";
+                        Texture tex = src.HasProperty("_BaseMap") ? src.GetTexture("_BaseMap") : (src.HasProperty("_MainTex") ? src.GetTexture("_MainTex") : null);
+                        if (tex != null) t.SetTexture("_BaseMap", tex);
+                        if (src.HasProperty("_BaseMap"))
+                        {
+                            t.SetTextureScale("_BaseMap", src.GetTextureScale("_BaseMap"));
+                            t.SetTextureOffset("_BaseMap", src.GetTextureOffset("_BaseMap"));
+                        }
+                        Color c = src.HasProperty("_BaseColor") ? src.GetColor("_BaseColor") : (src.HasProperty("_Color") ? src.GetColor("_Color") : Color.white);
+                        // 口の中など画像のない材質は、Blender の色（リニア）がそのまま入って暗くなるので、見た目の色に直す
+                        if (tex == null && src.name.Contains("Mouth")) c = c.gamma;
+                        t.SetColor("_BaseColor", c);
+                        float cull = src.HasProperty("_Cull") ? src.GetFloat("_Cull") : 2f;
+                        if (src.name.Contains("DoubleSided")) cull = 0f;
+                        t.SetFloat("_Cull", cull);
+                        toonCache[src] = t;
+                    }
+                    if (r.gameObject.name.StartsWith("Face_"))
+                    {
+                        // 顔の部品は影を落とさない（顔の上に細い線のような影が出るため）
+                        r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                        Material t2;
+                        if (!toonCacheNoLine.TryGetValue(src, out t2) || t2 == null)
+                        {
+                            t2 = new Material(t);
+                            t2.name = src.name + "_ToonNoLine";
+                            t2.SetShaderPassEnabled("SRPDefaultUnlit", false);
+                            toonCacheNoLine[src] = t2;
+                        }
+                        t = t2;
+                    }
+                    ms[i] = t;
+                    changed = true;
+                }
+                if (changed) r.sharedMaterials = ms;
+            }
         }
 
         // ================= 着替え（本番モデル） =================
@@ -554,6 +629,27 @@ namespace LifeSimProto
                 }
             }
             foreach (var key in FaceKeys) faceNow[key] = 0f;
+            // 形の補正（Corrective_ で始まるシェイプキー）。例：座ったときのスカート
+            skirtSitKeys.Clear();
+            foreach (var smr in model.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                var mesh = smr.sharedMesh;
+                if (mesh == null) continue;
+                int idx = mesh.GetBlendShapeIndex("Corrective_Skirt_Sit");
+                if (idx >= 0) skirtSitKeys.Add(new KeyValuePair<SkinnedMeshRenderer, int>(smr, idx));
+            }
+        }
+
+        // ================= 形の補正（座ったときのスカート） =================
+        readonly List<KeyValuePair<SkinnedMeshRenderer, int>> skirtSitKeys = new List<KeyValuePair<SkinnedMeshRenderer, int>>();
+        float skirtSitNow;
+
+        void UpdateCorrectives(float dt, BodyPose pose)
+        {
+            if (skirtSitKeys.Count == 0) return;
+            float target = pose == BodyPose.Sit ? 100f : 0f;
+            skirtSitNow = Mathf.MoveTowards(skirtSitNow, target, 400f * Mathf.Min(dt, 0.1f));
+            foreach (var kv in skirtSitKeys) kv.Key.SetBlendShapeWeight(kv.Value, skirtSitNow);
         }
 
         string FaceKeyList()

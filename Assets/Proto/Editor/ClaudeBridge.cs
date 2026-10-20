@@ -8,7 +8,7 @@ namespace LifeSimProto.EditorTools
     /// <summary>
     /// Claude が外から Unity を操作するための合図（ファイル）を見る。
     /// LifeSimProto\Logs\claude_cmd.txt に1行ずつ命令を書くと、順に実行して claude_result.txt に結果を書く。
-    /// 命令：refresh（読み込み直し）／play（再生）／stop（停止）／photos（再生中なら確認用の写真）／reimport（仮モデルと動きを読み込み直す）／checkchars（本番キャラの検品）
+    /// 命令：refresh（読み込み直し）／play（再生）／stop（停止）／photos（再生中なら確認用の写真）／reimport（仮モデルと動きを読み込み直す）／checkchars（本番キャラの検品）／shadercheck（トゥーン表示のシェーダーのエラーを shader_check.txt に書く）／matinfo（キャラBの材質の色と画像を mat_info.txt に書く）
     /// famuru さんが Unity を操作しているときの邪魔はしない（ファイルが置かれたときだけ動く）。
     /// </summary>
     [InitializeOnLoad]
@@ -72,6 +72,45 @@ namespace LifeSimProto.EditorTools
                             log.AppendLine("photos: started");
                         }
                         else log.AppendLine("photos: not playing");
+                        break;
+                    case "shadercheck":
+                        {
+                            var sb = new StringBuilder();
+                            var sh = Shader.Find("LifeSim/Toon");
+                            if (sh == null) sb.AppendLine("LifeSim/Toon が見つからない");
+                            else
+                            {
+                                sb.AppendLine("エラーあり=" + ShaderUtil.ShaderHasError(sh) + " 対応=" + sh.isSupported + " パス数=" + sh.passCount);
+                                foreach (var m in ShaderUtil.GetShaderMessages(sh))
+                                    sb.AppendLine("[" + m.severity + "] " + m.platform + " 行" + m.line + "：" + m.message + " / " + m.messageDetails);
+                            }
+                            File.WriteAllText(Path.Combine(Dir, "shader_check.txt"), sb.ToString(), Encoding.UTF8);
+                            log.AppendLine("shadercheck: ok");
+                        }
+                        break;
+                    case "matinfo":
+                        {
+                            var sb = new StringBuilder();
+                            foreach (var o in AssetDatabase.LoadAllAssetsAtPath("Assets/Proto/Resources/Chars/B/CharB.fbx"))
+                            {
+                                var m = o as Material;
+                                if (m == null) continue;
+                                sb.Append(m.name + " / " + m.shader.name);
+                                foreach (var p in new[] { "_BaseColor", "_Color" }) if (m.HasProperty(p)) sb.Append(" " + p + "=" + m.GetColor(p));
+                                foreach (var p in new[] { "_BaseMap", "_MainTex" }) if (m.HasProperty(p)) sb.Append(" " + p + "=" + (m.GetTexture(p) != null ? m.GetTexture(p).name : "なし"));
+                                sb.AppendLine();
+                            }
+                            foreach (var o in AssetDatabase.LoadAllAssetsAtPath("Assets/Proto/Resources/Chars/B/CharB.fbx"))
+                            {
+                                var r = o as SkinnedMeshRenderer;
+                                if (r == null) continue;
+                                sb.Append("部品 " + r.name + "：");
+                                foreach (var m in r.sharedMaterials) sb.Append((m != null ? m.name : "なし") + "，");
+                                sb.AppendLine();
+                            }
+                            File.WriteAllText(Path.Combine(Dir, "mat_info.txt"), sb.ToString(), Encoding.UTF8);
+                            log.AppendLine("matinfo: ok");
+                        }
                         break;
                     default:
                         log.AppendLine(cmd + ": unknown");
