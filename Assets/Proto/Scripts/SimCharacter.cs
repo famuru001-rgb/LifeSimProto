@@ -46,6 +46,10 @@ namespace LifeSimProto
         int mishapDay = -1;
         readonly List<int> classSubjects = new List<int>();
         bool inPlaceClass;      // 開いた場所（中庭・工房・温室）で実技の授業を受けている
+        // 二人きりの時間：昼は性欲が最大のときだけ。相手を探しに行く途中で会った子（性欲80以上）がついて来る
+        SimCharacter escortLeader;
+        readonly List<SimCharacter> privateEscorts = new List<SimCharacter>();
+        bool desireMaxAtNight;  // 夜に性欲が最大になった（朝に寝不足なら 50 に下がり、寝不足と発情になる）
         double classUntil;
         readonly List<int> classSlots = new List<int>();
         /// <summary>学力（取っている科目の平均）。</summary>
@@ -678,6 +682,7 @@ namespace LifeSimProto
             loveNeed = Mathf.Clamp(loveNeed, 0f, 100f);
             sleepy = Mathf.Clamp(sleepy, 0f, 100f);
             desire = Mathf.Clamp(desire, 0f, 100f);
+            if (desire >= 99.9f && PrivateNight) desireMaxAtNight = true;
             mana = Mathf.Clamp(mana, 0f, 100f);
         }
 
@@ -1383,6 +1388,14 @@ namespace LifeSimProto
                 // 寝不足：起きたときの眠気で段階が決まる（安眠のお香を使った夜はならない）
                 int sl = deepSleep ? 0 : (sleepy > 70f ? 3 : (sleepy > 50f ? 2 : (sleepy > 30f ? 1 : 0)));
                 SetStage(StatusLine.Sleep, sl, true);
+                // 夜に性欲が最大のまま朝を迎えて寝不足：性欲は 50 まで下がり、寝不足と発情になる
+                if (desireMaxAtNight && sl >= 1)
+                {
+                    desire = Mathf.Min(desire, 50f);
+                    if (!IsTarget) SetStage(StatusLine.Love, 3, true);
+                    world.Log(displayName + "は眠れない夜を過ごした（寝不足・発情）");
+                }
+                desireMaxAtNight = false;
                 deepSleep = false;
                 // 風邪（寝不足だとひきやすい）
                 if (GetStage(StatusLine.Cold) == 0 && Chance(0.03f + sl * 0.04f)) SetStage(StatusLine.Cold, 1);
@@ -1552,9 +1565,23 @@ namespace LifeSimProto
 
             if (hasPendingRequest && state != State.Talking) { ExecuteRequest(); return; }
             if (privatePending) return;
+            if (escortLeader != null && UpdateEscort()) return;
             if (HandleSchedule(now)) return;
             if (state == State.Approaching || state == State.Waiting || state == State.Walking) return;
             if (hasOrder) return; // プレイヤーの指示を実行中
+
+            // ---- 性欲が最大（昼）：相手を探して会いに行く ----
+            if (!PrivateNight && desire >= 99.9f && !sickRest)
+            {
+                var pt = SeekPartner();
+                if (pt != null)
+                {
+                    privateEscorts.Clear();
+                    BeginApproach(pt, false, Intent.Private);
+                    actionText = pt.displayName + "を探しに行く";
+                    return;
+                }
+            }
 
             // ---- 限界：その場で居眠り ----
             if (GetStage(StatusLine.Sleep) >= 3 && Random.value < 0.08f)
@@ -1735,9 +1762,13 @@ namespace LifeSimProto
             return GoTo(p, State.Walking);
         }
 
+        /// <summary>二人きりの時間の「夜」（21時〜朝6時半）。夜以外は性欲が最大のときだけ起こる。</summary>
+        bool PrivateNight { get { float m = world.MinuteOfDay; return m >= 21f * 60f || m < 6.5f * 60f; } }
+
         SimCharacter PrivatePartner()
         {
             if (desire < 60f) return null;
+            if (!PrivateNight && desire < 99.9f) return null;
             if (!IsTarget)
             {
                 if (LoveStage < 2) return null;
@@ -1753,6 +1784,66 @@ namespace LifeSimProto
                 if (best == null || c.desire > best.desire) best = c;
             }
             return best;
+        }
+
+        /// <summary>性欲が最大のときに探しに行く相手（女の子→篤、篤→篤を好きな子）。</summary>
+        SimCharacter SeekPartner()
+        {
+            var f = world.RomanceTarget;
+            if (!IsTarget)
+            {
+                if (LoveStage < 2 || f == null || !f.Present || f.InPrivate) return null;
+                return f;
+            }
+            SimCharacter best = null;
+            foreach (var c in world.characters)
+            {
+                if (c == this || c.IsTarget || c.LoveStage < 2 || !c.Present || c.InPrivate || c.state == State.Sleeping || c.state == State.Bathing) continue;
+                if (best == null || c.desire > best.desire) best = c;
+            }
+            return best;
+        }
+
+        /// <summary>相手を探しに行く途中で、二人きりの時間の相手になれる子（性欲80以上）に会ったら、いっしょに連れて行く（2人まで）。</summary>
+        void RecruitEscorts()
+        {
+            if (privateEscorts.Count >= 2) return;
+            foreach (var c in world.characters)
+            {
+                if (c == this || c == target || c.IsTarget || c.LoveStage < 2 || c.desire < 80f) continue;
+                if (!c.AvailableForTalk || c.privatePending || c.escortLeader != null || privateEscorts.Contains(c) || c.sickRest) continue;
+                Vector3 d = c.transform.position - transform.position;
+                if (Mathf.Abs(d.y) > 0.5f || Flat(d).magnitude > 3.0f) continue;
+                c.escortLeader = this;
+                privateEscorts.Add(c);
+                c.LeaveCurrentSpot();
+                c.ShowBubble("私も…", 1.5f);
+                world.Log(c.displayName + "が" + displayName + "についていく");
+                if (privateEscorts.Count >= 2) return;
+            }
+        }
+
+        /// <summary>ついていく子：先に行く子のうしろを歩く。先に行く子が探すのをやめたら、ついていくのもやめる。</summary>
+        bool UpdateEscort()
+        {
+            var l = escortLeader;
+            bool going = l != null && l.Present && !l.InPrivate && (l.privatePending || ((l.state == State.Approaching || l.state == State.Waiting || l.state == State.Talking) && l.intent == Intent.Private));
+            if (!going) { escortLeader = null; return false; }
+            Vector3 d = l.transform.position - transform.position;
+            actionText = l.displayName + "についていく";
+            if (Flat(d).magnitude > 1.6f || Mathf.Abs(d.y) > 0.5f)
+            {
+                goal = Goal.Follow;
+                act = Act.None;
+                GoTo(world.NearestFree(l.transform.position - l.transform.forward * 1.0f), State.Walking);
+            }
+            return true;
+        }
+
+        void ReleaseEscorts()
+        {
+            foreach (var c in privateEscorts) if (c != null && c.escortLeader == this) c.escortLeader = null;
+            privateEscorts.Clear();
         }
 
         bool StartSocial()
@@ -2268,6 +2359,7 @@ namespace LifeSimProto
         {
             bool sickOk = target != null && target.state == State.Sleeping && target.sickRest;
             if (target == null || !target.Present || target.InPrivate || (target.state == State.Sleeping && !sickOk) || target.state == State.Bathing) { GiveUp(); return; }
+            if (intent == Intent.Private && !PrivateNight) RecruitEscorts();
             approachTimer += dt;
             repathTimer -= dt;
             Vector3 d3 = target.transform.position - transform.position;
@@ -2295,13 +2387,14 @@ namespace LifeSimProto
         void BeginInteraction()
         {
             if (intent == Intent.Private && target.CanJoinPrivate(this)) StartCoroutine(PrivateRoutine(target));
-            else StartCoroutine(TalkRoutine(target));
+            else { ReleaseEscorts(); StartCoroutine(TalkRoutine(target)); }
         }
 
         bool CanJoinPrivate(SimCharacter by)
         {
             bool pair = (IsTarget && by.LoveStage >= 2) || (LoveStage >= 2 && by.IsTarget);
-            return pair && desire >= 40f && !sickRest;
+            // 昼は、相手の性欲が最大なら応じる（夜は自分の性欲が40以上なら）
+            return pair && !sickRest && (desire >= 40f || (!PrivateNight && by.desire >= 99.9f));
         }
 
         void UpdateWaiting(float dt)
@@ -2323,6 +2416,7 @@ namespace LifeSimProto
         void GiveUp()
         {
             if (target != null) world.Log(displayName + "は" + target.displayName + "に会うのをあきらめた");
+            ReleaseEscorts();
             if (intent == Intent.Give) RefundGift(intent);
             target = null;
             hasOrder = false;
@@ -2801,13 +2895,38 @@ namespace LifeSimProto
             var girl = IsTarget ? partner : this;
 
             var group = new List<SimCharacter> { this, partner };
-            foreach (var c in world.characters)
+            if (PrivateNight)
             {
-                if (group.Count >= 4) break;
-                if (group.Contains(c) || c.IsTarget || c.LoveStage < 2 || c.desire < 55f || !c.AvailableForTalk) continue;
-                c.privatePending = true;
-                group.Add(c);
-                c.ShowBubble("私も…", 1.5f);
+                // 夜：篤を好きで、二人きりになりたい子が集まる（最大4人）
+                foreach (var c in world.characters)
+                {
+                    if (group.Count >= 4) break;
+                    if (group.Contains(c) || c.IsTarget || c.LoveStage < 2 || c.desire < 55f || !c.AvailableForTalk) continue;
+                    c.privatePending = true;
+                    group.Add(c);
+                    c.ShowBubble("私も…", 1.5f);
+                }
+            }
+            else
+            {
+                // 昼：探しに行く途中でついて来た子と、同じ相手を探しに来ていた子（性欲が最大）だけ
+                foreach (var c in world.characters)
+                {
+                    if (c == this || c == partner || c.IsTarget || privateEscorts.Contains(c) || c.LoveStage < 2 || c.desire < 99.9f) continue;
+                    if (c.target == partner && c.intent == Intent.Private && (c.state == State.Approaching || c.state == State.Waiting) && !c.privatePending)
+                        privateEscorts.Add(c);
+                }
+                foreach (var c in privateEscorts)
+                {
+                    if (group.Count >= 4) break;
+                    if (c == null || group.Contains(c) || !c.Present || c.InPrivate) continue;
+                    c.escortLeader = null;
+                    if (c.state == State.Approaching || c.state == State.Waiting) { c.target = null; c.hasOrder = false; c.SetState(State.Idle); }
+                    c.privatePending = true;
+                    c.ShowBubble("私も…", 1.5f);
+                    group.Add(c);
+                }
+                privateEscorts.Clear();
             }
             ShowBubble("ちょっといい？", 1.5f);
             yield return new WaitForSeconds(1.5f);
@@ -2924,6 +3043,7 @@ namespace LifeSimProto
 
         void CancelPrivateSelf()
         {
+            escortLeader = null;
             privatePending = false;
             privateArrived = false;
             if (goal == Goal.Private) goal = Goal.None;
@@ -2945,6 +3065,8 @@ namespace LifeSimProto
 
         void EnterPrivate(double until, RoomInfo r, Vector3 pos, Vector3 facing, bool floorSpot)
         {
+            escortLeader = null;
+            desireMaxAtNight = false; // 二人きりで過ごせたので、朝の寝不足・発情にはならない
             privatePending = false;
             privateArrived = false;
             privateUntil = until;

@@ -45,7 +45,7 @@ namespace LifeSimProto.EditorTools
                 if (cmd.Length == 0) continue;
                 // 試験用：skipto（日 時）＝ゲームの時刻を進める／speed（倍）＝速さ／gamelog＝寮の記録を game_log.txt に書く／openall＝新しい場所を全部開く／placeshots＝場所の写真
                 var w = EditorApplication.isPlaying ? LifeSimProto.LoungeWorld.Instance : null;
-                if (cmd.StartsWith("skipto ") || cmd.StartsWith("speed ") || cmd == "gamelog" || cmd == "openall" || cmd == "placeshots" || cmd == "status" || cmd == "testprivate")
+                if (cmd.StartsWith("skipto ") || cmd.StartsWith("speed ") || cmd == "gamelog" || cmd == "openall" || cmd == "placeshots" || cmd == "status" || cmd == "testprivate" || cmd == "testseek" || cmd == "testnight" || cmd == "testescort")
                 {
                     if (w == null) { log.AppendLine(cmd + ": not playing"); continue; }
                     var a = cmd.Split(' ');
@@ -85,12 +85,68 @@ namespace LifeSimProto.EditorTools
                         if (f != null) f.desire = 80f;
                         log.AppendLine("testprivate: ok");
                     }
+                    else if (cmd == "testseek")
+                    {
+                        // 試験用：昼の「相手を探して移動」を起こす（1人目は性欲100、2・3人目は性欲85で好き）
+                        var f = w.RomanceTarget;
+                        int n = 0;
+                        foreach (var c in w.characters)
+                        {
+                            if (c.IsTarget || !c.Present || n >= 3) continue;
+                            w.romance.love[c.id] = Mathf.Max(w.romance.love[c.id], n == 0 ? 70f : 65f);
+                            c.desire = n == 0 ? 100f : 85f; n++;
+                        }
+                        if (f != null) f.desire = Mathf.Max(f.desire, 80f);
+                        log.AppendLine("testseek: ok");
+                    }
+                    else if (cmd == "testnight")
+                    {
+                        // 試験用：夜に性欲が最大のまま眠る子を作る（1人目を性欲100、篤とほかの子は0にして、二人きりの時間を起こさない）
+                        var f = w.RomanceTarget;
+                        int n = 0;
+                        foreach (var c in w.characters)
+                        {
+                            if (c.IsTarget) continue;
+                            if (n == 0) { w.romance.love[c.id] = Mathf.Max(w.romance.love[c.id], 65f); c.desire = 100f; c.sleepy = Mathf.Max(c.sleepy, 90f); }
+                            else c.desire = 0f;
+                            n++;
+                        }
+                        if (f != null) f.desire = 0f;
+                        log.AppendLine("testnight: ok");
+                    }
+                    else if (cmd == "testescort")
+                    {
+                        // 試験用：篤から離れた所で、近くに別の子がいる2人を選ぶ（1人目は性欲100、近くの子は性欲85で好き）
+                        var f = w.RomanceTarget;
+                        string res = "testescort: no pair";
+                        if (f != null)
+                        {
+                            foreach (var g0 in w.characters)
+                            {
+                                if (g0.IsTarget || !g0.Present || g0.InPrivate) continue;
+                                if (Vector3.Distance(g0.transform.position, f.transform.position) < 8f) continue;
+                                LifeSimProto.SimCharacter b = null;
+                                foreach (var c in w.characters)
+                                {
+                                    if (c == g0 || c.IsTarget || !c.Present || c.InPrivate) continue;
+                                    if (Vector3.Distance(g0.transform.position, c.transform.position) < 2.5f) { b = c; break; }
+                                }
+                                if (b == null) continue;
+                                w.romance.love[g0.id] = Mathf.Max(w.romance.love[g0.id], 70f); g0.desire = 100f;
+                                w.romance.love[b.id] = Mathf.Max(w.romance.love[b.id], 65f); b.desire = 85f;
+                                f.desire = Mathf.Max(f.desire, 40f);
+                                res = "testescort: " + g0.displayName + " + " + b.displayName;
+                                break;
+                            }
+                        }
+                        log.AppendLine(res);
+                    }
                     else if (cmd == "status")
                     {
                         // 試験用：みんなが今どこで何をしているかを status.txt に追記する
                         var sb = new StringBuilder();
                         sb.AppendLine("== " + w.Day + "日目 " + LifeSimProto.ScheduleMaker.Clock(w.Now));
-                        foreach (var c in w.characters) sb.AppendLine(c.displayName + "：" + w.AreaName(c.transform.position) + "　" + c.actionText + (string.IsNullOrEmpty(c.bubble) ? "" : "　「" + c.bubble + "」"));
+                        foreach (var c in w.characters) sb.AppendLine(c.displayName + "：" + w.AreaName(c.transform.position) + "　" + c.actionText + (string.IsNullOrEmpty(c.bubble) ? "" : "　「" + c.bubble + "」") + "　［性欲" + Mathf.RoundToInt(c.desire) + (c.IsTarget ? "" : "・恋" + c.LoveStage) + "］");
                         File.AppendAllText(Path.Combine(Path.GetDirectoryName(ResultPath), "status.txt"), sb.ToString(), Encoding.UTF8);
                         log.AppendLine("status: ok");
                     }

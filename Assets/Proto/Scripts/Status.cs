@@ -116,9 +116,9 @@ namespace LifeSimProto
             Def(StatusLine.Sleep, StatusPolarity.Negative, new[] { "寝不足", "睡魔", "限界" }, new[] { 0f, 0f, 0f }, a, b, c).decays = false;
 
             // ---- 恋 ----
-            a = E("Fのことを考えてしまう"); a.rate[NeedKind.Love] = 1.3f; a.studyEfficiency = 0.8f; a.studyScore = 0.8f;
-            b = E("Fを目で追い、まわりをうろつく"); b.rate[NeedKind.Love] = 1.6f; b.studyEfficiency = 0.6f; b.studyScore = 0.6f; b.loveScore = 1.3f;
-            c = E("Fと二人きりになりたくてたまらない"); c.rate[NeedKind.Desire] = 3f; c.rate[NeedKind.Love] = 1.5f; c.studyEfficiency = 0.5f; c.privateScore = 1.5f;
+            a = E("篤のことを考えてしまう"); a.rate[NeedKind.Love] = 1.3f; a.studyEfficiency = 0.8f; a.studyScore = 0.8f;
+            b = E("篤を目で追い、まわりをうろつく"); b.rate[NeedKind.Love] = 1.6f; b.studyEfficiency = 0.6f; b.studyScore = 0.6f; b.loveScore = 1.3f;
+            c = E("篤と二人きりになりたくてたまらない"); c.rate[NeedKind.Desire] = 3f; c.rate[NeedKind.Love] = 1.5f; c.studyEfficiency = 0.5f; c.privateScore = 1.5f;
             Def(StatusLine.Love, StatusPolarity.Love, new[] { "恋わずらい", "恋の病", "発情" }, new[] { 720f, 720f, 360f }, a, b, c);
 
             // ---- 体調 ----
@@ -144,14 +144,14 @@ namespace LifeSimProto
             Def(StatusLine.Focus, StatusPolarity.Positive, new[] { "集中", "没頭", "ゾーン" }, new[] { 0f, 0f, 0f }, a, b, c).decays = false;
 
             // ---- 照れ ----
-            a = E("Fの近くにいたいけど、少し距離をとる"); a.talkBonus = 0.1f;
-            b = E("Fの顔が見られない"); b.rate[NeedKind.Love] = 1.2f;
+            a = E("篤の近くにいたいけど、少し距離をとる"); a.talkBonus = 0.1f;
+            b = E("篤の顔が見られない"); b.rate[NeedKind.Love] = 1.2f;
             Def(StatusLine.Shy, StatusPolarity.Love, new[] { "照れ", "赤面" }, new[] { 60f, 90f }, a, b);
 
             // ---- やきもち（仲は悪くならない） ----
             a = E("ちょっと気になる"); a.rate[NeedKind.Love] = 1.2f;
-            b = E("Fに会いに行きたくなる"); b.rate[NeedKind.Love] = 1.5f; b.loveScore = 1.3f;
-            c = E("Fの会話に割り込みたくなる"); c.rate[NeedKind.Love] = 1.8f; c.loveScore = 1.6f;
+            b = E("篤に会いに行きたくなる"); b.rate[NeedKind.Love] = 1.5f; b.loveScore = 1.3f;
+            c = E("篤の会話に割り込みたくなる"); c.rate[NeedKind.Love] = 1.8f; c.loveScore = 1.6f;
             Def(StatusLine.Jealousy, StatusPolarity.Love, new[] { "ちくっ", "やきもち", "嫉妬" }, new[] { 180f, 240f, 360f }, a, b, c);
 
             // ---- 魔力 ----
