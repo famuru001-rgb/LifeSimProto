@@ -28,7 +28,9 @@ namespace LifeSimProto
         float Scale { get { return Mathf.Max(0.55f, Screen.height / VirtualHeight); } }
         float VW { get { return Screen.width / Scale; } }
 
-        Rect TopBar { get { return new Rect(12, 12, 1780, 50); } }
+        Rect TopBar { get { return new Rect(12, 12, 1900, 50); } }
+        /// <summary>キャラの上に名前と行動・状態の札を出すか（最初は出さない。上のボタン・N キー。選んだキャラはいつも出す）。</summary>
+        public static bool ShowNameTags = false;
         Rect MemoryPanel { get { return new Rect(VW / 2f - 470f, 120f, 940f, 820f); } }
         Rect ChoicePanel { get { return new Rect(VW / 2f - 300f, 380f, 600f, 170f); } }
         Rect ExamPanel { get { return new Rect(VW / 2f - 470f, 120f, 940f, 96f + Academics.Count * 30f + 40f); } }
@@ -116,6 +118,7 @@ namespace LifeSimProto
                 if (kb.escapeKey.wasPressedThisFrame) { if (shopOpen) shopOpen = false; else if (examOpen) examOpen = false; else if (memoryOpen) memoryOpen = false; else Select(null); }
                 if (kb.gKey.wasPressedThisFrame) examOpen = !examOpen;
                 if (kb.mKey.wasPressedThisFrame) memoryOpen = !memoryOpen;
+                if (kb.nKey.wasPressedThisFrame) ShowNameTags = !ShowNameTags;
                 if (kb.tabKey.wasPressedThisFrame) CycleWallMode();
                 if (kb.bKey.wasPressedThisFrame) shopOpen = !shopOpen;
             }
@@ -349,10 +352,17 @@ namespace LifeSimProto
                 Vector2 g;
                 if (!ToGui(c.transform.position + Vector3.up * c.HeadHeight, s, out g)) continue;
 
+                Rect r;
+                Color old = GUI.color;
+                if (!ShowNameTags && !c.selected)
+                {
+                    // 名前と行動を出さない（選んだキャラだけ出す）。吹き出しの位置だけ決める
+                    r = new Rect(g.x, g.y - 24f, 0f, 24f);
+                    goto Bubble;
+                }
                 string tag = c.displayName + (c.IsTarget ? "（あなた）" : "") + "  " + c.actionText;
                 Vector2 size = nameTag.CalcSize(new GUIContent(tag));
-                Rect r = new Rect(g.x - size.x / 2f, g.y - size.y, size.x, size.y);
-                Color old = GUI.color;
+                r = new Rect(g.x - size.x / 2f, g.y - size.y, size.x, size.y);
                 GUI.Box(r, tag, nameTag);
                 var face = Portrait(c, "face");
                 if (face != null) GUI.DrawTexture(new Rect(r.x - r.height - 2, r.y, r.height, r.height), face, ScaleMode.ScaleToFit, true);
@@ -368,6 +378,7 @@ namespace LifeSimProto
                 // 状態異常の札（名前の右）
                 var tags = c.StatusTagList();
                 if (tags.Count > 0) DrawChips(r.xMax + 4, r.y + 1, tags, r.height - 2);
+            Bubble:
 
                 if (!string.IsNullOrEmpty(c.bubble))
                 {
@@ -411,6 +422,8 @@ namespace LifeSimProto
             x += 16;
             if (GUI.Button(new Rect(x, r.y + 8, 130, 34), WallModeName(world.wallMode), button)) CycleWallMode();
             x += 138;
+            if (GUI.Button(new Rect(x, r.y + 8, 110, 34), ShowNameTags ? "名札：あり" : "名札：なし", ShowNameTags ? buttonOn : button)) ShowNameTags = !ShowNameTags;
+            x += 118;
             if (GUI.Button(new Rect(x, r.y + 8, 70, 34), "1階", button) && rig != null) rig.LookAtFloor(0);
             x += 76;
             if (GUI.Button(new Rect(x, r.y + 8, 70, 34), "2階", button) && rig != null) rig.LookAtFloor(1);

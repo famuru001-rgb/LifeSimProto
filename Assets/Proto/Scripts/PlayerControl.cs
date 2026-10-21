@@ -37,6 +37,7 @@ namespace LifeSimProto
         public bool accessory;   // 装飾品（1人2つまで）・お守り（1人1つまで）。新しく渡すと付け替える
         public ItemShelf shelf;  // 購買部の棚
         public bool npcOnly;     // 寮生の私物：寮生が自分で買って使うだけ（篤は買えない・渡せない・使えない）
+        public float desireBoostMin, desireBoostMax; // 使ったときに性欲がすぐ増える量（私物。30〜80くらい）
         public NeedMod Mod { get { return string.IsNullOrEmpty(modId) ? null : NeedBook.Item(modId); } }
     }
 
@@ -106,9 +107,9 @@ namespace LifeSimProto
                 new ItemDef { kind = ItemKind.CharmI, name = "リアのお守り", price = 80, desc = "お守り：リアを意識しやすくなる（会いに行きやすく、近くに座りやすく、話すと仲よくなりやすい）", selfUse = true, accessory = true, modId = "charm:I", shelf = ItemShelf.Charm },
                 new ItemDef { kind = ItemKind.CharmJ, name = "キッカのお守り", price = 80, desc = "お守り：キッカを意識しやすくなる（会いに行きやすく、近くに座りやすく、話すと仲よくなりやすい）", selfUse = true, accessory = true, modId = "charm:J", shelf = ItemShelf.Charm },
                 // 寮生の私物（寮生が自分で買って使う。プレゼントにはできない）
-                new ItemDef { kind = ItemKind.PassionAroma, name = "情熱のアロマ", price = 40, desc = "私物：半日、性欲が高まりやすい", npcOnly = true, modId = "own:情熱のアロマ", modMinutes = 720f, shelf = ItemShelf.Personal },
-                new ItemDef { kind = ItemKind.NightCandle, name = "夜想のキャンドル", price = 40, desc = "私物：1日、性欲のたまりがたまりやすい・眠気がたまりにくい", npcOnly = true, modId = "own:夜想のキャンドル", modMinutes = 1440f, shelf = ItemShelf.Personal },
-                new ItemDef { kind = ItemKind.LongingOil, name = "恋慕の香油", price = 50, desc = "私物：1日、恋心と性欲が高まりやすい", npcOnly = true, modId = "own:恋慕の香油", modMinutes = 1440f, shelf = ItemShelf.Personal },
+                new ItemDef { kind = ItemKind.PassionAroma, name = "情熱のアロマ", price = 40, desc = "私物：使うと性欲が30〜60増え、半日、性欲が高まりやすい", npcOnly = true, desireBoostMin = 30f, desireBoostMax = 60f, modId = "own:情熱のアロマ", modMinutes = 720f, shelf = ItemShelf.Personal },
+                new ItemDef { kind = ItemKind.NightCandle, name = "夜想のキャンドル", price = 40, desc = "私物：使うと性欲が40〜70増え、1日、性欲のたまりがたまりやすい・眠気がたまりにくい", npcOnly = true, desireBoostMin = 40f, desireBoostMax = 70f, modId = "own:夜想のキャンドル", modMinutes = 1440f, shelf = ItemShelf.Personal },
+                new ItemDef { kind = ItemKind.LongingOil, name = "恋慕の香油", price = 50, desc = "私物：使うと性欲が50〜80増え、1日、恋心と性欲が高まりやすい", npcOnly = true, desireBoostMin = 50f, desireBoostMax = 80f, modId = "own:恋慕の香油", modMinutes = 1440f, shelf = ItemShelf.Personal },
             };
         }
     }

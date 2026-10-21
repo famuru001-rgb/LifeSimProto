@@ -623,8 +623,35 @@ namespace LifeSimProto
         }
 
         /// <summary>状態や作業が、行動や吹き出しでそれとなくわかるようにする。</summary>
+        /// <summary>考えていること（吹き出しに（）で出す）。いちばん強い気持ちを1つ。なければ null。</summary>
+        string Thought()
+        {
+            var cands = new List<KeyValuePair<float, string>>();
+            if (state == State.Approaching && target != null) cands.Add(new KeyValuePair<float, string>(60f, "（" + target.displayName + "と話したいな）"));
+            if (hunger > 60f) cands.Add(new KeyValuePair<float, string>(hunger, "（おなかすいたな…）"));
+            if (sleepy > 70f) cands.Add(new KeyValuePair<float, string>(sleepy, "（眠い…）"));
+            if (tired > 65f) cands.Add(new KeyValuePair<float, string>(tired, "（ちょっと休みたい…）"));
+            if (lonely > 65f) cands.Add(new KeyValuePair<float, string>(lonely, "（だれかと話したいな）"));
+            if (bored > 65f) cands.Add(new KeyValuePair<float, string>(bored, "（退屈…なにかしたいな）"));
+            if (study > 70f) cands.Add(new KeyValuePair<float, string>(study, "（勉強しなきゃ）"));
+            if (hasAssignment && assignProgress < 100f && AssignmentUrgency() > 0.5f) cands.Add(new KeyValuePair<float, string>(75f, "（課題、終わらせなきゃ…）"));
+            if (hobbyNeed > 65f && profile != null) cands.Add(new KeyValuePair<float, string>(hobbyNeed, "（" + profile.hobbyText + "がしたいな）"));
+            if (!IsTarget && LoveStage >= 1 && loveNeed > 60f) cands.Add(new KeyValuePair<float, string>(loveNeed, "（篤に会いたいな…）"));
+            if (desire >= 70f) cands.Add(new KeyValuePair<float, string>(desire, IsTarget ? "（エッチしたいな…）" : "（エッチしたい…）"));
+            if (cands.Count == 0) return null;
+            cands.Sort((a, b) => b.Key.CompareTo(a.Key));
+            return cands[Random.value < 0.7f || cands.Count == 1 ? 0 : 1].Value; // たまに2番目の気持ち
+        }
+
+        const float ThoughtRate = 0.04f; // 考えていることが出る頻度（1秒あたり）
+
         void IdleBubbles(float dt)
         {
+            if (Random.value < dt * ThoughtRate)
+            {
+                string th = Thought();
+                if (th != null) { ShowBubble(th, 1.8f); return; }
+            }
             float r = Random.value;
             if (state == State.Activity && act == Act.Hobby && hobby == HobbyKind.Magic && r < dt * 0.4f) ShowBubble("✦", 1.0f);
             else if (GetStage(StatusLine.Mana) >= 2 && r < dt * 0.2f) ShowBubble("（ぱちぱち）", 1.2f);
@@ -2458,6 +2485,7 @@ namespace LifeSimProto
             bool gift = giver != null && giver != this;
             // 寮生の私物は、寮生が自分で使うだけ（渡せない）
             if (d != null && d.npcOnly && (gift || IsTarget)) { world.Log("「" + d.name + "」は寮生が自分で買って使う物（渡せない）"); return; }
+            if (d != null && d.desireBoostMax > 0f) desire = Mathf.Min(100f, desire + Random.Range(d.desireBoostMin, d.desireBoostMax)); // 私物：すぐ増える分
             switch (k)
             {
                 case ItemKind.Sweets:
