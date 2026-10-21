@@ -517,6 +517,12 @@ namespace LifeSimProto
                 if (state == State.Activity && poi == null && gathering != null) FaceTowards(gatherFocus, dt);
                 if (state == State.Activity && goal == Goal.None && choice == Choice.Hover && world.RomanceTarget != null) FaceTowards(world.RomanceTarget.transform.position, dt);
                 if (bubble == null && state != State.Sleeping && state != State.Private) IdleBubbles(dt);
+                // 二人きりの時間：寄り添って話す（描写はしない）
+                else if (bubble == null && state == State.Private && Random.value < dt * 0.04f)
+                {
+                    string pl = Pick("n_private");
+                    if (pl != null) ShowBubble(pl, 2.2f);
+                }
                 if (!chatting && (state == State.Eating || state == State.Bathing || state == State.Sitting))
                 {
                     chatCooldown -= dt;
@@ -911,7 +917,12 @@ namespace LifeSimProto
             if (o != null)
             {
                 if (o.IsTarget && !IsTarget && LoveStage >= 1 && Random.value < 0.6f)
-                    line = Pick(key + "_love" + Mathf.Min(2, LoveStage)) ?? Pick(key + "_love");
+                {
+                    // 恋人（3）→ 好き（2）→ 気になる（1）の順に探す
+                    for (int ls = Mathf.Min(3, LoveStage); ls >= 1 && line == null; ls--) line = Pick(key + "_love" + ls);
+                    if (line == null) line = Pick(key + "_love");
+                }
+                if (line == null && IsTarget && o.IsLover && Random.value < 0.5f) line = Pick(key + "_lover"); // 篤から恋人へ
                 if (line == null)
                 {
                     int st = world.rel.Stage(id, o.id);
@@ -950,6 +961,17 @@ namespace LifeSimProto
                 if (tired > 75f) keys.Add("st_tired");
                 if (act == Act.Study && world.ExamEveToday) keys.Add("c_eve");
             }
+            // 夜いっしょに（22時〜）：談話室で夜ふかし・部屋で・屋上や中庭で
+            float mm = world.MinuteOfDay;
+            if (keys.Count == 0 && (mm >= 22f * 60f || LoungeWorld.IsNight(mm)) && SomeoneNear(3f))
+            {
+                string area = world.AreaName(transform.position);
+                if (area == "談話室") keys.Add("n_lounge");
+                else if (area.EndsWith("の部屋")) keys.Add("n_room");
+                else if (area == LoungeWorld.Observatory || area == LoungeWorld.Courtyard) keys.Add("n_sky");
+            }
+            // かわいい系のひとこと（落ち込んでいないとき）
+            if (keys.Count == 0 && GetStage(StatusLine.MoodDown) == 0 && Random.value < 0.2f) keys.Add("cute");
             if (keys.Count == 0)
             {
                 string area = world.AreaName(transform.position);
@@ -965,6 +987,17 @@ namespace LifeSimProto
             }
             if (keys.Count == 0) return null;
             return Pick(keys[Random.Range(0, keys.Count)]);
+        }
+
+        bool SomeoneNear(float r)
+        {
+            foreach (var o in world.characters)
+            {
+                if (o == this || !o.Present) continue;
+                Vector3 d = o.transform.position - transform.position;
+                if (Mathf.Abs(d.y) < 1f && d.sqrMagnitude < r * r) return true;
+            }
+            return false;
         }
 
         string[] Pool(string key, string[] fallback)
@@ -2520,7 +2553,7 @@ namespace LifeSimProto
             {
                 SimCharacter speaker = (i % 2 == 0) ? this : partner;
                 string line;
-                if (i == 0) line = visit ? "具合どう？" : (koibana ? "ねえ、恋バナしよ？" : Say("topic", "{0}なんだけど…", topic));
+                if (i == 0) line = visit ? "具合どう？" : (koibana ? "ねえ、恋バナしよ？" : Say("topic", "{0}なんだけど…", topic.EndsWith("の話") ? topic.Substring(0, topic.Length - 2) : topic));
                 else if (i == 1 && visit) line = "来てくれたんだ…";
                 else if (i == 1 && !koibana && feelYou != 0) line = feelYou > 0 ? partner.Say("like", "それ好き！") : partner.Say("dislike", "その話はちょっと…");
                 else if (koibana) line = i == 2 && speaker.profile != null && speaker.profile.callF.Length > 0 ? speaker.profile.callF + "ってさ…" : KoibanaLines[Random.Range(0, KoibanaLines.Length)];
