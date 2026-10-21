@@ -450,7 +450,7 @@ namespace LifeSimProto
                 else if (c.state == SimCharacter.State.Private) priv.Add(c.displayName);
             }
             if (away.Count > 0) parts.Add("外出中：" + string.Join("・", away.ToArray()));
-            if (priv.Count > 0) parts.Add("部屋で過ごしている：" + string.Join("・", priv.ToArray()));
+            if (priv.Count > 0) parts.Add("エッチしている：" + string.Join("・", priv.ToArray()));
             string text = string.Join("　｜　", parts.ToArray());
             Vector2 size = small.CalcSize(new GUIContent(text));
             GUI.Box(new Rect(r.x, r.y, size.x + 28, r.height), GUIContent.none, panel);

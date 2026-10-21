@@ -123,7 +123,7 @@ namespace LifeSimProto
             // ---- 性欲（たまりで段階が決まる。Buildup.cs）----
             a = E("なんだか落ち着かない"); a.studyEfficiency = 0.9f; a.studyScore = 0.9f;
             b = E("もやもやして、勉強も手につかない"); b.studyEfficiency = 0.7f; b.studyScore = 0.7f; b.funScore = 0.9f;
-            c = E("二人きりになりたくてたまらない"); c.rate[NeedKind.Desire] = 3f; c.studyEfficiency = 0.5f; c.studyScore = 0.6f; c.privateScore = 1.5f;
+            c = E("エッチしたくてたまらない"); c.rate[NeedKind.Desire] = 3f; c.studyEfficiency = 0.5f; c.studyScore = 0.6f; c.privateScore = 1.5f;
             Def(StatusLine.Desire, StatusPolarity.Love, new[] { "そわそわ", "悶々", "発情" }, new[] { 0f, 0f, 0f }, a, b, c).decays = false;
 
             // ---- 体調 ----

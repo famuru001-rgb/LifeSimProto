@@ -2675,7 +2675,7 @@ namespace LifeSimProto
             {
                 case State.Sleeping: return sickRest ? "熱で寝込んでいる" : (dozing ? "居眠りしている" : (napping ? "昼寝している" : "寝ている"));
                 case State.Away: return awayLabel ?? "出かけている";
-                case State.Private: return "二人きりで過ごしている";
+                case State.Private: return "エッチしている";
                 case State.Bathing: return "お風呂";
                 case State.Eating: return "食事中";
                 case State.Talking: return "会話中";
@@ -2721,8 +2721,8 @@ namespace LifeSimProto
         bool CanJoinPrivate(SimCharacter by)
         {
             bool pair = (IsTarget && !by.IsTarget) || (!IsTarget && by.IsTarget); // 篤と寮生（関係に関係なく）
-            // 昼は、相手の性欲が最大なら応じる（夜は自分の性欲が40以上なら）
-            return pair && !sickRest && (desire >= 40f || (!PrivateNight && by.desire >= 99.9f));
+            // 誘われた側も望んでいるときだけ（性欲40以上。famuru 決定 2026-10-21）
+            return pair && !sickRest && desire >= 40f;
         }
 
         void UpdateWaiting(float dt)
@@ -3261,7 +3261,7 @@ namespace LifeSimProto
                 }
                 privateEscorts.Clear();
             }
-            ShowBubble("ちょっといい？", 1.5f);
+            ShowBubble("ねえ…エッチしよ？", 1.5f);
             yield return new WaitForSeconds(1.5f);
             partner.ShowBubble("うん", 1.2f);
             yield return new WaitForSeconds(1.2f);
@@ -3296,7 +3296,7 @@ namespace LifeSimProto
                 arrived[i].EnterPrivate(until, spot.room, sp.pos, sp.facing, sp.floor);
                 names.Add(arrived[i].displayName);
             }
-            world.Log("♥ " + string.Join("・", names.ToArray()) + "が" + spot.name + "で二人きりの時間を過ごしている");
+            world.Log("♥ " + string.Join("・", names.ToArray()) + "が" + spot.name + "でエッチしている");
             // 夜（21時〜朝）なら「夜をいっしょに過ごした」と記録する（その周だけ。物語の針の条件）
             float mm = world.MinuteOfDay;
             if (mm >= 21f * 60f || LoungeWorld.IsNight(mm))
@@ -3411,7 +3411,7 @@ namespace LifeSimProto
             transform.position = pos;
             transform.rotation = Quaternion.LookRotation(facing);
             SetState(State.Private);
-            actionText = "一緒に過ごしている";
+            actionText = "エッチしている";
         }
 
         void EndPrivate()
