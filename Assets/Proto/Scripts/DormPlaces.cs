@@ -16,6 +16,14 @@ namespace LifeSimProto
     {
         public const string Courtyard = "中庭", Greenhouse = "温室", Library = "図書室", Workshop = "工房", Observatory = "屋上の天文台", Kitchen = "台所";
         const float CY0 = 5.4f, CY1 = 23.2f;
+        // 場所は、寮を大きくする前（2026-10-21 より前）の位置で組み立ててから、寮に合わせてずらす（大きさは今のまま。famuru 決定）。
+        // 前の寮：談話室の奥行きの半分 5m、手前の端 z -11
+        const float OldHalfD = 5f, OldFrontZ = -11f;
+        static readonly Vector3 LibraryOff = new Vector3(-0.6f, 0f, 2.5f);   // 図書室：談話室の裏・左
+        static readonly Vector3 YardOff = new Vector3(0f, 0f, 2.5f);         // 中庭・温室・工房：寮の裏
+        static readonly Vector3 KitchenOff = new Vector3(1.0f, 0f, -2.5f);   // 台所：食堂の左
+        // 屋上の天文台：2階・左の廊下の突き当たりの先の階段を上った、2階の屋根の上（高さ6m。famuru 決定 2026-10-21 で一段高く）
+        static readonly Vector3 ObservatoryOff = new Vector3(-1.0f, Floor3Y - Floor2Y, 4.5f);
 
         class PlaceDoor
         {
@@ -31,8 +39,8 @@ namespace LifeSimProto
         readonly HashSet<string> placesAdded = new HashSet<string>();
         static readonly Dictionary<string, Vector3> PlaceFocus = new Dictionary<string, Vector3>
         {
-            { Courtyard, new Vector3(2.8f, 0f, 14.5f) }, { Greenhouse, new Vector3(-7.5f, 0f, 19.5f) }, { Library, new Vector3(-3.5f, 0f, 8.2f) },
-            { Workshop, new Vector3(8.5f, 0f, 19.8f) }, { Observatory, new Vector3(-10f, Floor2Y, 8.4f) }, { Kitchen, new Vector3(-16.4f, 0f, -8.4f) },
+            { Courtyard, new Vector3(2.8f, 0f, 14.5f) + YardOff }, { Greenhouse, new Vector3(-7.5f, 0f, 19.5f) + YardOff }, { Library, new Vector3(-3.5f, 0f, 8.2f) + LibraryOff },
+            { Workshop, new Vector3(8.5f, 0f, 19.8f) + YardOff }, { Observatory, new Vector3(-10f, Floor2Y, 8.4f) + ObservatoryOff }, { Kitchen, new Vector3(-16.4f, 0f, -8.4f) + KitchenOff },
         };
         int appliedPlaceCount = -1;
         int seatMark, poiMark;
@@ -75,13 +83,47 @@ namespace LifeSimProto
         {
             CreatePlaceMaterials();
             // 区画は小さい場所から先に（AreaAt は最初に当たった区画を返す）
-            BuildLibrary();
-            BuildGreenhouse();
-            BuildWorkshop();
-            BuildKitchen();
-            BuildCourtyard();
-            BuildObservatory();
+            Shifted(BuildLibrary, LibraryOff);
+            Shifted(BuildGreenhouse, YardOff);
+            Shifted(BuildWorkshop, YardOff);
+            Shifted(BuildKitchen, KitchenOff);
+            Shifted(BuildCourtyard, YardOff);
+            Shifted(BuildObservatory, ObservatoryOff);
+            BuildObservatoryHall();
         }
+
+        /// <summary>場所を前の位置で組み立ててから、作った物・壁・席・見どころ・区画・名札・扉・ふさがる所をまとめて off だけずらす。</summary>
+        void Shifted(System.Action build, Vector3 off)
+        {
+            int c0 = root.childCount, w0 = walls.Count, b0 = blockers0.Count, b1 = blockers1.Count, s0 = seats.Count, p0 = pois.Count;
+            int a0 = areaList.Count, l0 = worldLabels.Count, d0 = placeDoors.Count;
+            var keys0 = new HashSet<string>(placeSeats.Keys);
+            build();
+            for (int i = c0; i < root.childCount; i++) root.GetChild(i).position += off;
+            Vector2 o2 = new Vector2(off.x, off.z);
+            for (int i = w0; i < walls.Count; i++) { walls[i].a += o2; walls[i].b += o2; }
+            for (int i = b0; i < blockers0.Count; i++) { var r = blockers0[i]; r.position += o2; blockers0[i] = r; }
+            for (int i = b1; i < blockers1.Count; i++) { var r = blockers1[i]; r.position += o2; blockers1[i] = r; }
+            bool up = off.y > 1.5f; // 一段上にずらす場所（屋上の天文台）：2階のふさがる所・区画を屋上へ
+            if (up) { blockers2.AddRange(blockers1.GetRange(b1, blockers1.Count - b1)); blockers1.RemoveRange(b1, blockers1.Count - b1); }
+            for (int i = s0; i < seats.Count; i++) ShiftSeat(seats[i], off);
+            for (int i = p0; i < pois.Count; i++) ShiftPoi(pois[i], off);
+            foreach (var kv in placeSeats) if (!keys0.Contains(kv.Key)) foreach (var st in kv.Value) ShiftSeat(st, off);
+            foreach (var kv in placePois) if (!keys0.Contains(kv.Key)) foreach (var pp in kv.Value) ShiftPoi(pp, off);
+            for (int i = a0; i < areaList.Count; i++) { var r = areaList[i].rect; r.position += o2; areaList[i].rect = r; if (up) areaList[i].floor = 2; }
+            for (int i = l0; i < worldLabels.Count; i++) worldLabels[i] = new KeyValuePair<Vector3, string>(worldLabels[i].Key + off, worldLabels[i].Value);
+            for (int i = d0; i < placeDoors.Count; i++) { var r = placeDoors[i].nav; r.position += o2; placeDoors[i].nav = r; }
+        }
+
+        static void ShiftSeat(Seat st, Vector3 off) { st.position += off; st.approach += off; }
+
+        static void ShiftPoi(Poi p, Vector3 off)
+        {
+            p.lookAt += off;
+            if (p.slots != null) for (int i = 0; i < p.slots.Length; i++) p.slots[i] += off;
+        }
+
+        static Rect Off(Rect r, Vector3 off) { r.position += new Vector2(off.x, off.z); return r; }
 
         void BeginPlace() { seatMark = seats.Count; poiMark = pois.Count; }
 
@@ -291,7 +333,7 @@ namespace LifeSimProto
             pois.Add(MakePoi("図書室の本を選んでいる", new Vector3(-2.15f, 1.5f, 11.1f), new Vector3(-2.6f, 0f, 10.2f), new Vector3(-1.7f, 0f, 10.2f)));
             Label(new Vector3(-3.5f, 3.2f, 6.0f), "図書室");
             AddArea(Library, Rect.MinMaxRect(x0, z0, x1, z1), 0);
-            PlaceDoorAt(Library, 0, new Vector3(-2.8f, 0f, HalfD + 0.2f), true, 1.0f, 2.6f, Rect.MinMaxRect(-3.2f, 4.6f, -2.4f, 5.9f), woodDark);
+            PlaceDoorAt(Library, 0, new Vector3(-2.8f, 0f, OldHalfD + 0.2f), true, 1.0f, 2.6f, Rect.MinMaxRect(-3.2f, 4.6f, -2.4f, 5.9f), woodDark);
             EndPlace(Library);
         }
 
@@ -425,7 +467,7 @@ namespace LifeSimProto
         void BuildKitchen()
         {
             BeginPlace();
-            float x0 = -19.4f, x1 = -13.4f, z0 = FrontZ, z1 = -5.2f, t = 0.4f;
+            float x0 = -19.4f, x1 = -13.4f, z0 = OldFrontZ, z1 = -5.2f, t = 0.4f;
             Box("Kitchen_Floor", new Vector3((x0 + x1) / 2f, -0.05f, (z0 + z1) / 2f), new Vector3(x1 - x0, 0.1f, z1 - z0), flagstone);
             var left = Wall(new Vector2(x0 - 0.2f, z0 - 0.4f), new Vector2(x0 - 0.2f, z1 + 0.2f), 0f, BandH, t);
             var front = Wall(new Vector2(x0 - 0.4f, z0 - 0.2f), new Vector2(x1, z0 - 0.2f), 0f, BandH, t);
@@ -476,8 +518,8 @@ namespace LifeSimProto
             Box("Courtyard_Grass", new Vector3(0f, -0.03f, (CY0 + CY1) / 2f), new Vector3(27f, 0.04f, CY1 - CY0), grassMat);
             // まわりの低い石の塀
             var sm = StoneFor(18f, 1.4f);
-            Box("Yard_WallL", new Vector3(-13.6f, 0.7f, (11.4f + CY1) / 2f), new Vector3(0.4f, 1.4f, CY1 - 11.4f), sm);
-            Box("Yard_WallR", new Vector3(13.6f, 0.7f, (CY0 + CY1) / 2f), new Vector3(0.4f, 1.4f, CY1 - CY0), sm);
+            Box("Yard_WallL", new Vector3(-13.6f, 0.7f, (13.4f + CY1) / 2f), new Vector3(0.4f, 1.4f, CY1 - 13.4f), sm); // 手前は天文台の土台
+            Box("Yard_WallR", new Vector3(13.6f, 0.7f, (9.8f + CY1) / 2f), new Vector3(0.4f, 1.4f, CY1 - 9.8f), sm); // 手前は篤の部屋の土台
             Box("Yard_WallB", new Vector3(0f, 0.7f, CY1), new Vector3(27.6f, 1.4f, 0.4f), sm);
             Box("Yard_WallCap", new Vector3(0f, 1.45f, CY1), new Vector3(27.8f, 0.12f, 0.5f), mortarDark);
             // 裏口からの小道・円い広場（行事の屋台を並べられる）・小屋への道
@@ -509,10 +551,10 @@ namespace LifeSimProto
             LampPost(new Vector3(-8.6f, 0f, 16.3f));
             LampPost(new Vector3(9.6f, 0f, 16.3f));
             // 飛行術：浮かぶ輪・ほうき立て
-            Box("FlightLine", new Vector3(-7f, 0.005f, 14f), new Vector3(9f, 0.01f, 0.08f), fabricWhite);
-            FloatRing(new Vector3(-10.5f, 2.4f, 14.0f), 0.8f);
-            FloatRing(new Vector3(-7.3f, 3.1f, 14.0f), 0.65f);
-            FloatRing(new Vector3(-4.2f, 2.2f, 14.0f), 0.75f);
+            Box("FlightLine", new Vector3(-7f, 0.005f, 14.6f), new Vector3(9f, 0.01f, 0.08f), fabricWhite);
+            FloatRing(new Vector3(-10.5f, 2.4f, 14.6f), 0.8f);
+            FloatRing(new Vector3(-7.3f, 3.1f, 14.6f), 0.65f);
+            FloatRing(new Vector3(-4.2f, 2.2f, 14.6f), 0.75f);
             var rack = new GameObject("BroomRack").transform;
             rack.SetParent(root, false);
             rack.localPosition = new Vector3(-12.6f, 0f, 16.0f);
@@ -530,16 +572,16 @@ namespace LifeSimProto
             Box("Mat2", new Vector3(11.2f, 0.03f, 12.4f), new Vector3(1.6f, 0.06f, 1.2f), fabricRed);
             var dummy = new GameObject("TrainingDummy").transform;
             dummy.SetParent(root, false);
-            dummy.localPosition = new Vector3(12.2f, 0f, 9.2f);
+            dummy.localPosition = new Vector3(12.6f, 0f, 10.6f);
             Cyl("Dummy_Post", new Vector3(0f, 0.85f, 0f), new Vector3(0.3f, 0.85f, 0.3f), Quaternion.identity, woodMid, dummy);
             Box("Dummy_Arm", new Vector3(0f, 1.2f, 0f), new Vector3(1.0f, 0.12f, 0.12f), woodDark, dummy);
             Box("Dummy_Arm2", new Vector3(0f, 0.85f, 0f), new Vector3(0.12f, 0.12f, 0.8f), woodDark, dummy);
             Cyl("Dummy_Target", new Vector3(-0.17f, 1.45f, 0f), new Vector3(0.3f, 0.02f, 0.3f), Quaternion.Euler(0f, 0f, 90f), fabricRed, dummy);
-            blockers0.Add(new Rect(11.9f, 8.9f, 0.6f, 0.6f));
+            blockers0.Add(new Rect(12.3f, 10.3f, 0.6f, 0.6f));
             for (int i = 0; i < 3; i++)
             {
-                Cyl("Post", new Vector3(10.4f + i * 0.9f, 0.35f, 8.0f), new Vector3(0.18f, 0.35f, 0.18f), Quaternion.identity, woodDark);
-                blockers0.Add(new Rect(10.3f + i * 0.9f, 7.9f, 0.2f, 0.2f));
+                Cyl("Post", new Vector3(10.4f + i * 0.9f, 0.35f, 14.4f), new Vector3(0.18f, 0.35f, 0.18f), Quaternion.identity, woodDark);
+                blockers0.Add(new Rect(10.3f + i * 0.9f, 14.3f, 0.2f, 0.2f));
             }
             // 木（まわり）
             Vector3[] trees =
@@ -553,21 +595,21 @@ namespace LifeSimProto
             pois[pois.Count - 1].outdoor = true;
             pois.Add(MakePoi("若木を眺めている", new Vector3(0.3f, 1f, 11.9f), new Vector3(0.3f, 0f, 12.9f), new Vector3(5.3f, 0f, 12.9f)));
             pois[pois.Count - 1].outdoor = true;
-            var fly = MakePoi("ほうきで飛ぶ練習をしている", new Vector3(-7.3f, 3f, 14f), new Vector3(-11.4f, 0f, 13.0f), new Vector3(-5.6f, 0f, 13.0f));
+            var fly = MakePoi("ほうきで飛ぶ練習をしている", new Vector3(-7.3f, 3f, 14.6f), new Vector3(-11.4f, 0f, 13.9f), new Vector3(-5.6f, 0f, 13.6f));
             fly.subject = 7; fly.outdoor = true;
             pois.Add(fly);
-            var kick = MakePoi("打ち込み台で体術の練習をしている", new Vector3(12.2f, 1.1f, 9.2f), new Vector3(11.3f, 0f, 9.5f), new Vector3(11.8f, 0f, 10.2f));
+            var kick = MakePoi("打ち込み台で体術の練習をしている", new Vector3(12.6f, 1.1f, 10.6f), new Vector3(11.8f, 0f, 10.7f), new Vector3(12.6f, 0f, 11.5f));
             kick.subject = 8; kick.outdoor = true;
             pois.Add(kick);
             var flyClass = ClassPoi("飛行術の授業を受けている", 7, new Vector3(-7.3f, 2.5f, 14f), -11.6f, 15.6f, 1.3f, 0f, 7, 1);
             flyClass.outdoor = true;
             pois.Add(flyClass);
-            var bodyClass = ClassPoi("体術の授業を受けている", 8, new Vector3(9.0f, 0.5f, 10.8f), 7.6f, 9.4f, 0.85f, 2.9f, 4, 2);
+            var bodyClass = ClassPoi("体術の授業を受けている", 8, new Vector3(9.0f, 0.5f, 10.8f), 7.6f, 10.2f, 0.85f, 2.4f, 4, 2);
             bodyClass.outdoor = true;
             pois.Add(bodyClass);
             Label(new Vector3(2.8f, 2.2f, 11.2f), "中庭");
             AddArea(Courtyard, Rect.MinMaxRect(-13.4f, CY0, 13.4f, CY1), 0);
-            PlaceDoorAt(Courtyard, 0, new Vector3(2.8f, 0f, HalfD + 0.2f), true, 1.0f, 2.6f, Rect.MinMaxRect(2.4f, 4.6f, 3.2f, 5.9f), woodDark);
+            PlaceDoorAt(Courtyard, 0, new Vector3(2.8f, 0f, OldHalfD + 0.2f), true, 1.0f, 2.6f, Rect.MinMaxRect(2.4f, 4.6f, 3.2f, 5.9f), woodDark);
             EndPlace(Courtyard);
         }
 
@@ -596,7 +638,8 @@ namespace LifeSimProto
         {
             BeginPlace();
             float x0 = -13.4f, x1 = -6.4f, z0 = CY0, z1 = 11.4f, y = Floor2Y;
-            Box("Terrace_Base", new Vector3((x0 + x1) / 2f, (y - 0.05f) / 2f, (z0 + z1) / 2f), new Vector3(x1 - x0, y - 0.05f, z1 - z0), mortarDark);
+            // 土台は地面から屋上まで（組み立てたあと一段上にずらすので、その分下げておく）
+            Box("Terrace_Base", new Vector3((x0 + x1) / 2f, (Floor3Y - 0.05f) / 2f - (Floor3Y - Floor2Y), (z0 + z1) / 2f), new Vector3(x1 - x0, Floor3Y - 0.05f, z1 - z0), mortarDark);
             Box("Terrace_Floor", new Vector3((x0 + x1) / 2f, y - 0.025f, (z0 + z1) / 2f), new Vector3(x1 - x0, 0.05f, z1 - z0), flagstone);
             Cyl("Terrace_Compass", new Vector3(-10.4f, y + 0.005f, 8.8f), new Vector3(3.2f, 0.01f, 3.2f), Quaternion.identity, rugMat);
             Cyl("Terrace_CompassIn", new Vector3(-10.4f, y + 0.01f, 8.8f), new Vector3(2.6f, 0.01f, 2.6f), Quaternion.identity, flagstone);
@@ -653,26 +696,79 @@ namespace LifeSimProto
             pois[pois.Count - 1].outdoor = true;
             Label(new Vector3(-10f, y + 2.4f, 10.5f), "屋上の天文台");
             AddArea(Observatory, Rect.MinMaxRect(x0, z0, x1, z1), 1);
-            PlaceDoorAt(Observatory, 1, new Vector3(-7.2f, 0f, HalfD + 0.2f), true, 0.9f, 2.2f, Rect.MinMaxRect(-7.55f, 4.6f, -6.85f, 5.9f), woodDark);
             EndPlace(Observatory);
+        }
+
+        /// <summary>
+        /// 屋上の天文台への階段（2階・左の廊下の突き当たりの扉の先。新しい位置で組み立てる）。
+        /// 2階の高さの細長い部屋（z 7.9〜9.9）に、右から左へ上る階段。上の踊り場から天文台（高さ6m）へ出る。
+        /// </summary>
+        void BuildObservatoryHall()
+        {
+            float x0 = -14.4f, x1 = -7.4f, z0 = HalfD + 0.4f, z1 = z0 + 2.0f, y = Floor2Y, top = Floor3Y;
+            Box("ObsHall_Base", new Vector3((x0 + x1) / 2f, (y - 0.05f) / 2f, (z0 + z1) / 2f), new Vector3(x1 - x0, y - 0.05f, z1 - z0 + 0.2f), mortarDark);
+            Box("ObsHall_Floor", new Vector3((x0 + x1) / 2f, y - 0.025f, (z0 + z1) / 2f), new Vector3(x1 - x0, 0.05f, z1 - z0), flagstone);
+            Box("ObsHall_WallL", new Vector3(x0 - 0.15f, y + 1.5f, (z0 + z1) / 2f), new Vector3(0.3f, 3.0f, z1 - z0 + 0.2f), StoneFor(2f, 3f));
+            // 階段（右から左へ上る。15段）
+            int steps = 15;
+            float sx0 = -9.2f, sx1 = -13.1f, sz = (z0 + z1) / 2f;
+            float run = (sx0 - sx1) / steps, rise = (top - y) / steps;
+            for (int i = 0; i < steps; i++)
+            {
+                float h = (i + 1) * rise;
+                Box("ObsStair_Step", new Vector3(sx0 - (i + 0.5f) * run, y + h / 2f, sz), new Vector3(run, h, 1.2f), i % 2 == 0 ? woodDark : woodMid);
+            }
+            // 上の踊り場（ここから天文台へ出る）と柱
+            Box("ObsHall_Landing", new Vector3((x0 + sx1) / 2f, top - 0.1f, (z0 + z1) / 2f), new Vector3(sx1 - x0, 0.2f, z1 - z0), woodDark);
+            Box("ObsHall_Post", new Vector3(sx1 - 0.1f, (y + top) / 2f, z0 + 0.15f), new Vector3(0.15f, top - y, 0.15f), woodDark);
+            // 天文台の手前の手すり（踊り場の所はあける）
+            Box("Terrace_ParapetF", new Vector3((sx1 + x1 + 0.3f) / 2f, top + 0.45f, z1), new Vector3(x1 + 0.3f - sx1, 0.9f, 0.3f), StoneFor(5f, 0.9f));
+            Box("Terrace_ParapetR2", new Vector3(x1 + 0.1f, top + 0.45f, z1 + 0.45f), new Vector3(0.3f, 0.9f, 0.9f), StoneFor(1f, 0.9f));
+            Lamp(new Vector3(-10.4f, y + 2.4f, sz), 1.8f, 6f);
+            Label(new Vector3(-10.4f, y + 2.2f, sz), "天文台への階段");
+            AddArea("天文台への階段", Rect.MinMaxRect(x0, z0, x1, z1), 1);
+            blockers1.Add(Rect.MinMaxRect(sx1, sz - 0.6f, sx0, sz + 0.6f));
+            roofStair = new Stair
+            {
+                bottomApproach = new Vector3(-8.6f, y, sz),
+                bottom = new Vector3(sx0, y, sz),
+                top = new Vector3(sx1, top, sz),
+                topApproach = new Vector3(-13.75f, top, sz) // 階段の上のすぐ横（離れていると、道を探し直すたびに行ったり来たりする）
+            };
+            PlaceDoorAt(Observatory, 1, new Vector3(-8.2f, 0f, HalfD + 0.2f), true, 0.9f, 2.2f, Rect.MinMaxRect(-8.55f, HalfD - 0.4f, -7.85f, HalfD + 0.9f), woodDark);
         }
 
         /// <summary>新しい場所の歩ける所（扉は閉まっている。開くと ApplyPlaces で通れる）。</summary>
         void OpenPlacesNav()
         {
-            nav0.Open(Rect.MinMaxRect(-6.15f, 5.65f, -0.85f, 11.15f));   // 図書室
-            nav0.Open(Rect.MinMaxRect(-10.75f, 17.25f, -4.25f, 22.25f)); // 温室
-            nav0.Open(Rect.MinMaxRect(5.25f, 17.25f, 11.75f, 22.25f));   // 工房
-            nav0.Open(Rect.MinMaxRect(-19.15f, -10.95f, -13.65f, -5.45f)); // 台所
-            nav0.Open(Rect.MinMaxRect(-13.15f, 11.65f, 13.35f, 16.55f));  // 中庭（奥の広い所）
-            nav0.Open(Rect.MinMaxRect(-3.8f, 16.5f, 4.8f, 22.95f));       // 中庭（小屋のあいだ）
-            nav0.Open(Rect.MinMaxRect(12.15f, 16.5f, 13.35f, 22.95f));    // 中庭（工房の右）
-            nav0.Open(Rect.MinMaxRect(-13.15f, 16.5f, -11.25f, 22.95f));  // 中庭（温室の左）
-            nav0.Open(Rect.MinMaxRect(-0.1f, 5.65f, 13.35f, 11.7f));     // 中庭（手前・右）
+            // 数字は前の位置。場所ごとのずれ（～Off）を足す
+            nav0.Open(Off(Rect.MinMaxRect(-6.15f, 5.65f, -0.85f, 11.15f), LibraryOff));   // 図書室
+            nav0.Open(Off(Rect.MinMaxRect(-10.75f, 17.25f, -4.25f, 22.25f), YardOff)); // 温室
+            nav0.Open(Off(Rect.MinMaxRect(5.25f, 17.25f, 11.75f, 22.25f), YardOff));   // 工房
+            nav0.Open(Off(Rect.MinMaxRect(-19.15f, -10.95f, -13.65f, -5.45f), KitchenOff)); // 台所
+            nav0.Open(Off(Rect.MinMaxRect(-7.15f, 11.65f, 13.35f, 13.65f), YardOff));   // 中庭（奥の広い所・手前。左は天文台の土台）
+            nav0.Open(Off(Rect.MinMaxRect(-13.15f, 13.65f, 13.35f, 16.55f), YardOff));  // 中庭（奥の広い所）
+            nav0.Open(Off(Rect.MinMaxRect(-3.8f, 16.5f, 4.8f, 22.95f), YardOff));       // 中庭（小屋のあいだ）
+            nav0.Open(Off(Rect.MinMaxRect(12.15f, 16.5f, 13.35f, 22.95f), YardOff));    // 中庭（工房の右）
+            nav0.Open(Off(Rect.MinMaxRect(-13.15f, 16.5f, -11.25f, 22.95f), YardOff));  // 中庭（温室の左）
+            nav0.Open(Off(Rect.MinMaxRect(-0.1f, 5.65f, 7.05f, 11.7f), YardOff));      // 中庭（手前・右。篤の部屋の土台まで）
+            nav0.Open(Off(Rect.MinMaxRect(7.05f, 9.95f, 13.35f, 11.7f), YardOff));     // 中庭（篤の部屋の土台の奥）
+        }
+
+        void OpenPlacesNav1()
+        {
+            nav1.Open(Rect.MinMaxRect(-9.1f, HalfD + 0.6f, -7.65f, HalfD + 2.2f)); // 天文台への階段の下（扉は ApplyPlaces で開け閉め）
+        }
+
+        void OpenPlacesNav2()
+        {
+            nav2.Open(Off(Rect.MinMaxRect(-13.15f, 5.65f, -6.65f, 11.15f), ObservatoryOff)); // 屋上の天文台
+            nav2.Open(Rect.MinMaxRect(-14.15f, HalfD + 0.6f, -13.2f, HalfD + 4.0f));          // 上の踊り場から天文台へ
         }
 
         public static readonly string[] PlaceFloor0Names = { "Courtyard_Grass", "Library_Floor", "Kitchen_Floor", "Greenhouse_Floor", "Workshop_Floor", "Yard_Path", "Plaza", "Plaza_Ring", "Plaza_Center", "Plaza_Star" };
-        public static readonly string[] PlaceFloor1Names = { "Terrace_Base", "Terrace_Floor", "Terrace_Compass", "Terrace_CompassIn", "Terrace_Rug" };
+        public static readonly string[] PlaceFloor1Names = { "Terrace_Base", "Terrace_Floor", "Terrace_Compass", "Terrace_CompassIn", "Terrace_Rug", "ObsHall_Landing" }; // 屋上
+        public static readonly string[] PlaceHallFloorNames = { "ObsHall_Base", "ObsHall_Floor" }; // 2階の高さ
     }
 
     /// <summary>
@@ -692,15 +788,16 @@ namespace LifeSimProto
             var keep = new float[] { rig.pitch, rig.yaw, rig.distance };
             Vector3 keepPivot = rig.pivot;
             var keepFollow = rig.follow;
+            System.Func<string, float, Vector4> At = (place, kind) => { var f = LoungeWorld.FocusOf(place); return new Vector4(f.x, f.y + 0.8f, f.z, kind); };
             var shots = new List<KeyValuePair<string, Vector4>>
             {
-                new KeyValuePair<string, Vector4>("全体", new Vector4(0f, 1f, 6f, 0f)),
-                new KeyValuePair<string, Vector4>("中庭", new Vector4(2.8f, 0.8f, 14f, 1f)),
-                new KeyValuePair<string, Vector4>("温室", new Vector4(-7.5f, 0.8f, 19.6f, 2f)),
-                new KeyValuePair<string, Vector4>("工房", new Vector4(8.5f, 0.8f, 19.6f, 2f)),
-                new KeyValuePair<string, Vector4>("図書室", new Vector4(-3.5f, 0.8f, 8.3f, 2f)),
-                new KeyValuePair<string, Vector4>("台所", new Vector4(-16.4f, 0.8f, -8.2f, 2f)),
-                new KeyValuePair<string, Vector4>("天文台", new Vector4(-10f, LoungeWorld.Floor2Y + 0.8f, 8.4f, 2f)),
+                new KeyValuePair<string, Vector4>("全体", new Vector4(0f, 1f, 4f, 0f)),
+                new KeyValuePair<string, Vector4>("中庭", At(LoungeWorld.Courtyard, 1f)),
+                new KeyValuePair<string, Vector4>("温室", At(LoungeWorld.Greenhouse, 2f)),
+                new KeyValuePair<string, Vector4>("工房", At(LoungeWorld.Workshop, 2f)),
+                new KeyValuePair<string, Vector4>("図書室", At(LoungeWorld.Library, 2f)),
+                new KeyValuePair<string, Vector4>("台所", At(LoungeWorld.Kitchen, 2f)),
+                new KeyValuePair<string, Vector4>("天文台", At(LoungeWorld.Observatory, 2f)),
             };
             foreach (var s in shots)
             {

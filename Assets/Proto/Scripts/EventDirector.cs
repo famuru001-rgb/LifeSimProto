@@ -98,7 +98,7 @@ namespace LifeSimProto
             {
                 world.gatherings.Add(new Gathering
                 {
-                    key = "tea", label = "お茶会に参加している", area = "談話室", focus = new Vector3(0f, 0f, 0.5f),
+                    key = "tea", label = "お茶会に参加している", area = "談話室", focus = new Vector3(0f, 0f, 2.0f),
                     start = world.Now, end = world.Now + 60, joinChance = 0.85f
                 });
                 world.Log("談話室でお茶会が始まった");
@@ -112,7 +112,7 @@ namespace LifeSimProto
                     if (!Calendar.IsBirthday(c.id, day)) continue;
                     world.gatherings.Add(new Gathering
                     {
-                        key = "birthday", label = c.displayName + "の誕生日会", area = "談話室", focus = new Vector3(0f, 0f, 3.0f),
+                        key = "birthday", label = c.displayName + "の誕生日会", area = "談話室", focus = new Vector3(0f, 0f, 4.5f),
                         start = world.Now, end = world.Now + 60, joinChance = 0.9f, honoree = c
                     });
                     world.Log("★ " + c.displayName + "の誕生日会が始まった！");
@@ -172,7 +172,7 @@ namespace LifeSimProto
                 world.blackoutUntil = world.Now + 60;
                 world.gatherings.Add(new Gathering
                 {
-                    key = "blackout", label = "暖炉のまわりに集まっている", area = "談話室", focus = new Vector3(0f, 0f, 3.2f),
+                    key = "blackout", label = "暖炉のまわりに集まっている", area = "談話室", focus = new Vector3(0f, 0f, 5.7f),
                     start = world.Now, end = world.Now + 60, joinChance = 0.7f
                 });
                 world.Log("魔法灯がいっせいに消えた！ 暖炉の火だけが明るい");
@@ -314,7 +314,7 @@ namespace LifeSimProto
         {
             world = w;
             until = endTime;
-            transform.position = world.NearestFree(new Vector3(0f, 0f, -2.5f));
+            transform.position = world.NearestFree(new Vector3(0f, 0f, -3.5f));
             var body = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             body.transform.SetParent(transform, false);
             body.transform.localPosition = new Vector3(0f, 0.25f, 0f);
@@ -365,7 +365,7 @@ namespace LifeSimProto
                 wait -= dt;
                 if (wait <= 0f && !watched)
                 {
-                    var p = world.nav0.RandomFreePoint(new Rect(-5f, -4f, 10f, 7f));
+                    var p = world.nav0.RandomFreePoint(new Rect(-6f, -6f, 12f, 11f));
                     var np = world.nav0.FindPath(transform.position, p);
                     if (np != null) path.AddRange(np);
                     wait = Random.Range(3f, 8f);

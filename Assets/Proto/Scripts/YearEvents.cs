@@ -27,7 +27,7 @@ namespace LifeSimProto
     {
         const int Spring = 0, Summer = 1, Autumn = 2, Winter = 3;
         const int Light = 0, Fire = 1, Water = 2, Wind = 3, Earth = 4, Moon = 5, Star = 6;
-        static readonly Vector3 Lounge = new Vector3(0f, 0f, 0.5f), Fireplace = new Vector3(0f, 0f, 3.2f), Dining = new Vector3(-7.5f, 0f, -8f);
+        static readonly Vector3 Lounge = new Vector3(0f, 0f, 2.0f), Fireplace = new Vector3(0f, 0f, 5.7f), Dining = new Vector3(-6.0f, 0f, -11.3f); // 2026-10-21 寮を大きくした位置
 
         public static readonly List<YearEvent> All = new List<YearEvent>
         {

@@ -180,6 +180,12 @@ namespace LifeSimProto
         {
             p = Vector3.zero;
             if (Mathf.Abs(ray.direction.y) < 0.0001f) return false;
+            float t2 = (LoungeWorld.Floor3Y - ray.origin.y) / ray.direction.y;
+            if (t2 > 0f && world.nav2 != null)
+            {
+                Vector3 q = ray.origin + ray.direction * t2;
+                if (world.nav2.IsFree(q)) { p = q; return true; } // 屋上の天文台
+            }
             float t1 = (LoungeWorld.Floor2Y - ray.origin.y) / ray.direction.y;
             if (t1 > 0f)
             {
@@ -191,7 +197,7 @@ namespace LifeSimProto
             {
                 Vector3 q = ray.origin + ray.direction * t0;
                 if (world.nav0.IsFree(q)) { p = q; return true; }
-                if (q.x > -14f && q.x < 14f && q.z > -14f && q.z < 6f) { p = world.nav0.NearestFreePoint(q); return true; }
+                if (q.x > -15f && q.x < 15f && q.z > -18f && q.z < 8f) { p = world.nav0.NearestFreePoint(q); return true; }
             }
             return false;
         }

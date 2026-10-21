@@ -78,8 +78,8 @@ namespace LifeSimProto
                 pivot = Vector3.Lerp(pivot, want, 1f - Mathf.Exp(-dt * 5f));
             }
 
-            pivot.x = Mathf.Clamp(pivot.x, -22f, 16f);
-            pivot.z = Mathf.Clamp(pivot.z, -16f, 24f); // 中庭・台所まで見られるように
+            pivot.x = Mathf.Clamp(pivot.x, -22f, 18f);
+            pivot.z = Mathf.Clamp(pivot.z, -20f, 28f); // 中庭・台所・玄関の外まで見られるように
             pivot.y = Mathf.Clamp(pivot.y, 0.2f, 6f);
 
             Quaternion rot = Quaternion.Euler(pitch, yaw, 0f);

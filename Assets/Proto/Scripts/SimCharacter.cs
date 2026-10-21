@@ -569,6 +569,7 @@ namespace LifeSimProto
             stateTime += dt;
 
             UpdateNeeds(dt);
+            if (Present) Watchdog(dt);
             if (Present)
             {
                 int n = Mathf.Clamp(Mathf.CeilToInt(dt / MaxMoveStep), 1, 24);
@@ -645,6 +646,14 @@ namespace LifeSimProto
         }
 
         // ================= 欲求 =================
+        // 疲れ・空腹の増え方（famuru 決定 2026-10-21：立ち・歩きはゆっくり、勉強・趣味で疲れる。空腹は3食とおやつで足りる速さ）
+        const float TiredWalk = 0.35f;       // 歩いている（前は 0.9）
+        const float TiredStand = 0.12f;      // 立っている（前は 0.35）
+        const float TiredStudySit = 0.3f;    // 座って勉強・趣味（前は座ると休めた）
+        const float TiredStudyStand = 0.55f; // 立って勉強・趣味・実技の練習（前は 0.3）
+        const float HungerPerMin = 0.16f;    // 空腹（ゲーム内1分あたり。前は 0.2）
+        const float HungerSleepMul = 0.3f;   // 夜に眠っている間の空腹の増え方
+
         void UpdateNeeds(float dt)
         {
             float gm = dt * world.GameMinutesPerSecond(); // 進んだゲーム内の分
@@ -652,7 +661,8 @@ namespace LifeSimProto
             // ゲージの変動（下がる分は補正の「下がり方」を掛け、全体に NeedBook.Swing を掛ける。さみしさ・退屈・勉強・趣味はゆっくり動く）
             float lonely0 = lonely, bored0 = bored, study0 = study, hobby0 = hobbyNeed, tired0 = tired, hunger0 = hunger, love0 = loveNeed, sleepy0 = sleepy;
 
-            hunger += gm * 0.2f * RateMul(NeedKind.Hunger);
+            // 空腹：3食とおやつで足りる速さ（食事を抜かなければ 80 を超えない。眠っている間はゆっくり。2026-10-21）
+            hunger += gm * HungerPerMin * (state == State.Sleeping && !napping ? HungerSleepMul : 1f) * RateMul(NeedKind.Hunger);
             study += gm * 0.05f * (0.5f + diligence) * RateMul(NeedKind.Study);
             hobbyNeed += gm * 0.09f * RateMul(NeedKind.Hobby);
             sleepy += gm * 0.075f * RateMul(NeedKind.Sleepy);
@@ -695,10 +705,12 @@ namespace LifeSimProto
                 case State.Walking:
                 case State.Approaching:
                     lonely += dt * 0.9f * (0.4f + sociability) * lonelyMul;
-                    tired += dt * 0.9f * tiredMul; bored -= dt * 0.3f; break;
+                    tired += dt * TiredWalk * tiredMul; bored -= dt * 0.3f; break;
                 case State.Sitting:
                     lonely += dt * 0.9f * (0.4f + sociability) * lonelyMul;
-                    tired -= dt * 3.5f;
+                    // 座って休むと疲れが取れる。座って勉強・趣味をしているときは疲れる
+                    if (act == Act.Study || act == Act.Hobby) tired += dt * TiredStudySit * tiredMul;
+                    else tired -= dt * 3.5f;
                     if (act == Act.Study) Studying(dt, gm);
                     else if (act == Act.Hobby) { hobbyNeed -= dt * 3f; bored -= dt * 2f; focusMin += gm; desireRelief += 0.12f; buildDrain += 0.15f; }
                     else if (act == Act.Fun) { bored -= dt * 2.5f; lonely -= dt * 1.2f; }
@@ -716,7 +728,7 @@ namespace LifeSimProto
                     break;
                 case State.Activity:
                     lonely += dt * 0.9f * (0.4f + sociability) * lonelyMul;
-                    tired += dt * 0.3f * tiredMul;
+                    tired += dt * (act == Act.Study || act == Act.Hobby ? TiredStudyStand : 0.3f) * tiredMul;
                     if (act == Act.Study) Studying(dt, gm);
                     else if (act == Act.Hobby)
                     {
@@ -731,7 +743,7 @@ namespace LifeSimProto
                     bored -= dt * 1f; break;
                 default:
                     lonely += dt * 0.9f * (0.4f + sociability) * lonelyMul;
-                    tired += dt * 0.35f * tiredMul; bored += dt * (0.6f + whim * 0.4f) * boredMul; break;
+                    tired += dt * TiredStand * tiredMul; bored += dt * (0.6f + whim * 0.4f) * boredMul; break;
             }
 
             // Fの近くにいると恋心が落ち着き、気持ちが少しずつ育つ
@@ -1254,7 +1266,9 @@ namespace LifeSimProto
                         StartMeal(Act.Meal, it.Label);
                         return true;
                     case TaskKind.Bath:
-                        if (now > it.start + 90) { it.done = true; continue; }
+                        if (now > it.start + 150) { it.done = true; continue; }
+                        // 浴場は男女共用。仲がよい人とだけ一緒に入る（famuru 決定 2026-10-21）。入っている人と仲がよくなければ、あとで入る
+                        if (!BathCompanyOk()) { if (actionText != "お風呂が空くのを待っている" && state == State.Idle) actionText = "お風呂が空くのを待っている"; continue; }
                         it.done = true;
                         StartBath();
                         return true;
@@ -1329,6 +1343,30 @@ namespace LifeSimProto
             bool ok = GoToPoi(trolley, Act.Snack, "おやつを取りに行く", 2f);
             snackPick = ok;
             return ok;
+        }
+
+        /// <summary>一緒にお風呂に入れる仲か：寮生同士は友達以上（好感度40）、篤と寮生は恋人か親友（好感度80）。</summary>
+        bool BathPal(SimCharacter o)
+        {
+            float a = world.rel.Get(id, o.id);
+            if (IsTarget || o.IsTarget)
+            {
+                var girl = IsTarget ? o : this;
+                return girl.IsLover || a >= 80f;
+            }
+            return a >= 40f;
+        }
+
+        /// <summary>今お風呂にいる人・向かっている人が、みんな一緒に入れる仲か。</summary>
+        bool BathCompanyOk()
+        {
+            foreach (var c in world.characters)
+            {
+                if (c == this) continue;
+                if (c.state != State.Bathing && c.goal != Goal.Bath) continue;
+                if (!BathPal(c)) return false;
+            }
+            return true;
         }
 
         void StartBath()
@@ -2320,7 +2358,7 @@ namespace LifeSimProto
             AreaInfo area = world.AreaAt(transform.position);
             Vector3 p;
             if (area == null || area.name == "外" || Random.value < 0.35f)
-                p = world.nav0.RandomFreePoint(new Rect(-5.5f, -4.5f, 11f, 9f));
+                p = world.nav0.RandomFreePoint(new Rect(-6.5f, -7f, 13f, 14f));
             else
                 p = world.NavAt(transform.position).RandomFreePoint(area.rect);
             if (!GoTo(p, State.Walking)) SetState(State.Idle);
@@ -3282,9 +3320,9 @@ namespace LifeSimProto
                 {
                     // 個室：ベッドの縁に並んで座る（最大4人）
                     Vector3 along = room.bed.forward;
-                    Vector3 edgeOut = new Vector3(0f, 0f, 1f);
+                    Vector3 edgeOut = room.bedEdge;
                     float[] offs = n <= 2 ? new[] { -0.3f, 0.2f } : (n == 3 ? new[] { -0.55f, -0.05f, 0.45f } : new[] { -0.72f, -0.25f, 0.22f, 0.69f });
-                    foreach (var o in offs) res.Add(new Place { pos = room.bed.position + along * o + edgeOut * 0.15f, facing = edgeOut, floor = false });
+                    foreach (var o in offs) res.Add(new Place { pos = room.bed.position + along * (o * room.bedSpread) + edgeOut * room.bedEdgeDist, facing = edgeOut, floor = false });
                 }
                 else foreach (var s in seatList) res.Add(new Place { pos = s.position, facing = s.forward, floor = s.floorSeat });
                 return res;
@@ -3501,6 +3539,63 @@ namespace LifeSimProto
                     step = 0f;
                 }
             }
+        }
+
+        // ================= 動けなくなったときの見張り =================
+        // 歩こうとしているのに一定時間ほとんど動かない、または階段の途中で止まっているときは、強制的に位置をずらす（famuru 決定 2026-10-21）
+        const float WatchEvery = 3f;   // 調べる間隔（秒）
+        const int WatchStillTimes = 2; // この回数つづけて動かなければずらす
+        float watchTimer;
+        Vector3 watchPos;
+        int watchStill;
+
+        void Watchdog(float dt)
+        {
+            watchTimer += dt;
+            if (watchTimer < WatchEvery) return;
+            watchTimer = 0f;
+            Vector3 p = transform.position;
+            float moved = (p - watchPos).magnitude;
+            watchPos = p;
+            bool wantsMove = state == State.Walking || state == State.Approaching;
+            bool offFloor = !LoungeWorld.OnFloorLevel(p) && state != State.Sleeping && state != State.Bathing && state != State.Private;
+            if ((wantsMove || offFloor) && moved < 0.2f) watchStill++; else watchStill = 0;
+            if (watchStill >= WatchStillTimes) { watchStill = 0; Unstick(offFloor); }
+        }
+
+        void Unstick(bool offFloor)
+        {
+            Vector3 p = transform.position;
+            if (offFloor)
+            {
+                // 階段の途中：いちばん近い階段の上か下に立たせる
+                Vector3 best = p;
+                float bd = float.MaxValue;
+                var ends = new List<Vector3>();
+                foreach (var st in world.stairs) { ends.Add(st.bottomApproach); ends.Add(st.topApproach); }
+                if (world.roofStair != null) { ends.Add(world.roofStair.bottomApproach); ends.Add(world.roofStair.topApproach); }
+                foreach (var e in ends) { float d = (e - p).sqrMagnitude; if (d < bd) { bd = d; best = e; } }
+                transform.position = best;
+            }
+            else if (path.Count > 0)
+            {
+                // 道の先（同じ高さの、少し先の点）へずらす
+                int k = Mathf.Min(3, path.Count - 1);
+                while (k > 0 && Mathf.Abs(path[k].y - p.y) > 0.3f) k--;
+                if (Mathf.Abs(path[k].y - p.y) > 0.3f) transform.position = world.NearestFree(p + new Vector3(Random.Range(-0.8f, 0.8f), 0f, Random.Range(-0.8f, 0.8f)));
+                else { transform.position = path[k]; path.RemoveRange(0, k + 1); }
+            }
+            else transform.position = world.NearestFree(p + new Vector3(Random.Range(-0.8f, 0.8f), 0f, Random.Range(-0.8f, 0.8f)));
+            world.Log("（" + displayName + "が動けなくなっていたので、位置を少しずらした）");
+            // 行き先があれば、ずらした所から道を探し直す
+            if (state == State.Walking || state == State.Approaching)
+            {
+                if (state == State.Approaching) { RepathToTarget(); return; }
+                var np = world.FindPath(transform.position, destination);
+                if (np != null) { path.Clear(); path.AddRange(np); }
+                else if (path.Count == 0) Arrive();
+            }
+            else if (offFloor) SetState(State.Idle);
         }
 
         void CheckStuck(float dt)
