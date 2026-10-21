@@ -733,7 +733,8 @@ namespace LifeSimProto
                 bottomApproach = new Vector3(-8.6f, y, sz),
                 bottom = new Vector3(sx0, y, sz),
                 top = new Vector3(sx1, top, sz),
-                topApproach = new Vector3(-13.75f, top, sz) // 階段の上のすぐ横（離れていると、道を探し直すたびに行ったり来たりする）
+                topApproach = new Vector3(-13.75f, top, sz), // 階段の上のすぐ横（離れていると、道を探し直すたびに行ったり来たりする）
+                lane = new Vector3(0f, 0f, 0.3f)            // 上りは奥側、下りは手前側
             };
             PlaceDoorAt(Observatory, 1, new Vector3(-8.2f, 0f, HalfD + 0.2f), true, 0.9f, 2.2f, Rect.MinMaxRect(-8.55f, HalfD - 0.4f, -7.85f, HalfD + 0.9f), woodDark);
         }

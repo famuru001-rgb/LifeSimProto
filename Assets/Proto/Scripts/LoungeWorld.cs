@@ -49,6 +49,11 @@ namespace LifeSimProto
     public class Stair
     {
         public Vector3 bottomApproach, bottom, top, topApproach;
+        public Vector3 lane; // 上りは +lane、下りは -lane の側を通る（すれ違えるように）
+        public Vector3 UpBottom { get { return bottom + lane; } }
+        public Vector3 UpTop { get { return top + lane; } }
+        public Vector3 DownTop { get { return top - lane; } }
+        public Vector3 DownBottom { get { return bottom - lane; } }
     }
 
     public enum WallMode { Auto, Low, All }
@@ -259,8 +264,8 @@ namespace LifeSimProto
                     var p2 = nav1.FindPath(b.topApproach, to);
                     if (p1 == null || p0 == null || p2 == null) return null;
                     var r = new List<Vector3>();
-                    r.AddRange(p1); r.Add(a.top); r.Add(a.bottom); r.Add(a.bottomApproach);
-                    r.AddRange(p0); r.Add(b.bottom); r.Add(b.top); r.Add(b.topApproach);
+                    r.AddRange(p1); r.Add(a.DownTop); r.Add(a.DownBottom); r.Add(a.bottomApproach);
+                    r.AddRange(p0); r.Add(b.UpBottom); r.Add(b.UpTop); r.Add(b.topApproach);
                     r.AddRange(p2);
                     return r;
                 }
@@ -276,14 +281,14 @@ namespace LifeSimProto
                     var p1 = nav2.FindPath(from, rs.topApproach);
                     var p2 = FindPath(rs.bottomApproach, to);
                     if (p1 == null || p2 == null) return null;
-                    r2.AddRange(p1); r2.Add(rs.top); r2.Add(rs.bottom); r2.Add(rs.bottomApproach); r2.AddRange(p2);
+                    r2.AddRange(p1); r2.Add(rs.DownTop); r2.Add(rs.DownBottom); r2.Add(rs.bottomApproach); r2.AddRange(p2);
                 }
                 else
                 {
                     var p1 = FindPath(from, rs.bottomApproach);
                     var p2 = nav2.FindPath(rs.topApproach, to);
                     if (p1 == null || p2 == null) return null;
-                    r2.AddRange(p1); r2.Add(rs.bottom); r2.Add(rs.top); r2.Add(rs.topApproach); r2.AddRange(p2);
+                    r2.AddRange(p1); r2.Add(rs.UpBottom); r2.Add(rs.UpTop); r2.Add(rs.topApproach); r2.AddRange(p2);
                 }
                 return r2;
             }
@@ -296,7 +301,7 @@ namespace LifeSimProto
                 var p2 = nav1.FindPath(s.topApproach, to);
                 if (p1 == null || p2 == null) return null;
                 res.AddRange(p1);
-                res.Add(s.bottom); res.Add(s.top); res.Add(s.topApproach);
+                res.Add(s.UpBottom); res.Add(s.UpTop); res.Add(s.topApproach);
                 res.AddRange(p2);
             }
             else
@@ -305,7 +310,7 @@ namespace LifeSimProto
                 var p2 = nav0.FindPath(s.bottomApproach, to);
                 if (p1 == null || p2 == null) return null;
                 res.AddRange(p1);
-                res.Add(s.top); res.Add(s.bottom); res.Add(s.bottomApproach);
+                res.Add(s.DownTop); res.Add(s.DownBottom); res.Add(s.bottomApproach);
                 res.AddRange(p2);
             }
             return res;

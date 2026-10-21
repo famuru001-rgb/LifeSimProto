@@ -40,6 +40,8 @@ namespace LifeSimProto
         const float FrontZ = -14.5f, BandH = 3.5f, WingTop = 5.8f, Stub = 1.0f;
         // 2階の個室の並び：談話室の壁の外側から 廊下（2.4m）→ 個室（奥行き5.4m）。個室は幅3m で5つ並ぶ（5×3m＝談話室の奥行き15m）
         const float WingInner = HalfW + 0.4f, CorrW = 2.4f, RoomDepth = 5.4f, RoomW = 3f;
+        // 談話室の階段：幅1.8m（2026-10-21 に1.2mから広げた）。上りと下りで左右に分かれて通る
+        const float StairW = 1.8f, StairX = HalfW - 1.0f;
 
         class WallSeg
         {
@@ -75,15 +77,16 @@ namespace LifeSimProto
             BuildPlaces();   // 新しい場所（DormPlaces.cs）
             BuildNav();
             ApplyPlaces();
-            float sx = HalfW - 0.7f;
+            float sx = StairX;
             for (int side = -1; side <= 1; side += 2)
             {
                 stairs.Add(new Stair
                 {
-                    bottomApproach = new Vector3(side * sx, 0f, -2.0f),
+                    bottomApproach = new Vector3(side * sx, 0f, -2.1f),
                     bottom = new Vector3(side * sx, 0f, -1.5f),
                     top = new Vector3(side * sx, Floor2Y, 2.4f),
-                    topApproach = new Vector3(side * sx, Floor2Y, 3.1f)
+                    topApproach = new Vector3(side * sx, Floor2Y, 3.1f),
+                    lane = new Vector3(side * 0.45f, 0f, 0f) // 上りは壁側、下りは談話室側
                 });
             }
         }
@@ -457,31 +460,31 @@ namespace LifeSimProto
         /// <summary>談話室の左右の階段（2階の廊下へ）と、上の踊り場。side：-1 左 / 1 右</summary>
         void BuildStairs(int side)
         {
-            float x = (HalfW - 0.7f) * side;
+            float x = StairX * side;
             int steps = 15;
             float z0 = -1.5f, z1 = 2.4f;
             float run = (z1 - z0) / steps, rise = Floor2Y / steps;
             for (int i = 0; i < steps; i++)
             {
                 float top = (i + 1) * rise;
-                Box("Stair_Step", new Vector3(x, top / 2f, z0 + (i + 0.5f) * run), new Vector3(1.2f, top, run), i % 2 == 0 ? woodDark : woodMid);
+                Box("Stair_Step", new Vector3(x, top / 2f, z0 + (i + 0.5f) * run), new Vector3(StairW, top, run), i % 2 == 0 ? woodDark : woodMid);
             }
-            // 手すり（斜め）
-            float railX = x - 0.62f * side;
+            // 手すり（斜め。談話室側）
+            float railX = x - (StairW / 2f + 0.02f) * side;
             float slope = Mathf.Atan2(Floor2Y, z1 - z0) * Mathf.Rad2Deg;
             float lenRail = Mathf.Sqrt(Floor2Y * Floor2Y + (z1 - z0) * (z1 - z0));
             BoxRot("Stair_Rail", new Vector3(railX, Floor2Y / 2f + 0.9f, (z0 + z1) / 2f), new Vector3(0.08f, 0.08f, lenRail), Quaternion.Euler(-slope, 0f, 0f), woodDark);
             Box("Stair_Post", new Vector3(railX, 0.5f, z0), new Vector3(0.12f, 1f, 0.12f), woodDark);
             // 踊り場（高さ3m）
-            float lx = x;
-            Box("Landing", new Vector3(lx, Floor2Y - 0.1f, 3.1f), new Vector3(1.4f, 0.2f, 1.4f), woodDark);
-            Box("Landing_RailSide", new Vector3(lx - 0.7f * side, Floor2Y + 0.5f, 3.1f), new Vector3(0.08f, 1f, 1.4f), woodDark);
-            Box("Landing_RailBack", new Vector3(lx, Floor2Y + 0.5f, 3.8f), new Vector3(1.4f, 1f, 0.08f), woodDark);
-            Box("Landing_PostA", new Vector3(lx - 0.65f * side, Floor2Y / 2f, 2.45f), new Vector3(0.15f, Floor2Y, 0.15f), woodDark);
-            Box("Landing_PostB", new Vector3(lx - 0.65f * side, Floor2Y / 2f, 3.75f), new Vector3(0.15f, Floor2Y, 0.15f), woodDark);
-            blockers0.Add(new Rect(x - 0.6f, z0, 1.2f, z1 - z0));
-            blockers0.Add(new Rect(lx - 0.65f * side - 0.1f, 2.35f, 0.2f, 0.2f));
-            blockers0.Add(new Rect(lx - 0.65f * side - 0.1f, 3.65f, 0.2f, 0.2f));
+            float lx = x, lw = StairW + 0.2f;
+            Box("Landing", new Vector3(lx, Floor2Y - 0.1f, 3.1f), new Vector3(lw, 0.2f, 1.4f), woodDark);
+            Box("Landing_RailSide", new Vector3(lx - lw / 2f * side, Floor2Y + 0.5f, 3.1f), new Vector3(0.08f, 1f, 1.4f), woodDark);
+            Box("Landing_RailBack", new Vector3(lx, Floor2Y + 0.5f, 3.8f), new Vector3(lw, 1f, 0.08f), woodDark);
+            Box("Landing_PostA", new Vector3(lx - (lw / 2f - 0.05f) * side, Floor2Y / 2f, 2.45f), new Vector3(0.15f, Floor2Y, 0.15f), woodDark);
+            Box("Landing_PostB", new Vector3(lx - (lw / 2f - 0.05f) * side, Floor2Y / 2f, 3.75f), new Vector3(0.15f, Floor2Y, 0.15f), woodDark);
+            blockers0.Add(new Rect(x - StairW / 2f, z0, StairW, z1 - z0));
+            blockers0.Add(new Rect(lx - (lw / 2f - 0.05f) * side - 0.1f, 2.35f, 0.2f, 0.2f));
+            blockers0.Add(new Rect(lx - (lw / 2f - 0.05f) * side - 0.1f, 3.65f, 0.2f, 0.2f));
             Label(new Vector3(x, 1.4f, z0 - 0.3f), side < 0 ? "階段（2階・左の廊下へ）" : "階段（2階・右の廊下へ）");
         }
 
@@ -995,8 +998,8 @@ namespace LifeSimProto
                     nav1.Open(Rect.MinMaxRect(Mathf.Min(s * (corr + 0.25f), s * (outer - 0.25f)), cz - 1.25f, Mathf.Max(s * (corr + 0.25f), s * (outer - 0.25f)), cz + 1.25f)); // 部屋
                     nav1.Open(Rect.MinMaxRect(Mathf.Min(s * (corr - 0.25f), s * (corr + 0.45f)), cz - 0.45f, Mathf.Max(s * (corr - 0.25f), s * (corr + 0.45f)), cz + 0.45f)); // 部屋の扉
                 }
-                float lx = HalfW - 0.7f;
-                nav1.Open(Rect.MinMaxRect(Mathf.Min(s * (lx - 0.45f), s * (lx + 0.45f)), 2.6f, Mathf.Max(s * (lx - 0.45f), s * (lx + 0.45f)), 3.6f));   // 踊り場
+                float lx = StairX;
+                nav1.Open(Rect.MinMaxRect(Mathf.Min(s * (lx - 0.85f), s * (lx + 0.85f)), 2.6f, Mathf.Max(s * (lx - 0.85f), s * (lx + 0.85f)), 3.6f));   // 踊り場
                 nav1.Open(Rect.MinMaxRect(Mathf.Min(s * (lx + 0.3f), s * (inner + 0.3f)), 2.65f, Mathf.Max(s * (lx + 0.3f), s * (inner + 0.3f)), 3.55f)); // 踊り場→廊下の扉
             }
             nav1.Open(Rect.MinMaxRect(inner + 0.2f, HalfD + 0.6f, outer - 0.2f, HalfD + 4.2f)); // 篤の部屋

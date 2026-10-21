@@ -589,7 +589,8 @@ namespace LifeSimProto
                 // 二人きりの時間：寄り添って話す（描写はしない）
                 else if (bubble == null && state == State.Private && Random.value < dt * 0.04f)
                 {
-                    string pl = Pick("n_private");
+                    string pl = privateGroupSize >= 3 && Random.value < 0.5f ? Pick("n_private_group") : null; // 3人以上のとき
+                    if (pl == null) pl = Pick("n_private");
                     if (pl != null) ShowBubble(pl, 2.2f);
                 }
                 if (!chatting && (state == State.Eating || state == State.Bathing || state == State.Sitting))
@@ -2126,7 +2127,7 @@ namespace LifeSimProto
         /// <summary>相手を探しに行く途中で、二人きりの時間の相手になれる子（性欲80以上）に会ったら、いっしょに連れて行く（2人まで）。</summary>
         void RecruitEscorts()
         {
-            if (privateEscorts.Count >= 2) return;
+            if (privateEscorts.Count >= MaxPrivateGroup - 2) return;
             foreach (var c in world.characters)
             {
                 if (c == this || c == target || c.IsTarget || c.desire < 80f) continue;
@@ -2138,7 +2139,7 @@ namespace LifeSimProto
                 c.LeaveCurrentSpot();
                 c.ShowBubble("私も…", 1.5f);
                 world.Log(c.displayName + "が" + displayName + "についていく");
-                if (privateEscorts.Count >= 2) return;
+                if (privateEscorts.Count >= MaxPrivateGroup - 2) return;
             }
         }
 
@@ -3261,7 +3262,7 @@ namespace LifeSimProto
                 // 夜：二人きりになりたい子（性欲55以上）が集まる（最大4人。篤との関係に関係なく）
                 foreach (var c in world.characters)
                 {
-                    if (group.Count >= 4) break;
+                    if (group.Count >= MaxPrivateGroup) break;
                     if (group.Contains(c) || c.IsTarget || c.desire < 55f || !c.AvailableForTalk) continue;
                     c.privatePending = true;
                     group.Add(c);
@@ -3279,7 +3280,7 @@ namespace LifeSimProto
                 }
                 foreach (var c in privateEscorts)
                 {
-                    if (group.Count >= 4) break;
+                    if (group.Count >= MaxPrivateGroup) break;
                     if (c == null || group.Contains(c) || !c.Present || c.InPrivate) continue;
                     c.escortLeader = null;
                     if (c.state == State.Approaching || c.state == State.Waiting) { c.target = null; c.hasOrder = false; c.SetState(State.Idle); }
@@ -3321,6 +3322,7 @@ namespace LifeSimProto
             for (int i = 0; i < arrived.Count; i++)
             {
                 var sp = spots[Mathf.Min(i, spots.Count - 1)];
+                arrived[i].privateGroupSize = arrived.Count;
                 arrived[i].EnterPrivate(until, spot.room, sp.pos, sp.facing, sp.floor);
                 names.Add(arrived[i].displayName);
             }
@@ -3350,7 +3352,14 @@ namespace LifeSimProto
                     Vector3 along = room.bed.forward;
                     Vector3 edgeOut = room.bedEdge;
                     float[] offs = n <= 2 ? new[] { -0.3f, 0.2f } : (n == 3 ? new[] { -0.55f, -0.05f, 0.45f } : new[] { -0.72f, -0.25f, 0.22f, 0.69f });
+                    if (n > 4) offs = new[] { -0.72f, -0.25f, 0.22f, 0.69f };
                     foreach (var o in offs) res.Add(new Place { pos = room.bed.position + along * (o * room.bedSpread) + edgeOut * room.bedEdgeDist, facing = edgeOut, floor = false });
+                    // 5人目からは、ベッドの前の床に並んで座る（ベッドを向く）
+                    for (int i = 4; i < n; i++)
+                    {
+                        int row = (i - 4) / 4, col = (i - 4) % 4;
+                        res.Add(new Place { pos = room.bed.position + along * (offs[col] * room.bedSpread) + edgeOut * (room.bedEdgeDist + 0.75f + row * 0.6f), facing = -edgeOut, floor = true });
+                    }
                 }
                 else foreach (var s in seatList) res.Add(new Place { pos = s.position, facing = s.forward, floor = s.floorSeat });
                 return res;
@@ -3423,6 +3432,9 @@ namespace LifeSimProto
         }
 
         bool privateOnFloor;
+
+        const int MaxPrivateGroup = 11; // 一度にエッチできる人数（famuru 決定 2026-10-21）
+        int privateGroupSize;
 
         void EnterPrivate(double until, RoomInfo r, Vector3 pos, Vector3 facing, bool floorSpot)
         {
@@ -3960,7 +3972,9 @@ namespace LifeSimProto
                 if (Mathf.Abs(d.y) > 0.3f) continue;
                 d.y = 0f;
                 float m = d.magnitude;
-                if (m >= 0.55f || m < 0.0001f) continue;
+                // ぶつかる距離（話している人どうしは近づける。famuru 決定 2026-10-21 で少し小さく）
+                float rad = (state == State.Talking || o.state == State.Talking || state == State.Waiting || o.state == State.Waiting) ? 0.32f : 0.45f;
+                if (m >= rad || m < 0.0001f) continue;
                 bool oMoving = o.IsMoving;
                 Vector3 np;
                 if (meMoving && oMoving)
@@ -3979,7 +3993,7 @@ namespace LifeSimProto
                 }
                 else
                 {
-                    np = transform.position + d / m * (0.55f - m) * (meMoving ? 0.6f : 0.5f);
+                    np = transform.position + d / m * (rad - m) * (meMoving ? 0.6f : 0.5f);
                 }
                 if (nav.IsFree(np)) transform.position = np;
             }
