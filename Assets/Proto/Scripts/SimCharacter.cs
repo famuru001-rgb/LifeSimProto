@@ -83,7 +83,10 @@ namespace LifeSimProto
         Gathering gathering;
         Vector3 gatherFocus;
         SimCharacter clingTarget;
-        float statusCheck, focusMin, highLonelyMin, highBoredMin, desireHighMin;
+        float statusCheck, focusMin, highLonelyMin, highBoredMin;
+        // 発情のたまり（0〜100。画面には出さない）：性欲60以上のあいだ少しずつたまり（性欲が高いほど早い）、いっぱいになると［発情］になる
+        float heat;
+        public float Heat { get { return heat; } }
         int taughtDay = -1;
 
         // ---- プレイヤーの指示（F）・お願い ----
@@ -351,10 +354,9 @@ namespace LifeSimProto
             if (!IsTarget && LoveStage >= 2)
             {
                 int lv = GetStage(StatusLine.Love);
-                desireHighMin = desire > 60f ? desireHighMin + 30f : 0f;
-                if (lv == 0 && loveNeed > 70f && Chance(0.3f)) SetStage(StatusLine.Love, 1);
+                if (lv < 3 && heat >= 100f) BecomeHeat();
+                else if (lv == 0 && loveNeed > 70f && Chance(0.3f)) SetStage(StatusLine.Love, 1);
                 else if (lv == 1 && loveNeed > 85f && now - lastFContact > 120 && Chance(0.25f)) SetStage(StatusLine.Love, 2);
-                else if (lv == 2 && desireHighMin >= 120f && Chance(0.2f)) SetStage(StatusLine.Love, 3);
                 if (lv > 0 && loveNeed < 20f && lv < 3) Ease(StatusLine.Love);
             }
 
@@ -683,6 +685,16 @@ namespace LifeSimProto
             sleepy = Mathf.Clamp(sleepy, 0f, 100f);
             desire = Mathf.Clamp(desire, 0f, 100f);
             if (desire >= 99.9f && PrivateNight) desireMaxAtNight = true;
+            // 発情のたまり：性欲60以上でたまる（性欲100なら約6時間、80なら約9時間、60なら約18時間でいっぱい）。
+            // 性欲が60より下だと少しずつ減り、二人きりの時間を過ごすと大きく減る
+            if (!IsTarget && LoveStage >= 2)
+            {
+                if (state == State.Private) heat -= gm * 1.5f;
+                else if (desire >= 60f) heat += gm * (100f / 360f) * ((desire - 40f) / 60f);
+                else heat -= gm * 0.1f;
+                heat = Mathf.Clamp(heat, 0f, 100f);
+            }
+            else heat = 0f;
             mana = Mathf.Clamp(mana, 0f, 100f);
         }
 
@@ -1388,12 +1400,17 @@ namespace LifeSimProto
                 // 寝不足：起きたときの眠気で段階が決まる（安眠のお香を使った夜はならない）
                 int sl = deepSleep ? 0 : (sleepy > 70f ? 3 : (sleepy > 50f ? 2 : (sleepy > 30f ? 1 : 0)));
                 SetStage(StatusLine.Sleep, sl, true);
-                // 夜に性欲が最大のまま朝を迎えて寝不足：性欲は 50 まで下がり、寝不足と発情になる
+                // 夜に性欲が最大のまま朝を迎えて寝不足：性欲は 50 まで下がり、発情のたまりが大きく増える（いっぱいになると［発情］）
                 if (desireMaxAtNight && sl >= 1)
                 {
                     desire = Mathf.Min(desire, 50f);
-                    if (!IsTarget) SetStage(StatusLine.Love, 3, true);
-                    world.Log(displayName + "は眠れない夜を過ごした（寝不足・発情）");
+                    bool toHeat = false;
+                    if (!IsTarget && LoveStage >= 2)
+                    {
+                        heat = Mathf.Min(100f, heat + 50f);
+                        if (heat >= 100f && GetStage(StatusLine.Love) < 3) { BecomeHeat(true); toHeat = true; }
+                    }
+                    world.Log(displayName + "は眠れない夜を過ごした（寝不足" + (toHeat ? "・発情" : "") + "）");
                 }
                 desireMaxAtNight = false;
                 deepSleep = false;
@@ -1844,6 +1861,13 @@ namespace LifeSimProto
         {
             foreach (var c in privateEscorts) if (c != null && c.escortLeader == this) c.escortLeader = null;
             privateEscorts.Clear();
+        }
+
+        /// <summary>発情のたまりがいっぱいになった：［発情］になり、たまりは空になる。</summary>
+        void BecomeHeat(bool quiet = false)
+        {
+            SetStage(StatusLine.Love, 3, true, quiet);
+            heat = 0f;
         }
 
         bool StartSocial()
