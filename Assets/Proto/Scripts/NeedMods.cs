@@ -60,21 +60,39 @@ namespace LifeSimProto
             items = new Dictionary<string, NeedMod>();
 
             // ---- 種族（少しだけ差をつける。仮の値）----
-            R("竜人").Rate(Tired, 0.9f).Rate(Hunger, 1.2f).Rate(Desire, 0.9f).Build(Desire, 0.9f).Desc("体が丈夫でよく食べる。落ち着いている");
-            R("エルフ").Rate(Hunger, 0.8f).Rate(Bored, 0.85f).Rate(Study, 1.1f).Rate(Desire, 0.8f).Build(Desire, 0.8f).Desc("少食で気長。欲が薄い");
+            R("竜人").Rate(Tired, 0.9f).Rate(Hunger, 1.2f).Rate(Desire, 0.9f).Build(Desire, 1.5f).Desc("体が丈夫でよく食べる。落ち着いているが、ため込みやすい");
+            R("エルフ").Rate(Hunger, 0.8f).Rate(Bored, 0.85f).Rate(Study, 1.1f).Rate(Desire, 0.8f).Build(Desire, 1.2f).Desc("少食で気長。欲は薄いが、ため込みやすい");
             R("銀狼").Rate(Lonely, 1.15f).Rate(Bored, 1.2f).Rate(Hunger, 1.3f).Rate(Tired, 0.85f).Rate(Desire, 1.1f).Build(Desire, 1.1f).Desc("群れの生き物。よく動き、よく食べる");
             R("羊").Rate(Sleepy, 1.15f).Rate(Lonely, 1.1f).Rate(Desire, 0.9f).Desc("おっとり。眠くなりやすい");
-            R("天使族").Rate(Lonely, 1.1f).Rate(Hunger, 0.9f).Rate(Desire, 0.8f).Build(Desire, 0.85f).Desc("清らかで欲が薄い");
+            R("天使族").Rate(Lonely, 1.1f).Rate(Hunger, 0.9f).Rate(Desire, 0.8f).Build(Desire, 1.3f).Desc("清らかで欲は薄いが、ため込みやすい");
             R("ドワーフ").Rate(Tired, 0.8f).Rate(Hunger, 1.2f).Rate(Hobby, 1.2f).Desc("疲れ知らずで、作りたい気持ちが強い");
             R("うさぎ").Rate(Lonely, 1.1f).Rate(Hunger, 1.1f).Rate(Desire, 1.2f).Build(Desire, 1.15f).Desc("甘えたがり。気持ちが高ぶりやすい");
             R("リス").Rate(Hunger, 1.3f).Rate(Bored, 1.2f).Rate(Tired, 1.1f).Desc("ちょこまか動き、よく食べる");
             R("人間"); // 基準（すべて 1）
             R("人間（転生者）");
 
-            // ---- 衣装・装飾品・家具・アイテム・プレゼント ----
-            // 例）I("item:安眠のお香", "安眠のお香", ModSource.Item).Relief(Sleepy, 1.5f).Drain(Desire, 1.5f);
-            //     I("outfit:浴衣", "浴衣", ModSource.Outfit).Rate(Tired, 0.9f);
+            // ---- アイテム（使ってからしばらく効く。続く時間は PlayerControl.cs の ItemBook）----
+            I("item:やすらぎのハーブティー", "やすらぎのハーブティー", ModSource.Item).Rate(Lonely, 0.7f).Rate(Bored, 0.7f).Desc("さみしさと退屈がたまりにくい");
+            I("item:集中のキャンドル", "集中のキャンドル", ModSource.Item).Rate(Study, 1.4f).Relief(Study, 1.3f).Desc("勉強したい気持ちが高まり、勉強がはかどる");
+            I("item:疲れ知らずの飴", "疲れ知らずの飴", ModSource.Item).Rate(Tired, 0.7f).Rate(Hunger, 0.8f).Desc("疲れと空腹がたまりにくい");
+            I("item:落ち着きのお茶", "落ち着きのお茶", ModSource.Item).Build(Desire, 0.5f).Drain(Desire, 1.5f).Relief(Desire, 1.3f).Desc("気持ちが静まる（性欲のたまりがたまりにくく、減りやすい）");
+            I("item:ときめきの香水", "ときめきの香水", ModSource.Item).Rate(Love, 1.3f).Rate(Lonely, 0.9f).Desc("恋心が育ちやすい");
+            I("item:ぐっすりの枕香", "ぐっすりの枕香", ModSource.Item).Relief(Sleepy, 1.4f).Relief(Tired, 1.2f).Desc("眠ると眠気と疲れがよく取れる");
+
+            // ---- プレゼント（もらってしばらく効く）----
+            I("gift:花束", "花束", ModSource.Gift).Rate(Lonely, 0.8f).Desc("さみしさがたまりにくい");
+            I("gift:小さなプレゼント", "小さなプレゼント", ModSource.Gift).Rate(Lonely, 0.8f).Rate(Bored, 0.9f).Desc("さみしさと退屈がたまりにくい");
+
+            // ---- 装飾品（身につけている間ずっと効く。1人1つまで。新しく渡すと付け替える）----
+            I("acc:星のペンダント", "星のペンダント", ModSource.Accessory).Rate(Lonely, 0.85f).Desc("さみしさがたまりにくい");
+            I("acc:花のリボン", "花のリボン", ModSource.Accessory).Rate(Bored, 0.85f).Rate(Hobby, 1.1f).Desc("退屈しにくく、趣味を楽しみたくなる");
+            I("acc:魔石の腕輪", "魔石の腕輪", ModSource.Accessory).Rate(Tired, 0.85f).Rate(Sleepy, 0.9f).Desc("疲れと眠気がたまりにくい");
+            I("acc:物知りの眼鏡飾り", "物知りの眼鏡飾り", ModSource.Accessory).Rate(Study, 1.2f).Relief(Study, 1.15f).Desc("勉強したい気持ちが高まる");
+
+            // ---- 衣装・家具（これから足す）----
+            // 例）I("outfit:浴衣", "浴衣", ModSource.Outfit).Rate(Tired, 0.9f);
             //     I("furniture:暖炉の椅子", "暖炉の前の椅子", ModSource.Furniture).Relief(Tired, 1.3f);
+            // ※ 性欲や発情を上げる物は作らない（ほかの子に使えてしまうため）
         }
 
         /// <summary>補正を一覧に登録する（衣装・装飾品・家具・アイテム用）。</summary>

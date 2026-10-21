@@ -322,6 +322,17 @@ namespace LifeSimProto
             return m * ModMul(n, x => x.rate);
         }
 
+        /// <summary>1コマ分のゲージの変化に、下がり方の補正と変動の大きさを掛ける。</summary>
+        float NeedChange(NeedKind n, float before, float after)
+        {
+            float d = after - before;
+            if (d < 0f) d *= ReliefMul(n);
+            return before + d * NeedBook.Swing(n);
+        }
+
+        /// <summary>身につけている物・効いているアイテム（種族は入らない）。画面の表示用。</summary>
+        public IEnumerable<ActiveMod> ItemMods { get { return mods; } }
+
         /// <summary>ゲージの下がり方（満たしたとき）。</summary>
         float ReliefMul(NeedKind n) { return ModMul(n, x => x.relief); }
         /// <summary>たまりのたまりやすさ。</summary>
@@ -638,8 +649,8 @@ namespace LifeSimProto
         {
             float gm = dt * world.GameMinutesPerSecond(); // 進んだゲーム内の分
             UpdateStatuses(gm);
-            // ゲージの変動の大きさ（NeedBook.Swing。さみしさ・退屈・勉強・趣味はゆっくり動く）
-            float lonely0 = lonely, bored0 = bored, study0 = study, hobby0 = hobbyNeed;
+            // ゲージの変動（下がる分は補正の「下がり方」を掛け、全体に NeedBook.Swing を掛ける。さみしさ・退屈・勉強・趣味はゆっくり動く）
+            float lonely0 = lonely, bored0 = bored, study0 = study, hobby0 = hobbyNeed, tired0 = tired, hunger0 = hunger, love0 = loveNeed, sleepy0 = sleepy;
 
             hunger += gm * 0.2f * RateMul(NeedKind.Hunger);
             study += gm * 0.05f * (0.5f + diligence) * RateMul(NeedKind.Study);
@@ -736,10 +747,14 @@ namespace LifeSimProto
                 }
             }
 
-            lonely = lonely0 + (lonely - lonely0) * NeedBook.Swing(NeedKind.Lonely);
-            bored = bored0 + (bored - bored0) * NeedBook.Swing(NeedKind.Bored);
-            study = study0 + (study - study0) * NeedBook.Swing(NeedKind.Study);
-            hobbyNeed = hobby0 + (hobbyNeed - hobby0) * NeedBook.Swing(NeedKind.Hobby);
+            lonely = NeedChange(NeedKind.Lonely, lonely0, lonely);
+            bored = NeedChange(NeedKind.Bored, bored0, bored);
+            study = NeedChange(NeedKind.Study, study0, study);
+            hobbyNeed = NeedChange(NeedKind.Hobby, hobby0, hobbyNeed);
+            tired = NeedChange(NeedKind.Tired, tired0, tired);
+            hunger = NeedChange(NeedKind.Hunger, hunger0, hunger);
+            loveNeed = NeedChange(NeedKind.Love, love0, loveNeed);
+            sleepy = NeedChange(NeedKind.Sleepy, sleepy0, sleepy);
             lonely = Mathf.Clamp(lonely, 0f, 100f);
             tired = Mathf.Clamp(tired, 0f, 100f);
             bored = Mathf.Clamp(bored, 0f, 100f);
@@ -2278,6 +2293,10 @@ namespace LifeSimProto
                     if (GetStage(StatusLine.Cold) >= 2) { SetStage(StatusLine.Cold, 1, true); sickRest = false; if (state == State.Sleeping) sleepUntil = world.Now; }
                     else SetStage(StatusLine.Cold, 0);
                     break;
+                case ItemKind.Perfume:
+                    if (IsTarget || LoveStage < 1) { world.Log("ときめきの香水は" + displayName + "には効かなかった"); return; }
+                    if (gift) world.rel.Add(id, giver.id, 3f, world.simTime);
+                    break;
                 case ItemKind.LoveCharm:
                     if (!IsTarget && LoveStage >= 1)
                     {
@@ -2292,7 +2311,24 @@ namespace LifeSimProto
                     }
                     break;
             }
-            world.Log((gift ? giver.displayName + "が" + displayName + "に" : displayName + "が") + "「" + d.name + "」を" + (gift ? "渡した" : "使った"));
+            // 欲求の補正（アイテム・プレゼント・装飾品）
+            if (d != null && d.Mod != null)
+            {
+                if (d.accessory)
+                {
+                    // 装飾品：1人1つまで。前のは外す
+                    mods.RemoveAll(a => a.mod.source == ModSource.Accessory);
+                    AddMod(d.Mod, 0f);
+                    if (gift) world.rel.Add(id, giver.id, 8f, world.simTime);
+                    if (gift && giver.IsTarget && !IsTarget) world.ChangeLove(this, 6f);
+                }
+                else
+                {
+                    AddMod(d.Mod, d.modMinutes);
+                    if (gift && k != ItemKind.Bouquet && k != ItemKind.Present && k != ItemKind.Perfume) world.rel.Add(id, giver.id, 2f, world.simTime);
+                }
+            }
+            world.Log((gift ? giver.displayName + "が" + displayName + "に" : displayName + "が") + "「" + d.name + "」を" + (gift ? "渡した" : (d.accessory ? "身につけた" : "使った")));
         }
 
         // ---- お願い：引き受けるか・どのくらい気合を入れるか ----

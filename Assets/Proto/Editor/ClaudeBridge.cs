@@ -45,7 +45,7 @@ namespace LifeSimProto.EditorTools
                 if (cmd.Length == 0) continue;
                 // 試験用：skipto（日 時）＝ゲームの時刻を進める／speed（倍）＝速さ／gamelog＝寮の記録を game_log.txt に書く／openall＝新しい場所を全部開く／placeshots＝場所の写真
                 var w = EditorApplication.isPlaying ? LifeSimProto.LoungeWorld.Instance : null;
-                if (cmd.StartsWith("skipto ") || cmd.StartsWith("speed ") || cmd == "gamelog" || cmd == "openall" || cmd == "placeshots" || cmd == "status" || cmd == "testprivate" || cmd == "testseek" || cmd == "testnight" || cmd == "testescort")
+                if (cmd.StartsWith("skipto ") || cmd.StartsWith("speed ") || cmd == "gamelog" || cmd == "openall" || cmd == "placeshots" || cmd == "status" || cmd == "testprivate" || cmd == "testseek" || cmd == "testnight" || cmd == "testescort" || cmd.StartsWith("testitem "))
                 {
                     if (w == null) { log.AppendLine(cmd + ": not playing"); continue; }
                     var a = cmd.Split(' ');
@@ -141,12 +141,20 @@ namespace LifeSimProto.EditorTools
                         }
                         log.AppendLine(res);
                     }
+                    else if (a[0] == "testitem" && a.Length >= 3)
+                    {
+                        // 試験用：testitem 品物の名前 キャラの番号（0〜9）。篤がその子に渡した（または自分に使った）ことにする
+                        var kind = (LifeSimProto.ItemKind)System.Enum.Parse(typeof(LifeSimProto.ItemKind), a[1], true);
+                        var who = w.characters[int.Parse(a[2])];
+                        who.ApplyItem(kind, w.RomanceTarget);
+                        log.AppendLine("testitem: " + kind + " -> " + who.displayName);
+                    }
                     else if (cmd == "status")
                     {
                         // 試験用：みんなが今どこで何をしているかを status.txt に追記する
                         var sb = new StringBuilder();
                         sb.AppendLine("== " + w.Day + "日目 " + LifeSimProto.ScheduleMaker.Clock(w.Now));
-                        foreach (var c in w.characters) sb.AppendLine(c.displayName + "：" + w.AreaName(c.transform.position) + "　" + c.actionText + (string.IsNullOrEmpty(c.bubble) ? "" : "　「" + c.bubble + "」") + "　［性欲" + Mathf.RoundToInt(c.desire) + (c.IsTarget ? "" : "・恋" + c.LoveStage + "・たまり" + Mathf.RoundToInt(c.Heat)) + "］");
+                        foreach (var c in w.characters) sb.AppendLine(c.displayName + "：" + w.AreaName(c.transform.position) + "　" + c.actionText + (string.IsNullOrEmpty(c.bubble) ? "" : "　「" + c.bubble + "」") + "　［性欲" + Mathf.RoundToInt(c.desire) + (c.IsTarget ? "" : "・恋" + c.LoveStage + "・たまり" + Mathf.RoundToInt(c.Heat)) + "］" + ModText(c));
                         File.AppendAllText(Path.Combine(Path.GetDirectoryName(ResultPath), "status.txt"), sb.ToString(), Encoding.UTF8);
                         log.AppendLine("status: ok");
                     }
@@ -236,6 +244,13 @@ namespace LifeSimProto.EditorTools
                 File.WriteAllText(ResultPath, System.DateTime.Now + "\n" + log + "playing=" + EditorApplication.isPlaying + "\n", Encoding.UTF8);
             }
             catch { }
+        }
+    
+        static string ModText(LifeSimProto.SimCharacter c)
+        {
+            var l = new System.Collections.Generic.List<string>();
+            foreach (var m in c.ItemMods) l.Add(m.mod.name);
+            return l.Count > 0 ? "［効：" + string.Join("・", l.ToArray()) + "］" : "";
         }
     }
 }

@@ -38,7 +38,7 @@ namespace LifeSimProto
         Rect HelpPanel { get { return new Rect(VW - 492, VirtualHeight - 262, 480, 250); } }
         Rect DetailPanel { get { return new Rect(12, 108, 580, 960); } }
         Rect RomancePanel { get { return new Rect(VW - 492, 516, 480, 292); } }
-        Rect ShopPanel { get { return new Rect(VW / 2f - 360f, 130f, 720f, 90f + ItemBook.All.Count * 48f); } }
+        Rect ShopPanel { get { return new Rect(VW / 2f - 380f, 110f, 760f, 70f + ItemBook.All.Count * 44f); } }
 
         PlayerControl Player { get { return world != null ? world.player : null; } }
         SimCharacter F { get { return world != null ? world.RomanceTarget : null; } }
@@ -591,12 +591,12 @@ namespace LifeSimProto
             foreach (var d in ItemBook.All)
             {
                 GUI.Label(new Rect(r.x + 14, y, 190, 24), d.name + "（" + d.price + "）", small);
-                GUI.Label(new Rect(r.x + 14, y + 22, 560, 20), d.desc, tiny);
-                GUI.Label(new Rect(r.x + 520, y + 4, 70, 24), "所持 " + pc.Count(d.kind), small);
+                GUI.Label(new Rect(r.x + 14, y + 20, 600, 20), d.desc, tiny);
+                GUI.Label(new Rect(r.x + 540, y + 2, 70, 24), "所持 " + pc.Count(d.kind), small);
                 GUI.enabled = pc.money >= d.price;
-                if (GUI.Button(new Rect(r.xMax - 112, y + 4, 96, 34), "買う", button)) pc.Buy(d.kind);
+                if (GUI.Button(new Rect(r.xMax - 112, y + 2, 96, 34), "買う", button)) pc.Buy(d.kind);
                 GUI.enabled = true;
-                y += 48;
+                y += 44;
             }
         }
 
@@ -731,6 +731,10 @@ namespace LifeSimProto
                 GUI.Label(new Rect(x + 4, y, r.xMax - x - 18, 22), def.EffectOf(st.stage).desc + remain, tiny);
                 y += 26;
             }
+            // 身につけている物・効いているアイテム
+            var worn = new List<string>();
+            foreach (var a in c.ItemMods) worn.Add(a.mod.name + (a.until > 0 ? "（あと" + FormatLeft(a.until - world.Now) + "）" : "（身につけている）"));
+            if (worn.Count > 0) { GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "効いている物：" + string.Join("／", worn.ToArray()), tiny); y += 24; }
             y += 4;
 
             Bar(new Rect(r.x + 14, y, r.width - 28, 20), "さみしさ", c.lonely, new Color(0.45f, 0.6f, 0.95f)); y += 23;
