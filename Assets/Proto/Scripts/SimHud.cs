@@ -38,7 +38,19 @@ namespace LifeSimProto
         Rect HelpPanel { get { return new Rect(VW - 492, VirtualHeight - 262, 480, 250); } }
         Rect DetailPanel { get { return new Rect(12, 108, 580, 960); } }
         Rect RomancePanel { get { return new Rect(VW - 492, 516, 480, 292); } }
-        Rect ShopPanel { get { return new Rect(VW / 2f - 380f, 110f, 760f, 70f + ItemBook.All.Count * 44f); } }
+        Rect ShopPanel { get { return new Rect(VW / 2f - 380f, 110f, 760f, 110f + ShopRowsMax * 44f); } }
+        ItemShelf shopShelf = ItemShelf.Basic;
+        static readonly string[] ShelfNames = { "食べ物・薬", "欲求のアイテム", "プレゼント", "装飾品", "能力の装飾品", "お守り" };
+        static int ShopRowsMax
+        {
+            get
+            {
+                var n = new int[ShelfNames.Length];
+                int m = 1;
+                foreach (var d in ItemBook.All) { int i = (int)d.shelf; if (i < n.Length) { n[i]++; m = Mathf.Max(m, n[i]); } }
+                return m;
+            }
+        }
 
         PlayerControl Player { get { return world != null ? world.player : null; } }
         SimCharacter F { get { return world != null ? world.RomanceTarget : null; } }
@@ -587,10 +599,18 @@ namespace LifeSimProto
             GUI.Box(r, GUIContent.none, panel);
             GUI.Label(new Rect(r.x + 14, r.y + 8, 400, 30), "購買部（銀貨 " + pc.money + "）", title);
             if (GUI.Button(new Rect(r.xMax - 92, r.y + 8, 80, 30), "閉じる", smallButton)) shopOpen = false;
-            float y = r.y + 50;
+            // 棚（種類）のタブ
+            float tx = r.x + 14;
+            for (int i = 0; i < ShelfNames.Length; i++)
+            {
+                if (GUI.Button(new Rect(tx, r.y + 44, 118, 30), ShelfNames[i], (int)shopShelf == i ? buttonOn : smallButton)) shopShelf = (ItemShelf)i;
+                tx += 122;
+            }
+            float y = r.y + 86;
             foreach (var d in ItemBook.All)
             {
-                GUI.Label(new Rect(r.x + 14, y, 190, 24), d.name + "（" + d.price + "）", small);
+                if (d.shelf != shopShelf) continue;
+                GUI.Label(new Rect(r.x + 14, y, 300, 24), d.name + "（" + d.price + "）", small);
                 GUI.Label(new Rect(r.x + 14, y + 20, 600, 20), d.desc, tiny);
                 GUI.Label(new Rect(r.x + 540, y + 2, 70, 24), "所持 " + pc.Count(d.kind), small);
                 GUI.enabled = pc.money >= d.price;

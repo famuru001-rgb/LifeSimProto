@@ -743,7 +743,7 @@ namespace LifeSimProto
                 {
                     loveNeed -= gm * 0.3f;
                     lastFContact = world.Now;
-                    world.ChangeLove(this, gm * 0.015f * (0.6f + f.Ab(Abilities.Charm) / 125f)); // 篤の魅力で育ち方が変わる
+                    world.ChangeLove(this, gm * 0.015f * (0.6f + f.Ab(Abilities.Charm) / 125f) * (FocusOn(f) ? 1.3f : 1f)); // 篤の魅力で育ち方が変わる（篤のお守りで育ちやすい）
                 }
             }
 
@@ -868,17 +868,37 @@ namespace LifeSimProto
         {
             if (s < 0 || s >= Academics.Count) return;
             if (grow && v > 0f && profile != null) v *= profile.Growth(s) * MindMul;
+            if (grow && v > 0f) foreach (var x in mods) v *= x.mod.skillGrowth; // 学びのバッジなど
             skill[s] = Mathf.Clamp(skill[s] + v, 0f, 100f);
         }
 
-        public float Ab(int a) { return a >= 0 && a < Abilities.Count ? ability[a] : 50f; }
+        /// <summary>能力値（身につけている物の分も足す）。</summary>
+        public float Ab(int a)
+        {
+            if (a < 0 || a >= Abilities.Count) return 50f;
+            float v = ability[a];
+            foreach (var x in mods) { float b; if (x.mod.abilityBonus.TryGetValue(a, out b)) v += b; }
+            return Mathf.Clamp(v, 0f, 100f);
+        }
+
+        /// <summary>この人を意識している（その人のお守りを身につけている）。</summary>
+        public bool FocusOn(SimCharacter o)
+        {
+            if (o == null || o == this || o.profile == null) return false;
+            foreach (var x in mods) if (x.mod.focusLetter != null && x.mod.focusLetter == o.profile.letter) return true;
+            return false;
+        }
 
         /// <summary>能力値を伸ばす（高いほど伸びにくい）。</summary>
         public void GrowAbility(int a, float v)
         {
             if (a < 0 || a >= Abilities.Count || v == 0f) return;
             string before = Abilities.Rank(ability[a]);
-            if (v > 0f) v *= Mathf.Clamp(1.3f - ability[a] / 100f, 0.3f, 1.3f);
+            if (v > 0f)
+            {
+                v *= Mathf.Clamp(1.3f - ability[a] / 100f, 0.3f, 1.3f);
+                foreach (var x in mods) { float g; if (x.mod.abilityGrowth.TryGetValue(a, out g)) v *= g; } // 伸びやすくする装飾品
+            }
             ability[a] = Mathf.Clamp(ability[a] + v, 0f, 100f);
             string after = Abilities.Rank(ability[a]);
             if (after != before && v > 0f && world != null) world.Log(displayName + "の" + Abilities.Names[a] + "が " + after + " になった");
@@ -890,7 +910,7 @@ namespace LifeSimProto
         public string AbilityText()
         {
             var parts = new List<string>();
-            for (int i = 0; i < Abilities.Count; i++) parts.Add(Abilities.Names[i] + " " + Abilities.Rank(ability[i]));
+            for (int i = 0; i < Abilities.Count; i++) parts.Add(Abilities.Names[i] + " " + Abilities.Rank(Ab(i)));
             return string.Join("　", parts.ToArray());
         }
 
@@ -1138,6 +1158,7 @@ namespace LifeSimProto
                 else if (o.IsTarget && LoveStage == 1) v += 1.5f;
                 if (IsTarget && o.LoveStage >= 2) v += 1.5f;
                 if (o == clingTarget) v += 6f;
+                if (FocusOn(o)) v += 2f; // お守り：その人の近くに座りやすい
                 b += v * k;
             }
             return b;
@@ -1961,6 +1982,7 @@ namespace LifeSimProto
                 float dist = Vector3.Distance(transform.position, o.transform.position);
                 w *= 1f / (1f + dist / 8f);
                 if (IsTarget && o.LoveStage >= 2) w *= 1.5f;
+                if (FocusOn(o)) w *= 2.5f; // お守り：その人に会いに行きやすい
                 if (o.sickRest) w *= 3f;
                 foreach (var c in others)
                     if (c != this && c.state == State.Approaching && c.target == o) { w *= 0.25f; break; }
@@ -2316,11 +2338,23 @@ namespace LifeSimProto
             {
                 if (d.accessory)
                 {
-                    // 装飾品：1人1つまで。前のは外す
-                    mods.RemoveAll(a => a.mod.source == ModSource.Accessory);
+                    // 装飾品は1人2つまで（3つ目は、いちばん前に身につけた物と付け替える）、お守りは1つまで
+                    var src = d.Mod.source;
+                    int slots = src == ModSource.Charm ? 1 : 2;
+                    if (!mods.Exists(a => a.mod.id == d.Mod.id))
+                    {
+                        var same = mods.FindAll(a => a.mod.source == src);
+                        while (same.Count >= slots)
+                        {
+                            world.Log(displayName + "は「" + same[0].mod.name + "」を外した");
+                            mods.Remove(same[0]);
+                            same.RemoveAt(0);
+                        }
+                    }
                     AddMod(d.Mod, 0f);
-                    if (gift) world.rel.Add(id, giver.id, 8f, world.simTime);
-                    if (gift && giver.IsTarget && !IsTarget) world.ChangeLove(this, 6f);
+                    bool charm = src == ModSource.Charm;
+                    if (gift) world.rel.Add(id, giver.id, charm ? 4f : 8f, world.simTime);
+                    if (gift && giver.IsTarget && !IsTarget) world.ChangeLove(this, charm ? 3f : 6f);
                 }
                 else
                 {
@@ -2783,7 +2817,10 @@ namespace LifeSimProto
             if ((IsTarget && partner.IsLover) || (IsLover && partner.IsTarget)) bonus += 0.15f;
             if (requestEffort >= 0f && hasOrder) bonus += (requestEffort - 0.4f) * 0.4f;
             bonus += (Ab(Abilities.Charm) + partner.Ab(Abilities.Charm) - 100f) / 500f; // 魅力がある2人ほど楽しくなりやすい
+            bool focus = FocusOn(partner) || partner.FocusOn(this);
+            if (focus) bonus += 0.15f; // お守り：話すと楽しくなりやすい
             TalkResult result = world.rel.Roll(id, partner.id, bonus);
+            if (focus && result != TalkResult.Awkward) world.rel.Add(id, partner.id, result == TalkResult.Fun ? 1.5f : 0.5f, world.simTime); // 仲よくなりやすい
             if (result == TalkResult.Fun) { GrowAbility(Abilities.Charm, 0.15f); partner.GrowAbility(Abilities.Charm, 0.15f); }
             string icon = result == TalkResult.Fun ? "♪ ♥" : (result == TalkResult.Normal ? "…" : "（汗）");
             ShowBubble(icon, 2.2f);
@@ -2906,7 +2943,9 @@ namespace LifeSimProto
             }
             if (ok && StillChat(o))
             {
-                TalkResult result = world.rel.Roll(id, o.id, 0.1f + TalkBonus() + o.TalkBonus() + (Ab(Abilities.Charm) + o.Ab(Abilities.Charm) - 100f) / 500f);
+                bool focus = FocusOn(o) || o.FocusOn(this);
+                TalkResult result = world.rel.Roll(id, o.id, 0.1f + TalkBonus() + o.TalkBonus() + (Ab(Abilities.Charm) + o.Ab(Abilities.Charm) - 100f) / 500f + (focus ? 0.15f : 0f));
+                if (focus && result != TalkResult.Awkward) world.rel.Add(id, o.id, result == TalkResult.Fun ? 1f : 0.3f, world.simTime);
                 if (result == TalkResult.Fun) { ShowBubble("♪", 1.2f); o.ShowBubble("♪", 1.2f); }
                 world.ReportTalk(this, o, result, false, place);
                 AfterTalkStatuses(o, result);
