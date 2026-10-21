@@ -356,11 +356,36 @@ namespace LifeSimProto
             .L("thanks", "ありがとうなのです！").L("accept", "まかせてなのです！").L("refuse", "今はだめなのです")
             .L("night", "おやすみなさいなのです").L("surprise", "ひゃっ！").L("hurt", "あわわ、失敗なのです…")
             .L("rank1", "一番なのです！").L("examGood", "やったのです！").L("examBad", "魔道具はむずかしいのです…"));
+            // K セレネ（月の精霊）：ふわふわ天然、昼は眠く夜に元気（企画\キャラK_セレネ_設定.md）
+            All.Add(new CharProfile
+            {
+                letter = "K", name = "セレネ", shortName = "セレネ", race = "月の精霊", personality = "ふわふわ天然・夜型",
+                color = new Color(0.75f, 0.78f, 0.95f), social = 0.55f, whim = 0.7f, diligence = 0.4f,
+                hobby = SimCharacter.HobbyKind.Walk, hobbyText = "月光浴", hobbyPlace = "中庭",
+                likes = new[] { "夜の散歩", "月", "ホットミルク", "ふわふわ" }, dislikes = new[] { "早起き", "まぶしい日差し" },
+                traits = CharTrait.FullMoon, traitText = "満月の夜はそわそわ",
+                strongStudy = Astro, weakStudy = Ancient, strongPractical = Heal, weakPractical = Body,
+                enrolled = new[] { Astro, Ancient, Heal, Body, Herb, Fly }, callF = "篤くん",
+            }
+            .L("hello_m", "ふわぁ…おはよう…もう夜？").L("hello_d", "ん…こんにちは…ねむい…").L("hello_n", "こんばんは〜。いい夜だね")
+            .L("close", "{0}、こっちおいで〜").L("reply", "うん、ふわふわ元気だよ")
+            .L("meal", "あったかいね", "もぐもぐ…ねむくなってきた", "ミルクもほしいなあ")
+            .L("snack", "ホットミルクと、いっしょに食べたいな", "甘いの、ふわふわになる…")
+            .L("bath", "ぽかぽか…ここで寝ちゃいそう", "湯気、月の光みたい")
+            .L("seat", "ふわぁ…", "いまが一番だね", "ねえ、空、見た？", "ぽかぽか…")
+            .L("chatter", "ふふ", "そうなんだ〜", "ふわふわだね", "うん、うん", "いいね〜")
+            .L("topic", "{0}のこと、考えてたの")
+            .L("like", "それ、好き〜").L("dislike", "うう…それはまぶしい…")
+            .L("sleepy", "すぅ…").L("sigh", "ふぅ…").L("frustr", "むぅ…")
+            .L("done", "おわった〜…寝ていい？").L("busy", "課題…夜にやるね…").L("teach", "星はね、こう並んでるの")
+            .L("thanks", "ありがと〜").L("accept", "うん、いいよ〜").L("refuse", "いまは…ねむいの")
+            .L("night", "おやすみ…わたしはもう少し起きてるね").L("surprise", "ふぇっ？").L("hurt", "あれ…失敗しちゃった")
+            .L("rank1", "わたしが一番？ ふしぎ〜").L("examGood", "お月さまのおかげかな").L("examBad", "古代語、ねむくなっちゃう…"));
             CharLines.Apply(All); // せりふの追加分（CharLines.cs）
         }
 
         /// <summary>
-        /// 最初の間柄。友達：A–I, B–D, B–C, C–H, D–H, G–J。A–E はライバルっぽい知り合い（少し高め）。ほかはみんな知り合い。
+        /// 最初の間柄。友達：A–I, B–D, B–C, C–H, D–H, G–J, D–K, H–K。A–E はライバルっぽい知り合い（少し高め）。ほかはみんな知り合い。
         /// 相性は好き嫌いの重なりで少し変わる。
         /// </summary>
         public static void ApplyInitialRelations(Relationships rel, int seed)
@@ -374,7 +399,7 @@ namespace LifeSimProto
                     var a = All[i]; var b = All[j];
                     float aff = 20f;
                     float c = (float)(rnd.NextDouble() * 0.8 - 0.3);
-                    if (IsPair(a, b, "A", "I") || IsPair(a, b, "B", "D") || IsPair(a, b, "B", "C") || IsPair(a, b, "C", "H") || IsPair(a, b, "D", "H") || IsPair(a, b, "G", "J"))
+                    if (IsPair(a, b, "A", "I") || IsPair(a, b, "B", "D") || IsPair(a, b, "B", "C") || IsPair(a, b, "C", "H") || IsPair(a, b, "D", "H") || IsPair(a, b, "G", "J") || IsPair(a, b, "D", "K") || IsPair(a, b, "H", "K"))
                     { aff = 50f; c = Mathf.Max(c, 0.35f) + 0.15f; }
                     else if (IsPair(a, b, "A", "E")) { aff = 32f; c = 0.05f; }
                     foreach (var t in a.likes) { if (b.Likes(t)) c += 0.15f; if (b.Dislikes(t)) c -= 0.12f; }

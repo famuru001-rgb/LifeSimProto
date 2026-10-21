@@ -403,10 +403,10 @@ namespace LifeSimProto
         void SpawnCharacters()
         {
             Academics.ClearExam();
-            rel = new Relationships(10, 12345);
-            romance = new Romance(10, 5, 777);
+            rel = new Relationships(11, 12345);
+            romance = new Romance(11, 5, 777);
             // 名前・性格・好き嫌い・科目・口調は CharProfiles（企画\ゲーム内容_たたき台.md のとおり）
-            for (int i = 0; i < CharProfiles.All.Count && i < 10; i++) AddCharacter(i, CharProfiles.All[i]);
+            for (int i = 0; i < CharProfiles.All.Count && i < 11; i++) AddCharacter(i, CharProfiles.All[i]);
             CharProfiles.ApplyInitialRelations(rel, 12345);
         }
 

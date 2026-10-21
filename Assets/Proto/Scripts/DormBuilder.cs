@@ -32,7 +32,7 @@ namespace LifeSimProto
     /// 大きさは famuru 決定（2026-10-21）：個室 幅3m×奥行き5.4m、2階の廊下 幅2.4m、談話室 14m×15m、食堂 10m×7m、浴場 6m×7m＋脱衣所 3m×7m、
     /// 篤の部屋は個室の倍（もとは物置だった離れ。2階・右の廊下の突き当たりの先）。
     /// 1階：談話室（中央 x-7〜7, z-7.5〜7.5, 天井6m）／手前に 食堂（x-12〜-2）・廊下（-2〜2）・脱衣所（2〜5）・浴場（5〜11）（z-14.5〜-7.5）
-    /// 2階（高さ3m）：談話室の左右に廊下と個室（左5部屋・右4部屋と物置）。談話室の左右の階段から上がる。
+    /// 2階（高さ3m）：談話室の左右に廊下と個室（左5部屋・右5部屋。右の奥はもと物置でセレネの部屋）。談話室の左右の階段から上がる。
     /// </summary>
     public partial class LoungeWorld
     {
@@ -73,7 +73,7 @@ namespace LifeSimProto
             BuildFrontBand();
             BuildWing(-1);   // 左：個室5部屋（rooms[0〜4]）
             BuildFRoom();    // 篤の部屋（rooms[5]）
-            BuildWing(1);    // 右：個室4部屋（rooms[6〜9]）と物置
+            BuildWing(1);    // 右：個室5部屋（rooms[6〜10]。右5＝もと物置、セレネの部屋）
             BuildPlaces();   // 新しい場所（DormPlaces.cs）
             BuildNav();
             ApplyPlaces();
@@ -609,7 +609,7 @@ namespace LifeSimProto
         }
 
         // ================= 2階：個室 =================
-        /// <summary>side：-1 左 / 1 右。談話室の外側に廊下（幅2.4m）、その外に個室（幅3m×奥行き5.4m）が5つ。右の奥の1つは物置。</summary>
+        /// <summary>side：-1 左 / 1 右。談話室の外側に廊下（幅2.4m）、その外に個室（幅3m×奥行き5.4m）が5つ（右の奥＝右5はセレネの部屋。もとは物置）。</summary>
         void BuildWing(int side)
         {
             float s = side;
@@ -625,11 +625,10 @@ namespace LifeSimProto
             Wall(new Vector2(s * inner, HalfD + 0.2f), new Vector2(s * (outer + 0.4f), HalfD + 0.2f), Floor2Y, WingTop, t, endDoor);
             Wall(new Vector2(s * inner, -HalfD - 0.2f), new Vector2(s * (outer + 0.4f), -HalfD - 0.2f), Floor2Y, WingTop, t);
 
-            // 廊下の壁（各部屋の扉つき。物置には扉がない）
+            // 廊下の壁（各部屋の扉つき）
             var gaps = new List<Vector4>();
             for (int i = 0; i < 5; i++)
             {
-                if (side > 0 && i == 4) continue;
                 float cz = -HalfD + RoomW * (i + 0.5f);
                 float along = cz + HalfD; // a.z = -HalfD から測る
                 gaps.Add(new Vector4(along - 0.6f, along + 0.6f, Floor2Y, Floor2Y + 2.2f));
@@ -649,16 +648,6 @@ namespace LifeSimProto
             for (int i = 0; i < 5; i++)
             {
                 float cz = -HalfD + RoomW * (i + 0.5f);
-                if (side > 0 && i == 4)
-                {
-                    // 物置（使っていない。扉はない）
-                    Box("Storage_Crate", new Vector3(s * (corr + 1.4f), Floor2Y + 0.4f, cz - 0.6f), new Vector3(0.8f, 0.8f, 0.8f), woodDark);
-                    Box("Storage_Crate", new Vector3(s * (corr + 2.5f), Floor2Y + 0.3f, cz + 0.4f), new Vector3(0.6f, 0.6f, 0.6f), woodMid);
-                    Box("Storage_Sack", new Vector3(s * (corr + 4.3f), Floor2Y + 0.3f, cz - 0.2f), new Vector3(0.7f, 0.6f, 0.6f), fabricBrown);
-                    Label(new Vector3(s * (corr + 2.7f), Floor2Y + 2.0f, cz), "物置");
-                    AddArea("物置", Rect.MinMaxRect(Mathf.Min(s * corr, s * outer), cz - RoomW / 2f, Mathf.Max(s * corr, s * outer), cz + RoomW / 2f), 1);
-                    continue;
-                }
                 string name = (side < 0 ? "左" : "右") + (i + 1);
                 var room = new RoomInfo { name = name };
                 System.Func<float, float> X = u => s * (corr + u); // 廊下の壁から部屋の奥への距離 u（0〜5.4）
@@ -993,7 +982,6 @@ namespace LifeSimProto
                 nav1.Open(Rect.MinMaxRect(Mathf.Min(s * (inner + 0.15f), s * (corr - 0.15f)), -HalfD + 0.25f, Mathf.Max(s * (inner + 0.15f), s * (corr - 0.15f)), HalfD - 0.25f)); // 廊下
                 for (int i = 0; i < 5; i++)
                 {
-                    if (side > 0 && i == 4) continue; // 物置
                     float cz = -HalfD + RoomW * (i + 0.5f);
                     nav1.Open(Rect.MinMaxRect(Mathf.Min(s * (corr + 0.25f), s * (outer - 0.25f)), cz - 1.25f, Mathf.Max(s * (corr + 0.25f), s * (outer - 0.25f)), cz + 1.25f)); // 部屋
                     nav1.Open(Rect.MinMaxRect(Mathf.Min(s * (corr - 0.25f), s * (corr + 0.45f)), cz - 0.45f, Mathf.Max(s * (corr - 0.25f), s * (corr + 0.45f)), cz + 0.45f)); // 部屋の扉

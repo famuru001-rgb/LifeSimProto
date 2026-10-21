@@ -32,6 +32,7 @@ namespace LifeSimProto
                 case "H": return L(new Color(0.5f, 0.3f, 0.15f), new Color(0.25f, 0.55f, 0.25f), "Hair_Pony");
                 case "I": return L(new Color(1f, 0.6f, 0.75f), new Color(0.85f, 0.6f, 0.15f), "Hair_LongBack", "Acc_FoxEars", "Acc_FoxTail");
                 case "J": return L(new Color(0.5f, 0.35f, 0.75f), new Color(0.6f, 0.3f, 0.8f));
+                case "K": return L(new Color(0.06f, 0.06f, 0.09f), new Color(0.78f, 0.8f, 0.9f), "Hair_LongBack"); // セレネ：黒髪ロング・銀の目
                 default: return L(fallback, new Color(0.25f, 0.18f, 0.12f), "Hair_LongBack");
             }
         }

@@ -15,7 +15,7 @@ namespace LifeSimProto
         // 装飾品：能力値・学力を伸ばす
         LionBracelet, RoseChoker, ArtisanRing, ManaCrystal, SageMonocle, StudyBadge,
         // お守り（その人を意識しやすくなる。記号 A〜J）
-        CharmA, CharmB, CharmC, CharmD, CharmE, CharmF, CharmG, CharmH, CharmI, CharmJ,
+        CharmA, CharmB, CharmC, CharmD, CharmE, CharmF, CharmG, CharmH, CharmI, CharmJ, CharmK,
         // 寮生の私物（寮生が自分で買って使う。篤は買えない・渡せない）
         PassionAroma, NightCandle, LongingOil
     }
@@ -106,6 +106,7 @@ namespace LifeSimProto
                 new ItemDef { kind = ItemKind.CharmH, name = "ニナのお守り", price = 80, desc = "お守り：ニナを意識しやすくなる（会いに行きやすく、近くに座りやすく、話すと仲よくなりやすい）", selfUse = true, accessory = true, modId = "charm:H", shelf = ItemShelf.Charm },
                 new ItemDef { kind = ItemKind.CharmI, name = "リアのお守り", price = 80, desc = "お守り：リアを意識しやすくなる（会いに行きやすく、近くに座りやすく、話すと仲よくなりやすい）", selfUse = true, accessory = true, modId = "charm:I", shelf = ItemShelf.Charm },
                 new ItemDef { kind = ItemKind.CharmJ, name = "キッカのお守り", price = 80, desc = "お守り：キッカを意識しやすくなる（会いに行きやすく、近くに座りやすく、話すと仲よくなりやすい）", selfUse = true, accessory = true, modId = "charm:J", shelf = ItemShelf.Charm },
+                new ItemDef { kind = ItemKind.CharmK, name = "セレネのお守り", price = 80, desc = "お守り：セレネを意識しやすくなる（会いに行きやすく、近くに座りやすく、話すと仲よくなりやすい）", selfUse = true, accessory = true, modId = "charm:K", shelf = ItemShelf.Charm },
                 // 寮生の私物（寮生が自分で買って使う。プレゼントにはできない）
                 new ItemDef { kind = ItemKind.PassionAroma, name = "情熱のアロマ", price = 40, desc = "私物：使うと性欲が30〜60増え、半日、性欲が高まりやすい", npcOnly = true, desireBoostMin = 30f, desireBoostMax = 60f, modId = "own:情熱のアロマ", modMinutes = 720f, shelf = ItemShelf.Personal },
                 new ItemDef { kind = ItemKind.NightCandle, name = "夜想のキャンドル", price = 40, desc = "私物：使うと性欲が40〜70増え、1日、性欲のたまりがたまりやすい・眠気がたまりにくい", npcOnly = true, desireBoostMin = 40f, desireBoostMax = 70f, modId = "own:夜想のキャンドル", modMinutes = 1440f, shelf = ItemShelf.Personal },

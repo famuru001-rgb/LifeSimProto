@@ -80,6 +80,9 @@ namespace LifeSimProto
             R("ドワーフ").Rate(Tired, 0.8f).Rate(Hunger, 1.2f).Rate(Hobby, 1.2f).Desc("疲れ知らずで、作りたい気持ちが強い");
             R("うさぎ").Rate(Lonely, 1.1f).Rate(Hunger, 1.1f).Rate(Desire, 1.2f).Build(Desire, 1.15f).Desc("甘えたがり。気持ちが高ぶりやすい");
             R("リス").Rate(Hunger, 1.3f).Rate(Bored, 1.2f).Rate(Tired, 1.1f).Desc("ちょこまか動き、よく食べる");
+            // 月の精霊（セレネ）：昼は眠く、夜は元気。夜は「（夜）」のほうが使われる（SimCharacter.Mods）。仮の値
+            R("月の精霊").Rate(Sleepy, 1.2f).Rate(Tired, 1.1f).Rate(Hunger, 0.85f).Rate(Lonely, 1.05f).Rate(Desire, 0.9f).Build(Desire, 1.2f).Desc("月の光の生き物。昼は眠くて疲れやすい");
+            R("月の精霊（夜）").Rate(Sleepy, 0.8f).Rate(Tired, 0.9f).Rate(Hunger, 0.85f).Rate(Lonely, 1.05f).Rate(Desire, 0.9f).Build(Desire, 1.2f).Desc("夜は目がさえて元気");
             R("人間"); // 基準（すべて 1）
             R("人間（転生者）");
 
@@ -137,7 +140,7 @@ namespace LifeSimProto
             // ※ 性欲や発情を上げる物は「寮生の私物」だけ（本人が自分で買って使う。篤からは渡せない）
         }
 
-        /// <summary>お守りの記号と名前（キャラの記号 A〜J）。</summary>
+        /// <summary>お守りの記号と名前（キャラの記号 A〜K）。</summary>
         public static readonly KeyValuePair<string, string>[] CharmNames =
         {
             new KeyValuePair<string, string>("A", "ヴィエッタ"), new KeyValuePair<string, string>("B", "シルヴィエル"),
@@ -145,6 +148,7 @@ namespace LifeSimProto
             new KeyValuePair<string, string>("E", "ラフィーナ"), new KeyValuePair<string, string>("F", "篤"),
             new KeyValuePair<string, string>("G", "ロッテ"), new KeyValuePair<string, string>("H", "ニナ"),
             new KeyValuePair<string, string>("I", "リア"), new KeyValuePair<string, string>("J", "キッカ"),
+            new KeyValuePair<string, string>("K", "セレネ"),
         };
 
         /// <summary>補正を一覧に登録する（衣装・装飾品・家具・アイテム用）。</summary>

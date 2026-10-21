@@ -286,7 +286,14 @@ namespace LifeSimProto
         /// <summary>今ついている補正（種族＋衣装・アイテムなど）。</summary>
         public IEnumerable<NeedMod> Mods()
         {
-            var r = NeedBook.Race(profile != null ? profile.race : null);
+            string race = profile != null ? profile.race : null;
+            NeedMod r = null;
+            if (!string.IsNullOrEmpty(race) && LoungeWorld.IsNight(world.MinuteOfDay))
+            {
+                r = NeedBook.Race(race + "（夜）"); // 夜だけの種族補正（月の精霊など）。なければふつうの補正
+                if (r != null && r.id != "race:" + race + "（夜）") r = null;
+            }
+            if (r == null) r = NeedBook.Race(race);
             if (r != null) yield return r;
             foreach (var a in mods) yield return a.mod;
         }

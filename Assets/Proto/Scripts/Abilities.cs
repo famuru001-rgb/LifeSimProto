@@ -61,6 +61,7 @@ namespace LifeSimProto
                 case "H": return new float[] { 55, 70, 40, 50, 35 }; // ニナ：うさぎ。愛嬌
                 case "I": return new float[] { 40, 70, 45, 60, 65 }; // リア：王女。気品と教養
                 case "J": return new float[] { 60, 55, 70, 45, 50 }; // キッカ：リス。すばしこく手先が器用
+                case "K": return new float[] { 35, 65, 45, 75, 55 }; // セレネ：月の精霊。体は弱め、魔力が高い
                 default: return new float[] { 50, 50, 50, 50, 50 };
             }
         }
