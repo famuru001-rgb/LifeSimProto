@@ -356,6 +356,7 @@ namespace LifeSimProto
             .L("thanks", "ありがとうなのです！").L("accept", "まかせてなのです！").L("refuse", "今はだめなのです")
             .L("night", "おやすみなさいなのです").L("surprise", "ひゃっ！").L("hurt", "あわわ、失敗なのです…")
             .L("rank1", "一番なのです！").L("examGood", "やったのです！").L("examBad", "魔道具はむずかしいのです…"));
+            CharLines.Apply(All); // せりふの追加分（CharLines.cs）
         }
 
         /// <summary>

@@ -76,7 +76,7 @@ namespace LifeSimProto.EditorTools
                         // 試験用：みんなが今どこで何をしているかを status.txt に追記する
                         var sb = new StringBuilder();
                         sb.AppendLine("== " + w.Day + "日目 " + LifeSimProto.ScheduleMaker.Clock(w.Now));
-                        foreach (var c in w.characters) sb.AppendLine(c.displayName + "：" + w.AreaName(c.transform.position) + "　" + c.actionText);
+                        foreach (var c in w.characters) sb.AppendLine(c.displayName + "：" + w.AreaName(c.transform.position) + "　" + c.actionText + (string.IsNullOrEmpty(c.bubble) ? "" : "　「" + c.bubble + "」"));
                         File.AppendAllText(Path.Combine(Path.GetDirectoryName(ResultPath), "status.txt"), sb.ToString(), Encoding.UTF8);
                         log.AppendLine("status: ok");
                     }

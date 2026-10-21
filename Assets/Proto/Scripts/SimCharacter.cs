@@ -562,6 +562,11 @@ namespace LifeSimProto
             else if (HasTrait(CharTrait.WinterWeak) && Calendar.Season(world.Day) == 3 && r < dt * 0.03f) ShowBubble(Say("cold", "寒い…"), 1.4f);
             else if (HasTrait(CharTrait.FullMoon) && Calendar.IsFullMoon(world.Day) && LoungeWorld.IsNight(world.MinuteOfDay) == false && world.MinuteOfDay >= 1080f && r < dt * 0.05f) ShowBubble(Say("moon", "そわそわ…"), 1.4f);
             else if (HasTrait(CharTrait.RainWings) && Calendar.WeatherOf(world.Day) == Weather.Rain && r < dt * 0.03f) ShowBubble(Say("rain", "翼が重い…"), 1.4f);
+            else if (r < dt * 0.02f && state != State.Talking && !chatting)
+            {
+                string line = AmbientLine();
+                if (line != null) ShowBubble(line, 1.8f);
+            }
         }
 
         // ================= 欲求 =================
@@ -880,6 +885,88 @@ namespace LifeSimProto
             return line;
         }
 
+        string Pick(string key)
+        {
+            string[] v;
+            if (profile != null && profile.lines.TryGetValue(key, out v) && v.Length > 0) return v[Random.Range(0, v.Length)];
+            return null;
+        }
+
+        /// <summary>相手の呼び方。篤は CharProfile.callF、知り合いは「さん」など、友達は名前、親友はあだ名。</summary>
+        public string AddressOf(SimCharacter o)
+        {
+            if (o == null) return "";
+            if (o.IsTarget && !IsTarget && profile != null && profile.callF.Length > 0) return profile.callF;
+            int st = world.rel.Stage(id, o.id);
+            string v;
+            if (st >= 2 && o.letter != null && CharLines.Nick.TryGetValue(o.letter, out v)) return v;
+            if (st == 0 && letter != null && CharLines.Honor.TryGetValue(letter, out v)) return o.displayName + v;
+            return o.displayName;
+        }
+
+        /// <summary>相手に合わせたせりふ。篤への気持ち（_love1・_love2・_love）→ 関係の段階（親友 _s・知り合い _k）→ ふつう の順に探す。</summary>
+        public string SayTo(string key, SimCharacter o, string fallback)
+        {
+            string line = null;
+            if (o != null)
+            {
+                if (o.IsTarget && !IsTarget && LoveStage >= 1 && Random.value < 0.6f)
+                    line = Pick(key + "_love" + Mathf.Min(2, LoveStage)) ?? Pick(key + "_love");
+                if (line == null)
+                {
+                    int st = world.rel.Stage(id, o.id);
+                    if (st >= 2) line = Pick(key + "_s");
+                    else if (st == 0) line = Pick(key + "_k");
+                }
+            }
+            if (line == null) line = Pick(key) ?? fallback;
+            if (line.Contains("{0}")) line = line.Replace("{0}", AddressOf(o));
+            return line;
+        }
+
+        /// <summary>そのときの様子に合わせたひとこと（場所・授業・行事・天気・季節・状態）。なければ null。</summary>
+        string AmbientLine()
+        {
+            var keys = new List<string>();
+            if (inPlaceClass && world.Now < classUntil) keys.Add("c_in");
+            if (gathering != null && gathering.Active(world.Now))
+            {
+                if (gathering.honoree == this) keys.Add("e_bday_me");
+                else if (gathering.honoree != null && !gathering.honoree.IsTarget) keys.Add("e_bday");
+                else if (gathering.key == "year_stars") keys.Add("e_stars");
+                else if (gathering.key == "year_solstice") keys.Add("e_solstice");
+                else keys.Add("e_fest");
+            }
+            if (keys.Count == 0)
+            {
+                var f = world.RomanceTarget;
+                bool nearF = f != null && !IsTarget && (f.transform.position - transform.position).sqrMagnitude < 16f;
+                if (GetStage(StatusLine.Cold) >= 1) keys.Add("st_sick");
+                if (GetStage(StatusLine.Shy) >= 1) keys.Add(nearF && LoveStage >= 1 ? "shy_love" : "st_shy");
+                if (GetStage(StatusLine.Jealousy) >= 1) keys.Add("st_jealous");
+                if (GetStage(StatusLine.MoodUp) >= 2) keys.Add("st_up");
+                if (GetStage(StatusLine.Full) >= 1) keys.Add("st_full");
+                if (GetStage(StatusLine.Lonely) >= 1) keys.Add("st_lonely");
+                if (tired > 75f) keys.Add("st_tired");
+                if (act == Act.Study && world.ExamEveToday) keys.Add("c_eve");
+            }
+            if (keys.Count == 0)
+            {
+                string area = world.AreaName(transform.position);
+                float m = world.MinuteOfDay;
+                if (area.Length > 0 && Random.value < 0.5f) keys.Add("p_" + area);
+                else if (m >= 390f && m < 660f)
+                {
+                    var w = Calendar.WeatherOf(world.Day);
+                    if (Random.value < 0.4f) keys.Add("s_" + new[] { "spring", "summer", "autumn", "winter" }[Calendar.Season(world.Day)]);
+                    else keys.Add(w == Weather.Rain ? "w_rain" : (w == Weather.Snow ? "w_snow" : (w == Weather.Sunny ? "w_sunny" : "s_" + new[] { "spring", "summer", "autumn", "winter" }[Calendar.Season(world.Day)])));
+                }
+                else if (area.Length > 0) keys.Add("p_" + area);
+            }
+            if (keys.Count == 0) return null;
+            return Pick(keys[Random.Range(0, keys.Count)]);
+        }
+
         string[] Pool(string key, string[] fallback)
         {
             string[] v;
@@ -1006,6 +1093,7 @@ namespace LifeSimProto
                         if (!examItem && TryClassInPlace(it)) return true;
                         awayLabel = examItem ? "試験を受けている" : "授業に出ている";
                         StartLeave(examItem ? it.Label + "を受けに行く" : "授業に出かける");
+                        ShowBubble(Say(examItem ? "c_exam" : "c_go", examItem ? "がんばろう" : "いってきます"), 1.6f);
                         return true;
                     case TaskKind.Breakfast:
                     case TaskKind.Lunch:
@@ -1198,6 +1286,7 @@ namespace LifeSimProto
             inPlaceClass = true;
             float secs = world.GameToSimSeconds((float)(it.end - world.Now));
             if (!GoToPoi(p, Act.Study, SubjectName(s0) + "の授業を受けている", Mathf.Max(5f, secs))) { inPlaceClass = false; return false; }
+            ShowBubble(Say("c_go", "いってきます"), 1.6f);
             return true;
         }
 
@@ -2435,7 +2524,7 @@ namespace LifeSimProto
                 else if (i == 1 && visit) line = "来てくれたんだ…";
                 else if (i == 1 && !koibana && feelYou != 0) line = feelYou > 0 ? partner.Say("like", "それ好き！") : partner.Say("dislike", "その話はちょっと…");
                 else if (koibana) line = i == 2 && speaker.profile != null && speaker.profile.callF.Length > 0 ? speaker.profile.callF + "ってさ…" : KoibanaLines[Random.Range(0, KoibanaLines.Length)];
-                else line = speaker.Say("chatter", Chatter[Random.Range(0, Chatter.Length)]);
+                else line = speaker.SayTo("chatter", speaker == this ? partner : this, Chatter[Random.Range(0, Chatter.Length)]);
                 speaker.ShowBubble(line, 1.5f);
                 yield return new WaitForSeconds(1.6f);
             }
@@ -2629,14 +2718,16 @@ namespace LifeSimProto
             string a, b;
             if (aff < 25f) { a = "（会釈）"; b = "（会釈）"; }
             else if (aff < 60f) { a = hello; b = o.Say(hk, "おつかれ"); }
-            else { a = Say("close", "あ、{0}！", o.displayName); b = o.Say("reply", Random.value < 0.5f ? "あとで話そ♪" : "ふふっ"); }
+            else if (aff >= 80f && Random.value < 0.6f) { a = SayTo("hello_s", o, hello); b = o.SayTo("reply", this, "ふふっ"); }
+            else { a = SayTo("close", o, "あ、{0}！"); b = o.SayTo("reply", this, Random.value < 0.5f ? "あとで話そ♪" : "ふふっ"); }
             // Fとのすれ違い
             SimCharacter girl = IsTarget ? o : (o.IsTarget ? this : null);
             if (girl != null && girl.LoveStage >= 1)
             {
                 var f = IsTarget ? this : o;
                 string call = girl.profile != null && girl.profile.callF.Length > 0 ? girl.profile.callF : f.displayName;
-                string gl = girl.GetStage(StatusLine.Shy) > 0 ? "っ…（目をそらす）" : (girl.LoveStage >= 2 ? "あ…" + call + "♡" : "あ、" + call);
+                string gl = girl.GetStage(StatusLine.Shy) > 0 ? girl.Say("shy_love", "っ…（目をそらす）")
+                    : girl.Say("hello_love" + Mathf.Min(2, girl.LoveStage), girl.LoveStage >= 2 ? "あ…" + call + "♡" : "あ、" + call);
                 string fh = f.Say(hk, "やあ");
                 if (girl == this) { a = gl; b = fh; } else { a = fh; b = gl; }
                 world.ChangeLove(girl, 0.4f);
