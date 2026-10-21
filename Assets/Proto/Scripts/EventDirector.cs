@@ -60,7 +60,7 @@ namespace LifeSimProto
             foreach (var c in world.characters)
                 if (!c.IsTarget && c.LoveStage >= 2 && rnd.NextDouble() < 0.25) bakeTimes[c] = (16.5f + (float)rnd.NextDouble()) * 60f;
 
-            if (Calendar.IsHoliday(day, hol)) world.todayNotes.Add("お茶会 15:00");
+            if (Calendar.IsHoliday(day, hol) && !Calendar.IsFestival(day)) world.todayNotes.Add("お茶会 15:00");
             if (Calendar.IsHoliday(day, hol) && !Calendar.IsFestival(day)) world.todayNotes.Add("デートのチャンス 13:00");
             if (Calendar.IsExamDay(day, hol)) world.todayNotes.Add("試験（午前）・結果発表 18:00");
             if (Calendar.IsExamEve(day, hol))
@@ -71,18 +71,13 @@ namespace LifeSimProto
             if (Calendar.Weekday(day) == 5) world.todayNotes.Add("課題が出る 9:00（光の日 23:00 まで）");
             if (Calendar.IsClassDay(day, hol)) world.todayNotes.Add("授業の日");
             if (Calendar.IsFullMoon(day)) world.todayNotes.Add("満月の夜");
-            if (Calendar.IsFestival(day))
-            {
-                string fn = Calendar.FestivalNames[Calendar.Season(day)];
-                world.todayNotes.Add(fn + " 16:00");
-                world.Log("今日は" + fn + "！");
-            }
             foreach (var c in world.characters)
             {
                 if (!Calendar.IsBirthday(c.id, day)) continue;
                 c.PositiveEvent(1f);
                 world.todayNotes.Add(c.displayName + "の誕生日会 19:45");
                 world.Log("今日は" + c.displayName + "の誕生日");
+                Loop.Learn(world, c, "誕生日", Calendar.SeasonNames[Calendar.Season(day)] + "の" + Calendar.WeekdayNames[Calendar.Weekday(day)]);
             }
             Weather w = Calendar.WeatherOf(day);
             if (w == Weather.Rain) world.Log("今日は雨。外には出にくい");
@@ -99,7 +94,7 @@ namespace LifeSimProto
             bool holiday = Calendar.IsHoliday(day, hol);
 
             // ---- 寮の行事：お茶会 ----
-            if (holiday && m >= 900f && m < 960f && Once("tea"))
+            if (holiday && !Calendar.IsFestival(day) && m >= 900f && m < 960f && Once("tea"))
             {
                 world.gatherings.Add(new Gathering
                 {
@@ -135,18 +130,6 @@ namespace LifeSimProto
 
             // ---- 試験の結果発表（取っている科目ごと。1位はご機嫌・篤は成績で奨学金）----
             if (Calendar.IsExamDay(day, hol) && m >= 1080f && Once("exam")) AnnounceExam(day);
-
-            // ---- 季節のお祭り（みんなで出かける。Fと恋人は一緒に回る）----
-            if (Calendar.IsFestival(day) && m >= 960f && m < 1140f && Once("festival"))
-            {
-                string fn = Calendar.FestivalNames[Calendar.Season(day)];
-                world.gatherings.Add(new Gathering
-                {
-                    key = "festival", label = fn + "に出かけている", outing = true,
-                    start = world.Now, end = DayStart + 1140, joinChance = 0.9f
-                });
-                world.Log(fn + "に出かける人が集まりはじめた");
-            }
 
             // ---- デート（休日の午後。Fと、Fを好きな子のだれか1人）----
             if (holiday && !Calendar.IsFestival(day) && m >= 780f && m < 900f && Once("date"))
@@ -231,7 +214,7 @@ namespace LifeSimProto
                 float sum = 0f;
                 foreach (int s in c.profile.enrolled)
                 {
-                    float score = c.skill[s] * 0.75f + Mathf.Min(20f, c.weekSubject[s] * 0.3f) + Random.Range(0f, 15f) - c.GetStage(StatusLine.Sleep) * 5f;
+                    float score = c.skill[s] * 0.8f + Mathf.Min(25f, c.weekSubject[s] * 0.4f) + Random.Range(0f, 15f) - c.GetStage(StatusLine.Sleep) * 5f;
                     score = Mathf.Clamp(score, 0f, 100f);
                     Academics.LastExam[s].Add(new Academics.ExamEntry { who = c, score = score, mark = Academics.Mark(score) });
                     sum += score;
@@ -261,7 +244,16 @@ namespace LifeSimProto
                     world.player.Earn(money, "奨学金（試験の成績）");
                 }
             }
-            world.Log("試験の結果発表：" + string.Join("　", parts.ToArray()) + "（G キーで成績表）");
+            bool yearEnd = Calendar.Season(day) == 3;
+            world.Log((yearEnd ? "年度末の試験の結果発表：" : "試験の結果発表：") + string.Join("　", parts.ToArray()) + "（G キーで成績表）");
+            float all = 0f;
+            foreach (var kv in Academics.LastOverall) all += kv.Value;
+            if (Academics.LastOverall.Count > 0)
+            {
+                int rep = Mathf.RoundToInt(all / Academics.LastOverall.Count / (yearEnd ? 8f : 20f));
+                world.dormReputation += rep;
+                if (yearEnd) Album.Add(world, "年度末の試験。総合1位は" + Academics.LastOverall[0].Key.displayName);
+            }
 
             // 科目ごとの1位（同じ子は1回だけご機嫌に）
             var top = new HashSet<SimCharacter>();
@@ -300,7 +292,7 @@ namespace LifeSimProto
                         foreach (var a in list) if (!a.IsTarget && a.LoveStage >= 1) world.ChangeLove(a, g.key == "date" ? 8f : 3f);
                     var names = new List<string>();
                     foreach (var a in list) names.Add(a.displayName);
-                    world.Log(g.label.Replace("に参加している", "").Replace("に出かけている", "").Replace("に集まっている", "") + "が終わった（" + string.Join("・", names.ToArray()) + "）");
+                    if (!g.key.StartsWith("year_")) world.Log(g.label.Replace("に参加している", "").Replace("に出かけている", "").Replace("に集まっている", "") + "が終わった（" + string.Join("・", names.ToArray()) + "）");
                 }
                 if (world.Now > g.end + 120) world.gatherings.RemoveAt(i);
             }

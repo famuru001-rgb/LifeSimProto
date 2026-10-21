@@ -25,7 +25,8 @@ namespace LifeSimProto
         /// <summary>満月の日（各季節の風の日）。</summary>
         public static bool IsFullMoon(int day) { return Weekday(day) == 3; }
         public static int Season(int day) { return ((day - 1) / DaysPerSeason) % 4; }
-        public static bool IsFestival(int day) { return day % DaysPerSeason == 0; }
+        /// <summary>大きな行事の日（YearEvents の学校の行事・寮のイベント）。</summary>
+        public static bool IsFestival(int day) { return YearEvents.IsBigDay(day); }
 
         public static bool IsHoliday(int day, bool[] holidays)
         {
@@ -40,7 +41,7 @@ namespace LifeSimProto
         /// <summary>授業のある日（光・火・風・月の日で、休日でない日）。</summary>
         public static bool IsClassDay(int day, bool[] holidays)
         {
-            return Academics.TimetableRow(Weekday(day)) >= 0 && !IsHoliday(day, holidays) && !IsExamDay(day, holidays);
+            return Academics.TimetableRow(Weekday(day)) >= 0 && !IsHoliday(day, holidays) && !IsExamDay(day, holidays) && !YearEvents.NoClassDay(day);
         }
 
         public static Weather WeatherOf(int day)
@@ -80,7 +81,7 @@ namespace LifeSimProto
 
         public static string DateText(int day, bool[] holidays)
         {
-            string s = Year(day) + "年目の" + SeasonNames[Season(day)] + "・" + WeekdayNames[Weekday(day)];
+            string s = Loop.Count + "周目" + (Year(day) > 1 ? "（" + Year(day) + "年目）" : "") + "の" + SeasonNames[Season(day)] + "・" + WeekdayNames[Weekday(day)];
             if (IsHoliday(day, holidays)) s += "（休日）";
             if (IsFullMoon(day)) s += "・満月";
             return s + "・" + WeatherName(WeatherOf(day));

@@ -131,6 +131,7 @@ namespace LifeSimProto
         public bool BadWeatherToday { get { return Calendar.BadWeather(Day); } }
         public bool ExamEveToday { get { return Calendar.IsExamEve(Day, holidayWeekdays); } }
         public PlayerControl player;
+        public int dormReputation;   // 寮の評判（行事の成功や試験で上がる）
 
         public Gathering ActiveGatheringFor(SimCharacter c)
         {
@@ -165,8 +166,10 @@ namespace LifeSimProto
             SetupCamera();
             player = gameObject.AddComponent<PlayerControl>();
             gameObject.AddComponent<EventDirector>();
+            gameObject.AddComponent<YearEvents>();
             gameObject.AddComponent<SimHud>();
             Log("寮の試作を開始しました（" + Day + "日目 " + ScheduleMaker.Clock(Now) + "）");
+            if (Loop.Count > 1) Log("★ " + Loop.Count + "周目の春の朝。篤だけが、前の1年を覚えている");
         }
 
         void Update()

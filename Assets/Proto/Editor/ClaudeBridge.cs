@@ -43,6 +43,30 @@ namespace LifeSimProto.EditorTools
             {
                 string cmd = raw.Trim().ToLowerInvariant();
                 if (cmd.Length == 0) continue;
+                // 試験用：skipto（日 時）＝ゲームの時刻を進める／speed（倍）＝速さ／gamelog＝寮の記録を game_log.txt に書く
+                var w = EditorApplication.isPlaying ? LifeSimProto.LoungeWorld.Instance : null;
+                if (cmd.StartsWith("skipto ") || cmd.StartsWith("speed ") || cmd == "gamelog")
+                {
+                    if (w == null) { log.AppendLine(cmd + ": not playing"); continue; }
+                    var a = cmd.Split(' ');
+                    if (a[0] == "skipto" && a.Length >= 3)
+                    {
+                        double target = (int.Parse(a[1]) - 1) * 1440.0 + double.Parse(a[2], System.Globalization.CultureInfo.InvariantCulture) * 60.0;
+                        if (target > w.gameMinutes) w.gameMinutes = target;
+                        log.AppendLine("skipto: " + w.Day + "日目 " + LifeSimProto.ScheduleMaker.Clock(w.Now));
+                    }
+                    else if (a[0] == "speed" && a.Length >= 2)
+                    {
+                        w.SetUserSpeed(float.Parse(a[1], System.Globalization.CultureInfo.InvariantCulture));
+                        log.AppendLine("speed: " + w.userSpeed);
+                    }
+                    else if (cmd == "gamelog")
+                    {
+                        File.WriteAllText(Path.Combine(Path.GetDirectoryName(ResultPath), "game_log.txt"), string.Join("\n", w.log.ToArray()), Encoding.UTF8);
+                        log.AppendLine("gamelog: ok");
+                    }
+                    continue;
+                }
                 switch (cmd)
                 {
                     case "refresh":

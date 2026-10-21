@@ -132,6 +132,10 @@ namespace LifeSimProto
         public bool Present { get { return state != State.Away; } }
         public bool IsMoving { get { return (state == State.Walking || state == State.Approaching) && path.Count > 0; } }
         public bool IsSick { get { return sickRest; } }
+        /// <summary>最後に篤のそばにいた時刻（応援が届いたかの目安）。</summary>
+        public double LastFContact { get { return lastFContact; } }
+        /// <summary>風邪を1段階軽くする（篤の回復魔法）。</summary>
+        public void HealCold() { if (GetStage(StatusLine.Cold) > 0) Ease(StatusLine.Cold); tired = Mathf.Max(0f, tired - 10f); }
         public bool InPrivate { get { return state == State.Private; } }
         bool OnMission
         {
@@ -712,6 +716,8 @@ namespace LifeSimProto
                 if (IsTarget) v = 8f + Random.Range(0f, 6f); // 篤は異世界から来たばかり
                 skill[i] = Mathf.Clamp(v, 0f, 100f);
             }
+            // 篤の学力はループで持ち越す
+            if (IsTarget && Loop.fSkills != null) for (int i = 0; i < Academics.Count && i < Loop.fSkills.Length; i++) skill[i] = Loop.fSkills[i];
         }
 
         public bool Enrolled(int s) { return profile != null && s >= 0 && System.Array.IndexOf(profile.enrolled, s) >= 0; }
@@ -920,8 +926,9 @@ namespace LifeSimProto
                         classBlocks = Mathf.Max(1, Mathf.RoundToInt((float)((it.end - it.start) / 100.0)));
                         classSubjects.Clear(); classSubjects.AddRange(it.subjects);
                         classSlots.Clear(); classSlots.AddRange(it.slots);
-                        awayLabel = it.Label == "試験" ? "試験を受けている" : "授業に出ている";
-                        StartLeave(it.Label == "試験" ? "試験を受けに行く" : "授業に出かける");
+                        bool examItem = it.Label.EndsWith("試験");
+                        awayLabel = examItem ? "試験を受けている" : "授業に出ている";
+                        StartLeave(examItem ? it.Label + "を受けに行く" : "授業に出かける");
                         return true;
                     case TaskKind.Breakfast:
                     case TaskKind.Lunch:
@@ -2112,6 +2119,26 @@ namespace LifeSimProto
             return all[Random.Range(0, all.Length)];
         }
 
+        void NoteZukan(TalkTopic tp, int feelMe, SimCharacter partner, int feelYou)
+        {
+            var f = world.RomanceTarget;
+            if (f == null) return;
+            bool heard = IsTarget || partner.IsTarget || (f.Present && (f.transform.position - transform.position).sqrMagnitude < 36f);
+            if (!heard) return;
+            LearnTags(tp, feelMe);
+            partner.LearnTags(tp, feelYou);
+        }
+
+        void LearnTags(TalkTopic tp, int feel)
+        {
+            if (feel == 0 || profile == null) return;
+            foreach (var g in tp.tags)
+            {
+                if (feel > 0 && profile.Likes(g)) Loop.Learn(world, this, "好き", g);
+                if (feel < 0 && profile.Dislikes(g)) Loop.Learn(world, this, "苦手", g);
+            }
+        }
+
         /// <summary>話題が好きなら 1、苦手なら -1、どちらでもなければ 0。</summary>
         public int TopicFeeling(TalkTopic t)
         {
@@ -2261,6 +2288,8 @@ namespace LifeSimProto
             float bonus = (koibana ? 0.3f : 0f) + (visit ? 0.3f : 0f) + TalkBonus() + partner.TalkBonus();
             // 好きな話題だと楽しく、苦手な話題だと気まずくなりやすい
             bonus += (feelYou > 0 ? 0.25f : (feelYou < 0 ? -0.35f : 0f)) + (feelMe > 0 ? 0.1f : 0f);
+            // 篤が話した・そばで聞いた好き嫌いは、図鑑に書かれる
+            if (tp != null && (feelYou != 0 || feelMe != 0)) NoteZukan(tp, feelMe, partner, feelYou);
             if ((IsTarget && partner.IsLover) || (IsLover && partner.IsTarget)) bonus += 0.15f;
             if (requestEffort >= 0f && hasOrder) bonus += (requestEffort - 0.4f) * 0.4f;
             TalkResult result = world.rel.Roll(id, partner.id, bonus);

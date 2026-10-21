@@ -42,6 +42,14 @@ namespace LifeSimProto
 
         public CharProfile L(string key, params string[] v) { lines[key] = v; return this; }
 
+        int[] baseEnrolled;
+        /// <summary>取っている科目を最初の状態に戻す（篤は魔法を覚えると実技が増えるため）。</summary>
+        public void ResetEnrolled()
+        {
+            if (baseEnrolled == null) baseEnrolled = (int[])enrolled.Clone();
+            else enrolled = (int[])baseEnrolled.Clone();
+        }
+
         public bool Likes(string tag) { return System.Array.IndexOf(likes, tag) >= 0; }
         public bool Dislikes(string tag) { return System.Array.IndexOf(dislikes, tag) >= 0; }
 

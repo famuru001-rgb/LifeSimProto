@@ -71,7 +71,7 @@ namespace LifeSimProto
 
             if (exam)
             {
-                list.Add(new ScheduleItem { kind = TaskKind.Class, title = "試験", start = d0 + Blocks[0, 0] - 15, end = d0 + Blocks[1, 1] + 15 });
+                list.Add(new ScheduleItem { kind = TaskKind.Class, title = Calendar.Season(day) == 3 ? "年度末の試験" : "試験", start = d0 + Blocks[0, 0] - 15, end = d0 + Blocks[1, 1] + 15 });
             }
             else if (Calendar.IsClassDay(day, holidays))
             {
