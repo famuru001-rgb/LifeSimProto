@@ -1590,10 +1590,19 @@ namespace LifeSimProto
         }
 
         // ================= 行動の選択 =================
+        double bedWalkStart = -1;
+
         void Think()
         {
             EnsureSchedule();
             double now = world.Now;
+            // 寝に行く途中で詰まったら（45分たってもたどり着かない）、そのまま部屋で眠る
+            if (goal == Goal.Bed && state == State.Walking)
+            {
+                if (bedWalkStart < 0) bedWalkStart = now;
+                else if (now - bedWalkStart > 45) { world.Log("（" + displayName + "は道で詰まったので、部屋に戻して寝かせた）"); path.Clear(); bedWalkStart = -1; Arrive(); return; }
+            }
+            else bedWalkStart = -1;
             if (inPlaceClass && now >= classUntil) EndPlaceClass();
             if (chatting) return; // その場での会話が終わるまで待つ
 
@@ -1685,6 +1694,13 @@ namespace LifeSimProto
             if (HandleSchedule(now)) return;
             if (state == State.Approaching || state == State.Waiting || state == State.Walking) return;
             if (hasOrder) return; // プレイヤーの指示を実行中
+
+            // ---- 寮生の私物：1日に1回、性欲が高いと自分で買って使うことがある ----
+            if (!IsTarget && selfBuyDay != world.Day && world.MinuteOfDay >= 9f * 60f && world.MinuteOfDay < 20f * 60f && desire >= 50f)
+            {
+                selfBuyDay = world.Day;
+                if (Random.value < Mathf.Clamp01((desire - 50f) / 80f)) SelfBuy();
+            }
 
             // ---- 性欲が最大（昼）：相手を探して会いに行く ----
             if (!PrivateNight && desire >= 99.9f && !sickRest)
@@ -1878,6 +1894,14 @@ namespace LifeSimProto
             return GoTo(p, State.Walking);
         }
 
+        /// <summary>試験用：今の場所・状態・行き先（ClaudeBridge の where で使う）。</summary>
+        public string DebugWhere()
+        {
+            Vector3 p = transform.position;
+            string dest = path.Count > 0 ? string.Format("→({0:F1},{1:F1},{2:F1}) 残り{3}点", path[path.Count - 1].x, path[path.Count - 1].y, path[path.Count - 1].z, path.Count) : "道なし";
+            return string.Format("({0:F2},{1:F2},{2:F2}) {3} goal={4} {5} stuck={6}", p.x, p.y, p.z, state, goal, dest, stuckCount);
+        }
+
         /// <summary>夜に眠っている（昼寝・寝込みは入らない）。このあいだは状態異常にかからない。</summary>
         bool NightSleeping { get { return state == State.Sleeping && !napping && !sickRest; } }
 
@@ -1903,6 +1927,20 @@ namespace LifeSimProto
                 if (best == null || c.desire > best.desire) best = c;
             }
             return best;
+        }
+
+        int selfBuyDay = -1;
+
+        /// <summary>寮生の私物を自分で買って使う（試験用に外からも呼べる）。</summary>
+        public void SelfBuy()
+        {
+            if (IsTarget) return;
+            var list = new List<ItemDef>();
+            foreach (var d in ItemBook.All) if (d.npcOnly) list.Add(d);
+            if (list.Count == 0) return;
+            var it = list[Random.Range(0, list.Count)];
+            world.Log(displayName + "は購買部で「" + it.name + "」を買った");
+            ApplyItem(it.kind, this);
         }
 
         /// <summary>性欲が最大のときに探しに行く相手（女の子→篤、篤→篤を好きな子）。</summary>
@@ -2283,6 +2321,8 @@ namespace LifeSimProto
         {
             var d = ItemBook.Get(k);
             bool gift = giver != null && giver != this;
+            // 寮生の私物は、寮生が自分で使うだけ（渡せない）
+            if (d != null && d.npcOnly && (gift || IsTarget)) { world.Log("「" + d.name + "」は寮生が自分で買って使う物（渡せない）"); return; }
             switch (k)
             {
                 case ItemKind.Sweets:
@@ -3315,7 +3355,7 @@ namespace LifeSimProto
 
         public void ShowBubble(string text, float seconds)
         {
-            bubble = text;
+            bubble = SpeechStyle.Apply(this, text); // 状態で言い方が変わる（SpeechStyle.cs）
             bubbleTimer = seconds;
         }
 
@@ -3388,6 +3428,7 @@ namespace LifeSimProto
             {
                 path.Clear();
                 if (goal == Goal.Private) { privateArrived = true; SetState(State.Idle); return; }
+                if (goal == Goal.Bed) { world.Log("（" + displayName + "は道で詰まったので、部屋に戻して寝かせた）"); Arrive(); return; } // 寝に行く途中で詰まった
                 LeaveCurrentSpot();
                 hasOrder = false;
                 SetState(State.Idle);

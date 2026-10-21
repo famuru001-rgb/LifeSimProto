@@ -80,19 +80,18 @@ namespace LifeSimProto
     {
         public static LoungeWorld Instance { get; private set; }
 
-        [Header("1日の長さ（1倍速での実際の時間・分）")]
-        [Tooltip("夜も含めた1日の長さ（分）")]
-        public float oneDayRealMinutes = 20f;
-        [Tooltip("そのうち夜（23:00〜6:30）にあてる時間（分）")]
-        public float nightRealMinutes = 5f;
+        // 1日の長さ（1倍速での実際の時間・分）：1秒＝ゲームの1分（famuru 決定 2026-10-21。1日＝24分、夜 23:00〜6:30 は7分半）
+        // 場面に保存された古い値を使わないよう、Inspector には出さない
+        [System.NonSerialized] public float oneDayRealMinutes = 24f;
+        [System.NonSerialized] public float nightRealMinutes = 7.5f;
 
         [Header("倍速の設定")]
         [Tooltip("画面上の速さボタン（倍）")]
         public float[] speedOptions = { 1f, 2f, 4f, 10f };
         /// <summary>デバッグ用の速さ（画面の上のボタン・5と6のキー）。</summary>
         [System.NonSerialized] public float[] debugSpeedOptions = { 30f, 60f };
-        [Tooltip("全員が寝ている間の速さ（倍）")]
-        public float allAsleepSpeed = 30f;
+        // 全員が寝ている間の速さ（倍）。famuru 決定 2026-10-21：60倍
+        [System.NonSerialized] public float allAsleepSpeed = 60f;
 
         [Header("暦（1週間7日：光・火・水・風・土・月・星）")]
         [Tooltip("休日にする曜日（チェックした曜日が休日）。初期値は水の日と星の日")]

@@ -15,11 +15,13 @@ namespace LifeSimProto
         // 装飾品：能力値・学力を伸ばす
         LionBracelet, RoseChoker, ArtisanRing, ManaCrystal, SageMonocle, StudyBadge,
         // お守り（その人を意識しやすくなる。記号 A〜J）
-        CharmA, CharmB, CharmC, CharmD, CharmE, CharmF, CharmG, CharmH, CharmI, CharmJ
+        CharmA, CharmB, CharmC, CharmD, CharmE, CharmF, CharmG, CharmH, CharmI, CharmJ,
+        // 寮生の私物（寮生が自分で買って使う。篤は買えない・渡せない）
+        PassionAroma, NightCandle, LongingOil
     }
 
     /// <summary>購買部の棚（表示の分け方）。</summary>
-    public enum ItemShelf { Basic, Needs, Gift, Accessory, Growth, Charm }
+    public enum ItemShelf { Basic, Needs, Gift, Accessory, Growth, Charm, Personal }
     public enum RequestKind { Meet, Study, Rest, Teach }
 
     public class ItemDef
@@ -34,6 +36,7 @@ namespace LifeSimProto
         public float modMinutes; // 補正が続く時間（ゲーム内の分。0 なら身につけている間ずっと）
         public bool accessory;   // 装飾品（1人2つまで）・お守り（1人1つまで）。新しく渡すと付け替える
         public ItemShelf shelf;  // 購買部の棚
+        public bool npcOnly;     // 寮生の私物：寮生が自分で買って使うだけ（篤は買えない・渡せない・使えない）
         public NeedMod Mod { get { return string.IsNullOrEmpty(modId) ? null : NeedBook.Item(modId); } }
     }
 
@@ -102,6 +105,10 @@ namespace LifeSimProto
                 new ItemDef { kind = ItemKind.CharmH, name = "ニナのお守り", price = 80, desc = "お守り：ニナを意識しやすくなる（会いに行きやすく、近くに座りやすく、話すと仲よくなりやすい）", selfUse = true, accessory = true, modId = "charm:H", shelf = ItemShelf.Charm },
                 new ItemDef { kind = ItemKind.CharmI, name = "リアのお守り", price = 80, desc = "お守り：リアを意識しやすくなる（会いに行きやすく、近くに座りやすく、話すと仲よくなりやすい）", selfUse = true, accessory = true, modId = "charm:I", shelf = ItemShelf.Charm },
                 new ItemDef { kind = ItemKind.CharmJ, name = "キッカのお守り", price = 80, desc = "お守り：キッカを意識しやすくなる（会いに行きやすく、近くに座りやすく、話すと仲よくなりやすい）", selfUse = true, accessory = true, modId = "charm:J", shelf = ItemShelf.Charm },
+                // 寮生の私物（寮生が自分で買って使う。プレゼントにはできない）
+                new ItemDef { kind = ItemKind.PassionAroma, name = "情熱のアロマ", price = 40, desc = "私物：半日、性欲が高まりやすい", npcOnly = true, modId = "own:情熱のアロマ", modMinutes = 720f, shelf = ItemShelf.Personal },
+                new ItemDef { kind = ItemKind.NightCandle, name = "夜想のキャンドル", price = 40, desc = "私物：1日、性欲のたまりがたまりやすい・眠気がたまりにくい", npcOnly = true, modId = "own:夜想のキャンドル", modMinutes = 1440f, shelf = ItemShelf.Personal },
+                new ItemDef { kind = ItemKind.LongingOil, name = "恋慕の香油", price = 50, desc = "私物：1日、恋心と性欲が高まりやすい", npcOnly = true, modId = "own:恋慕の香油", modMinutes = 1440f, shelf = ItemShelf.Personal },
             };
         }
     }
@@ -144,7 +151,7 @@ namespace LifeSimProto
         public bool Buy(ItemKind k)
         {
             var d = ItemBook.Get(k);
-            if (d == null || money < d.price) return false;
+            if (d == null || money < d.price || d.npcOnly) return false; // 寮生の私物は篤は買えない
             money -= d.price;
             inventory[k] = Count(k) + 1;
             world.Log("購買部で「" + d.name + "」を買った（銀貨−" + d.price + "）");

@@ -40,7 +40,7 @@ namespace LifeSimProto
         Rect RomancePanel { get { return new Rect(VW - 492, 516, 480, 292); } }
         Rect ShopPanel { get { return new Rect(VW / 2f - 380f, 110f, 760f, 110f + ShopRowsMax * 44f); } }
         ItemShelf shopShelf = ItemShelf.Basic;
-        static readonly string[] ShelfNames = { "食べ物・薬", "欲求のアイテム", "プレゼント", "装飾品", "能力の装飾品", "お守り" };
+        static readonly string[] ShelfNames = { "食べ物・薬", "欲求の品", "プレゼント", "装飾品", "能力の装飾", "お守り", "寮生の私物" };
         static int ShopRowsMax
         {
             get
@@ -603,8 +603,8 @@ namespace LifeSimProto
             float tx = r.x + 14;
             for (int i = 0; i < ShelfNames.Length; i++)
             {
-                if (GUI.Button(new Rect(tx, r.y + 44, 118, 30), ShelfNames[i], (int)shopShelf == i ? buttonOn : smallButton)) shopShelf = (ItemShelf)i;
-                tx += 122;
+                if (GUI.Button(new Rect(tx, r.y + 44, 100, 30), ShelfNames[i], (int)shopShelf == i ? buttonOn : smallButton)) shopShelf = (ItemShelf)i;
+                tx += 104;
             }
             float y = r.y + 86;
             foreach (var d in ItemBook.All)
@@ -612,10 +612,14 @@ namespace LifeSimProto
                 if (d.shelf != shopShelf) continue;
                 GUI.Label(new Rect(r.x + 14, y, 300, 24), d.name + "（" + d.price + "）", small);
                 GUI.Label(new Rect(r.x + 14, y + 20, 600, 20), d.desc, tiny);
-                GUI.Label(new Rect(r.x + 540, y + 2, 70, 24), "所持 " + pc.Count(d.kind), small);
-                GUI.enabled = pc.money >= d.price;
-                if (GUI.Button(new Rect(r.xMax - 112, y + 2, 96, 34), "買う", button)) pc.Buy(d.kind);
-                GUI.enabled = true;
+                if (!d.npcOnly) GUI.Label(new Rect(r.x + 540, y + 2, 70, 24), "所持 " + pc.Count(d.kind), small);
+                if (d.npcOnly) GUI.Label(new Rect(r.xMax - 150, y + 6, 140, 24), "寮生だけが買う", tiny); // 篤は買えない
+                else
+                {
+                    GUI.enabled = pc.money >= d.price;
+                    if (GUI.Button(new Rect(r.xMax - 112, y + 2, 96, 34), "買う", button)) pc.Buy(d.kind);
+                    GUI.enabled = true;
+                }
                 y += 44;
             }
         }

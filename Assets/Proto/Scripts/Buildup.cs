@@ -64,7 +64,7 @@ namespace LifeSimProto
 
     public static class BuildupBook
     {
-        /// <summary>性欲：60以上でたまる（100なら約6時間、80なら約9時間、60なら約18時間）。40・70・100で そわそわ・悶々・発情。</summary>
+        /// <summary>性欲：60以上でたまる（100なら約6時間、80なら約9時間、60なら約18時間）。40・60・80で そわそわ・悶々・発情。</summary>
         public static readonly BuildupDef Desire = new BuildupDef
         {
             need = NeedKind.Desire,
@@ -73,7 +73,7 @@ namespace LifeSimProto
             rateFloor = 40f,
             fillMinutesAtMax = 360f,
             decayPerMin = 0.1f,
-            stageAt = new[] { 40f, 70f, 100f },
+            stageAt = new[] { 40f, 60f, 80f }, // 発情は80から（famuru 決定 2026-10-21）
             reliefAtFull = 0.25f,
             topRateMul = 2f,
             topCreepPerMin = 0.05f,

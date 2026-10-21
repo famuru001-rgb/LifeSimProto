@@ -126,10 +126,15 @@ namespace LifeSimProto
             foreach (var kv in CharmNames)
                 I("charm:" + kv.Key, kv.Value + "のお守り", ModSource.Charm).Focus(kv.Key).Desc(kv.Value + "を意識しやすくなる");
 
+            // ---- 寮生の私物（寮生が自分で買って使う物だけ。プレゼントにはできない）----
+            I("own:情熱のアロマ", "情熱のアロマ", ModSource.Item).Rate(Desire, 1.3f).Desc("性欲が高まりやすい");
+            I("own:夜想のキャンドル", "夜想のキャンドル", ModSource.Item).Build(Desire, 1.3f).Rate(Sleepy, 0.9f).Desc("性欲のたまりがたまりやすい・眠気がたまりにくい");
+            I("own:恋慕の香油", "恋慕の香油", ModSource.Item).Rate(Love, 1.2f).Rate(Desire, 1.2f).Desc("恋心と性欲が高まりやすい");
+
             // ---- 衣装・家具（これから足す）----
             // 例）I("outfit:浴衣", "浴衣", ModSource.Outfit).Rate(Tired, 0.9f);
             //     I("furniture:暖炉の椅子", "暖炉の前の椅子", ModSource.Furniture).Relief(Tired, 1.3f);
-            // ※ 性欲や発情を上げる物は作らない（ほかの子に使えてしまうため）
+            // ※ 性欲や発情を上げる物は「寮生の私物」だけ（本人が自分で買って使う。篤からは渡せない）
         }
 
         /// <summary>お守りの記号と名前（キャラの記号 A〜J）。</summary>
