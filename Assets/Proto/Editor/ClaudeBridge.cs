@@ -45,7 +45,7 @@ namespace LifeSimProto.EditorTools
                 if (cmd.Length == 0) continue;
                 // 試験用：skipto（日 時）＝ゲームの時刻を進める／speed（倍）＝速さ／gamelog＝寮の記録を game_log.txt に書く／openall＝新しい場所を全部開く／placeshots＝場所の写真
                 var w = EditorApplication.isPlaying ? LifeSimProto.LoungeWorld.Instance : null;
-                if (cmd.StartsWith("skipto ") || cmd.StartsWith("speed ") || cmd == "gamelog" || cmd == "openall" || cmd == "placeshots" || cmd == "status")
+                if (cmd.StartsWith("skipto ") || cmd.StartsWith("speed ") || cmd == "gamelog" || cmd == "openall" || cmd == "placeshots" || cmd == "status" || cmd == "testprivate")
                 {
                     if (w == null) { log.AppendLine(cmd + ": not playing"); continue; }
                     var a = cmd.Split(' ');
@@ -70,6 +70,20 @@ namespace LifeSimProto.EditorTools
                     {
                         new GameObject("PlaceShots").AddComponent<LifeSimProto.PlaceShots>();
                         log.AppendLine("placeshots: started");
+                    }
+                    else if (cmd == "testprivate")
+                    {
+                        // 試験用：二人きりの時間を起こしやすくする（2人の気持ちを「好き」にして、性欲を上げる）
+                        var f = w.RomanceTarget;
+                        int n = 0;
+                        foreach (var c in w.characters)
+                        {
+                            if (c.IsTarget || n >= 2) continue;
+                            w.romance.love[c.id] = Mathf.Max(w.romance.love[c.id], 60f);
+                            c.desire = 95f; n++;
+                        }
+                        if (f != null) f.desire = 80f;
+                        log.AppendLine("testprivate: ok");
                     }
                     else if (cmd == "status")
                     {

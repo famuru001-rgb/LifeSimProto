@@ -18,6 +18,7 @@ namespace LifeSimProto
         public static float[] fAbilities;                     // 篤の能力値（持ち越し）
         public static readonly HashSet<string> Zukan = new HashSet<string>();      // 図鑑でわかったこと（"A:好き:本" など）
         public static readonly List<string> OpenedPlaces = new List<string>();     // 開いた場所（場所ができたら使う）
+        public static readonly HashSet<string> NightTogether = new HashSet<string>(); // その周で篤と夜をいっしょに過ごした子（記号）。周が変わると消える
         public static bool Escaped;                           // 物語でループを抜けた
         public static bool EndlessDays;                       // 抜けたあと、日常を続けることを選んだ
         public static bool AskChoice;                         // 年の終わりに「続ける／もう一周」をたずねている
@@ -30,7 +31,7 @@ namespace LifeSimProto
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetAll()
         {
-            Count = 1; fSkills = null; fAbilities = null; Zukan.Clear(); OpenedPlaces.Clear();
+            Count = 1; fSkills = null; fAbilities = null; NightTogether.Clear(); Zukan.Clear(); OpenedPlaces.Clear();
             Escaped = false; EndlessDays = false; AskChoice = false;
             Album.Entries.Clear();
             FMagic.Unlocked.Clear();
@@ -65,6 +66,7 @@ namespace LifeSimProto
             if (f != null) { fSkills = (float[])f.skill.Clone(); fAbilities = (float[])f.ability.Clone(); }
             Album.Add(w, "…気がつくと、また春の朝だった（" + Count + "周目が終わった）");
             Count++;
+            NightTogether.Clear();
             PickRewind();
 #if UNITY_EDITOR
             UnityEditor.SceneManagement.EditorSceneManager.LoadSceneInPlayMode(SceneManager.GetActiveScene().path, new LoadSceneParameters(LoadSceneMode.Single));

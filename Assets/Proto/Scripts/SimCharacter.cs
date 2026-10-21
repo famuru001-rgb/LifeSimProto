@@ -2256,7 +2256,7 @@ namespace LifeSimProto
             {
                 case State.Sleeping: return sickRest ? "熱で寝込んでいる" : (dozing ? "居眠りしている" : (napping ? "昼寝している" : "寝ている"));
                 case State.Away: return awayLabel ?? "出かけている";
-                case State.Private: return "部屋で過ごしている";
+                case State.Private: return "二人きりで過ごしている";
                 case State.Bathing: return "お風呂";
                 case State.Eating: return "食事中";
                 case State.Talking: return "会話中";
@@ -2814,12 +2814,12 @@ namespace LifeSimProto
             partner.ShowBubble("うん", 1.2f);
             yield return new WaitForSeconds(1.2f);
 
-            RoomInfo r = (Random.value < 0.5f || f.room == null) ? girl.room : f.room;
+            // 場所を選ぶ：個室（女の子の部屋・篤の部屋）か、開いている場所（温室・図書室・屋上の天文台・中庭）で、ほかの人がいない所
+            var spot = PickPrivateSpot(group, f, girl);
             talkPartner = null;
             partner.talkPartner = null;
-            if (r == null) { CancelPrivate(group); yield break; }
-            var walkTo = new List<Vector3> { r.bed.approach, r.futon.approach, r.cushions[0].approach, r.cushions[1].approach };
-            for (int i = 0; i < group.Count; i++) group[i].GoPrivate(walkTo[i % walkTo.Count]);
+            if (spot == null) { CancelPrivate(group); yield break; }
+            for (int i = 0; i < group.Count; i++) group[i].GoPrivate(spot.walkTo[i % spot.walkTo.Count], spot.name);
 
             float t = 0f;
             while (true)
@@ -2835,21 +2835,85 @@ namespace LifeSimProto
             if (!arrived.Contains(f) || arrived.Count < 2) { CancelPrivate(group); yield break; }
             foreach (var c in group) if (!arrived.Contains(c)) c.CancelPrivateSelf();
 
-            // 並び：全員ベッドの縁に並んで座る（最大4人）
-            Vector3 along = r.bed.forward;
-            Vector3 edgeOut = new Vector3(0f, 0f, 1f);
-            float[] offs = arrived.Count <= 2 ? new[] { -0.3f, 0.2f } : (arrived.Count == 3 ? new[] { -0.55f, -0.05f, 0.45f } : new[] { -0.72f, -0.25f, 0.22f, 0.69f });
-            var spots = new List<KeyValuePair<Vector3, Vector3>>();
-            foreach (var o in offs) spots.Add(new KeyValuePair<Vector3, Vector3>(r.bed.position + along * o + edgeOut * 0.15f, edgeOut));
             double until = world.Now + 30.0 + 10.0 * (arrived.Count - 2);
             var names = new List<string>();
+            var spots = spot.Spots(arrived.Count);
             for (int i = 0; i < arrived.Count; i++)
             {
                 var sp = spots[Mathf.Min(i, spots.Count - 1)];
-                arrived[i].EnterPrivate(until, r, sp.Key, sp.Value, false);
+                arrived[i].EnterPrivate(until, spot.room, sp.pos, sp.facing, sp.floor);
                 names.Add(arrived[i].displayName);
             }
-            world.Log("♥ " + string.Join("・", names.ToArray()) + "が" + r.AreaName + "で一緒に過ごしている");
+            world.Log("♥ " + string.Join("・", names.ToArray()) + "が" + spot.name + "で二人きりの時間を過ごしている");
+            // 夜（21時〜朝）なら「夜をいっしょに過ごした」と記録する（その周だけ。物語の針の条件）
+            float mm = world.MinuteOfDay;
+            if (mm >= 21f * 60f || LoungeWorld.IsNight(mm))
+                foreach (var c in arrived) if (!c.IsTarget && c.letter != null) Loop.NightTogether.Add(c.letter);
+        }
+
+        /// <summary>二人きりの時間の場所。</summary>
+        class PrivateSpot
+        {
+            public string name;
+            public RoomInfo room;
+            public readonly List<Vector3> walkTo = new List<Vector3>();
+            public readonly List<Seat> seatList = new List<Seat>();
+
+            public struct Place { public Vector3 pos, facing; public bool floor; }
+
+            public List<Place> Spots(int n)
+            {
+                var res = new List<Place>();
+                if (room != null)
+                {
+                    // 個室：ベッドの縁に並んで座る（最大4人）
+                    Vector3 along = room.bed.forward;
+                    Vector3 edgeOut = new Vector3(0f, 0f, 1f);
+                    float[] offs = n <= 2 ? new[] { -0.3f, 0.2f } : (n == 3 ? new[] { -0.55f, -0.05f, 0.45f } : new[] { -0.72f, -0.25f, 0.22f, 0.69f });
+                    foreach (var o in offs) res.Add(new Place { pos = room.bed.position + along * o + edgeOut * 0.15f, facing = edgeOut, floor = false });
+                }
+                else foreach (var s in seatList) res.Add(new Place { pos = s.position, facing = s.forward, floor = s.floorSeat });
+                return res;
+            }
+        }
+
+        PrivateSpot PickPrivateSpot(List<SimCharacter> group, SimCharacter f, SimCharacter girl)
+        {
+            var cands = new List<PrivateSpot>();
+            foreach (var r in new[] { girl.room, f.room })
+            {
+                if (r == null) continue;
+                var ps = new PrivateSpot { name = r.AreaName, room = r };
+                ps.walkTo.AddRange(new[] { r.bed.approach, r.futon.approach, r.cushions[0].approach, r.cushions[1].approach });
+                cands.Add(ps);
+            }
+            bool bad = world.BadWeatherToday;
+            foreach (var place in new[] { LoungeWorld.Greenhouse, LoungeWorld.Library, LoungeWorld.Observatory, LoungeWorld.Courtyard })
+            {
+                if (!world.PlaceOpen(place)) continue;
+                if (bad && (place == LoungeWorld.Observatory || place == LoungeWorld.Courtyard)) continue;
+                // ほかの人がいない所だけ
+                bool someone = false;
+                foreach (var o in world.characters)
+                    if (!group.Contains(o) && o.Present && world.AreaName(o.transform.position) == place) { someone = true; break; }
+                if (someone) continue;
+                // 並んで座れる席（いちばん近くに集まった席）
+                var free = world.seats.FindAll(x => x.area == place && x.kind == SeatKind.Sit && x.occupant == null);
+                if (free.Count < group.Count) continue;
+                var first = free[Random.Range(0, free.Count)];
+                free.Sort((x, y) => (x.position - first.position).sqrMagnitude.CompareTo((y.position - first.position).sqrMagnitude));
+                var ps = new PrivateSpot { name = place };
+                for (int i = 0; i < group.Count; i++) { ps.seatList.Add(free[i]); ps.walkTo.Add(free[i].approach); }
+                cands.Add(ps);
+            }
+            if (cands.Count == 0) return null;
+            // 個室は少し選ばれやすい
+            float total = 0f;
+            var ws = new List<float>();
+            foreach (var c in cands) { float w = c.room != null ? 1.4f : 1f; ws.Add(w); total += w; }
+            float pick = Random.value * total;
+            for (int i = 0; i < cands.Count; i++) { pick -= ws[i]; if (pick <= 0f) return cands[i]; }
+            return cands[cands.Count - 1];
         }
 
         void CancelPrivate(List<SimCharacter> group)
@@ -2867,13 +2931,13 @@ namespace LifeSimProto
             actionText = "ぼんやりしている";
         }
 
-        void GoPrivate(Vector3 dest)
+        void GoPrivate(Vector3 dest, string where = null)
         {
             LeaveCurrentSpot();
             privatePending = true;
             goal = Goal.Private;
             privateArrived = false;
-            actionText = "部屋へ向かっている";
+            actionText = (where ?? "部屋") + "へ向かっている";
             if (!GoTo(world.NearestFree(dest), State.Walking)) { privateArrived = true; SetState(State.Idle); }
         }
 
@@ -2898,6 +2962,7 @@ namespace LifeSimProto
         void EndPrivate()
         {
             if (privateRoom != null) transform.position = world.NearestFree(privateRoom.bed.approach + new Vector3(Random.Range(-0.5f, 0.5f), 0f, Random.Range(-0.4f, 0.6f)));
+            else transform.position = world.NearestFree(transform.position + transform.forward * 0.7f);
             desire = 0f;
             lonely = Mathf.Max(0f, lonely - 40f);
             loveNeed = 0f;
@@ -3169,7 +3234,7 @@ namespace LifeSimProto
                 case Goal.Private:
                     SetState(State.Idle);
                     privateArrived = true;
-                    actionText = "部屋で待っている";
+                    actionText = "待ち合わせの場所で待っている";
                     break;
                 default:
                     SetState(State.Idle);
