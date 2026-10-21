@@ -8,7 +8,7 @@ namespace LifeSimProto
     /// ループ（1年＝28日で春の朝に戻る）。篤だけが覚えている（だれにも知られていない）。
     /// 残るもの：篤の記憶・キャラ図鑑・思い出のアルバム・篤の学力（と使える魔法）・開いた場所。
     /// 戻るもの：銀貨・持ち物・みんなとの関係（知り合いに戻る）。
-    /// 戻る瞬間は周ごとに変わる（今は物語がまだないので、冬の最後の夜の前後で少し変わる）。
+    /// 戻る瞬間：毎周、冬至の祭りが終わったあと（夜の時刻は周ごとに少し変わる）。
     /// 物語でループを抜けたら、終わりのない日常を続けるか、もう一度周回するかを選べる（物語はあとで入れる）。
     /// </summary>
     public static class Loop
@@ -40,10 +40,10 @@ namespace LifeSimProto
 
         static void PickRewind()
         {
-            // 戻る瞬間は周ごとに少し変わる（1周目は冬至の祭りのあと）
+            // 毎周、冬至の祭り（冬・星の日 17:30〜19:30）が終わったら戻る。戻る時刻は周ごとに少し変わる（famuru 決定 2026-10-21）
             var rnd = new System.Random(Count * 977 + 3);
-            RewindDayOfYear = Count == 1 ? 28 : 27 + rnd.Next(0, 2);
-            RewindHour = Count == 1 ? 23.5f : 22f + (float)rnd.NextDouble() * 1.8f;
+            RewindDayOfYear = 28;
+            RewindHour = Count == 1 ? 22.5f : 20.5f + (float)rnd.NextDouble() * 3f;
         }
 
         public static string Key(SimCharacter c, string kind, string what) { return c.letter + ":" + kind + ":" + what; }
