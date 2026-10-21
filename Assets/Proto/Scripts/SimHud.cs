@@ -97,6 +97,7 @@ namespace LifeSimProto
             if (rig == null) rig = world.mainCamera.GetComponent<CameraRig>();
             if (selected != null && !selected.Present) Select(null);
 
+            if (world != null) foreach (var ch in world.characters) NeedRates(ch, NeedValues(ch)); // 欲求の変化を測っておく
             var kb = Keyboard.current;
             if (kb != null)
             {
@@ -780,15 +781,22 @@ namespace LifeSimProto
             if (worn.Count > 0) { GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "効いている物：" + string.Join("／", worn.ToArray()), tiny); y += 24; }
             y += 4;
 
-            Bar(new Rect(r.x + 14, y, r.width - 28, 20), "さみしさ", c.lonely, new Color(0.45f, 0.6f, 0.95f)); y += 23;
-            Bar(new Rect(r.x + 14, y, r.width - 28, 20), "疲れ", c.tired, new Color(0.9f, 0.6f, 0.3f)); y += 23;
-            Bar(new Rect(r.x + 14, y, r.width - 28, 20), "退屈", c.bored, new Color(0.6f, 0.85f, 0.4f)); y += 23;
-            Bar(new Rect(r.x + 14, y, r.width - 28, 20), "空腹", c.hunger, new Color(0.95f, 0.75f, 0.3f)); y += 23;
-            Bar(new Rect(r.x + 14, y, r.width - 28, 20), "勉強", c.study, new Color(0.5f, 0.75f, 0.9f)); y += 23;
-            Bar(new Rect(r.x + 14, y, r.width - 28, 20), "趣味", c.hobbyNeed, new Color(0.75f, 0.6f, 0.95f)); y += 23;
-            Bar(new Rect(r.x + 14, y, r.width - 28, 20), "睡眠", c.sleepy, new Color(0.55f, 0.55f, 0.8f)); y += 23;
-            if (!c.IsTarget) { Bar(new Rect(r.x + 14, y, r.width - 28, 20), "恋心", c.loveNeed, new Color(1f, 0.5f, 0.65f)); y += 23; }
-            Bar(new Rect(r.x + 14, y, r.width - 28, 20), "性欲", c.desire, new Color(0.85f, 0.4f, 0.55f)); y += 27;
+            // 欲求：増えているものと減っているものに分けて、今の値と変化（ゲーム内1時間あたり）を出す（famuru 決定 2026-10-21）
+            var vals = NeedValues(c);
+            var rates = NeedRates(c, vals);
+            for (int grp = 0; grp < 2; grp++)
+            {
+                bool rising = grp == 0;
+                bool any = false;
+                for (int k = 0; k < vals.Length; k++)
+                {
+                    if (c.IsTarget && NeedNames[k] == "恋心") continue;
+                    if ((rates[k] >= 0f) != rising) continue;
+                    if (!any) { GUI.Label(new Rect(r.x + 14, y, 200, 20), rising ? "▲ 増えている" : "▼ 減っている", tiny); y += 20; any = true; }
+                    NeedBar(new Rect(r.x + 14, y, r.width - 28, 20), NeedNames[k], vals[k], rates[k], NeedColors[k]); y += 22;
+                }
+            }
+            y += 4;
 
             GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "今日の予定", small);
             y += 22;
@@ -927,6 +935,54 @@ namespace LifeSimProto
         static string Level(float v)
         {
             return v >= 0.7f ? "高い" : (v >= 0.4f ? "ふつう" : "低い");
+        }
+
+        // ---- 欲求の表示 ----
+        static readonly string[] NeedNames = { "さみしさ", "疲れ", "退屈", "空腹", "勉強", "趣味", "睡眠", "恋心", "性欲" };
+        static readonly Color[] NeedColors =
+        {
+            new Color(0.45f, 0.6f, 0.95f), new Color(0.9f, 0.6f, 0.3f), new Color(0.6f, 0.85f, 0.4f), new Color(0.95f, 0.75f, 0.3f), new Color(0.5f, 0.75f, 0.9f),
+            new Color(0.75f, 0.6f, 0.95f), new Color(0.55f, 0.55f, 0.8f), new Color(1f, 0.5f, 0.65f), new Color(0.85f, 0.4f, 0.55f)
+        };
+        static float[] NeedValues(SimCharacter c) { return new[] { c.lonely, c.tired, c.bored, c.hunger, c.study, c.hobbyNeed, c.sleepy, c.loveNeed, c.desire }; }
+
+        class NeedSample { public double t; public float[] v; public float[] rate; }
+        readonly Dictionary<SimCharacter, NeedSample> needSamples = new Dictionary<SimCharacter, NeedSample>();
+        const double NeedSampleMinutes = 10; // この分数ごとに変化を測る
+
+        /// <summary>欲求の変化（ゲーム内1時間あたり）。10分ごとに測り直す。</summary>
+        float[] NeedRates(SimCharacter c, float[] cur)
+        {
+            NeedSample s;
+            if (!needSamples.TryGetValue(c, out s) || world.Now < s.t)
+            {
+                s = new NeedSample { t = world.Now, v = (float[])cur.Clone(), rate = new float[cur.Length] };
+                needSamples[c] = s;
+                return s.rate;
+            }
+            double dt = world.Now - s.t;
+            if (dt >= NeedSampleMinutes)
+            {
+                for (int i = 0; i < cur.Length; i++) s.rate[i] = (float)((cur[i] - s.v[i]) / dt * 60.0);
+                s.v = (float[])cur.Clone();
+                s.t = world.Now;
+            }
+            return s.rate;
+        }
+
+        /// <summary>短いゲージ＋今の値＋変化。</summary>
+        void NeedBar(Rect r, string name, float value, float rate, Color c)
+        {
+            GUI.Label(new Rect(r.x, r.y - 3, 80, r.height + 4), name, small);
+            Rect bar = new Rect(r.x + 80, r.y + 4, r.width - 80 - 150, r.height - 8);
+            GUI.DrawTexture(bar, barBg);
+            Color old = GUI.color;
+            GUI.color = c;
+            GUI.DrawTexture(new Rect(bar.x, bar.y, bar.width * Mathf.Clamp01(value / 100f), bar.height), ProtoArt.White);
+            GUI.color = old;
+            int rv = Mathf.RoundToInt(rate);
+            string rs = rv > 0 ? "+" + rv : (rv < 0 ? rv.ToString() : "±0");
+            GUI.Label(new Rect(bar.xMax + 8, r.y - 3, 142, r.height + 4), Mathf.RoundToInt(value) + "　" + rs + "/時", small);
         }
 
         void Bar(Rect r, string name, float value, Color c)
