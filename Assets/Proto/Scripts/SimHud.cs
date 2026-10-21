@@ -781,20 +781,28 @@ namespace LifeSimProto
             if (worn.Count > 0) { GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "効いている物：" + string.Join("／", worn.ToArray()), tiny); y += 24; }
             y += 4;
 
-            // 欲求：増えているものと減っているものに分けて、今の値と変化（ゲーム内1時間あたり）を出す（famuru 決定 2026-10-21）
+            // 欲求：「時間で減る（満たすと増える）」と「時間で増える（満たすと減る）」に分けて、今の値と変化（ゲーム内1時間あたり）を出す。
+            // 減る側は画面の表示だけ「100−値」にしている（中の仕組みは同じ。famuru 決定 2026-10-21）
             var vals = NeedValues(c);
             var rates = NeedRates(c, vals);
             for (int grp = 0; grp < 2; grp++)
             {
-                bool rising = grp == 0;
-                bool any = false;
-                for (int k = 0; k < vals.Length; k++)
+                bool inv = grp == 0;
+                GUI.Label(new Rect(r.x + 14, y, 300, 20), inv ? "▼ 時間で減る（満たすと増える）" : "▲ 時間で増える（満たすと減る）", tiny); y += 20;
+                for (int k = 0; k < NeedNames.Length; k++)
                 {
-                    if (c.IsTarget && NeedNames[k] == "恋心") continue;
-                    if ((rates[k] >= 0f) != rising) continue;
-                    if (!any) { GUI.Label(new Rect(r.x + 14, y, 200, 20), rising ? "▲ 増えている" : "▼ 減っている", tiny); y += 20; any = true; }
-                    NeedBar(new Rect(r.x + 14, y, r.width - 28, 20), NeedNames[k], vals[k], rates[k], NeedColors[k]); y += 22;
+                    if (NeedInverted[k] != inv) continue;
+                    if (c.IsTarget && k == 7) continue; // 篤に恋心はない
+                    float v = inv ? 100f - vals[k] : vals[k], rt = inv ? -rates[k] : rates[k];
+                    NeedBar(new Rect(r.x + 14, y, r.width - 28, 20), NeedNames[k], v, rt, NeedColors[k]); y += 22;
                 }
+            }
+            // 隠しパラメータ（ボタンで表示・非表示）
+            if (GUI.Button(new Rect(r.x + 14, y, 220, 24), ShowHidden ? "隠しパラメータ：表示中" : "隠しパラメータ：非表示", smallButton)) ShowHidden = !ShowHidden;
+            y += 28;
+            if (ShowHidden)
+            {
+                NeedBar(new Rect(r.x + 14, y, r.width - 28, 20), "性欲のたまり", vals[9], rates[9], new Color(0.7f, 0.3f, 0.45f)); y += 22;
             }
             y += 4;
 
@@ -938,13 +946,16 @@ namespace LifeSimProto
         }
 
         // ---- 欲求の表示 ----
-        static readonly string[] NeedNames = { "さみしさ", "疲れ", "退屈", "空腹", "勉強", "趣味", "睡眠", "恋心", "性欲" };
+        // 表示の名前（順番は NeedValues と同じ）。NeedInverted が true の欲求は「100−値」で出す
+        static readonly string[] NeedNames = { "心の満たされ", "体力", "楽しさ", "満腹度", "勉強", "趣味", "元気", "恋心", "性欲" };
+        static readonly bool[] NeedInverted = { true, true, true, true, false, false, true, false, false };
+        public static bool ShowHidden = false; // 隠しパラメータ（性欲のたまりなど）を出すか
         static readonly Color[] NeedColors =
         {
             new Color(0.45f, 0.6f, 0.95f), new Color(0.9f, 0.6f, 0.3f), new Color(0.6f, 0.85f, 0.4f), new Color(0.95f, 0.75f, 0.3f), new Color(0.5f, 0.75f, 0.9f),
             new Color(0.75f, 0.6f, 0.95f), new Color(0.55f, 0.55f, 0.8f), new Color(1f, 0.5f, 0.65f), new Color(0.85f, 0.4f, 0.55f)
         };
-        static float[] NeedValues(SimCharacter c) { return new[] { c.lonely, c.tired, c.bored, c.hunger, c.study, c.hobbyNeed, c.sleepy, c.loveNeed, c.desire }; }
+        static float[] NeedValues(SimCharacter c) { return new[] { c.lonely, c.tired, c.bored, c.hunger, c.study, c.hobbyNeed, c.sleepy, c.loveNeed, c.desire, c.Heat }; }
 
         class NeedSample { public double t; public float[] v; public float[] rate; }
         readonly Dictionary<SimCharacter, NeedSample> needSamples = new Dictionary<SimCharacter, NeedSample>();
