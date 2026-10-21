@@ -16,13 +16,16 @@ namespace LifeSimProto
         public enum HobbyKind { Reading, Magic, Tea, Walk }
         enum Goal { None, Seat, Poi, Wander, Counter, DiningSeat, Bath, Bed, Nap, Exit, Return, Private, Gather, Hover, Follow, MoveTo }
         enum Act { None, Rest, Fun, Study, Hobby, Meal, Snack, Tea, Work }
-        enum Intent { Talk, Love, Private, Bake, Give, Request }
+        enum Intent { Talk, Love, Private, Bake, Give, Request, Heal }
         enum Choice { None, Social, Rest, Fun, Snack, Study, Hobby, Love, Nap, Private, Hover, Cling }
         enum AwayKind { Class, Stroll, Outing, Job }
 
         // ---- 設定 ----
         public int id;
-        public string displayName;
+        public string letter;       // 記号（A〜J）。モデル・絵のファイル名
+        public string displayName;  // 名前
+        public string shortName;    // 短い名前（関係表）
+        public CharProfile profile;
         public string note;
         public Color color;
         [Range(0, 1)] public float sociability; // 人と話したい度
@@ -35,7 +38,16 @@ namespace LifeSimProto
         // ---- 欲求（0〜100）----
         public float lonely, tired, bored, hunger, study, hobbyNeed, loveNeed, sleepy, desire;
         // ---- パラメータ ----
-        public float academic;        // 学力（0〜100）
+        public readonly float[] skill = new float[Academics.Count];      // 科目ごとの学力（0〜100）
+        public readonly float[] weekSubject = new float[Academics.Count]; // 今週の科目ごとの勉強量
+        public int studySubject = -1;  // 今勉強している科目
+        public int assignSubject = -1; // 課題の科目
+        double studyPickedAt = -1000;
+        int mishapDay = -1;
+        readonly List<int> classSubjects = new List<int>();
+        readonly List<int> classSlots = new List<int>();
+        /// <summary>学力（取っている科目の平均）。</summary>
+        public float academic { get { return AverageSkill(); } }
         public float mana;            // 魔力（0〜100）
         public float weekStudy;       // 今週の勉強量
         public bool hasAssignment;
@@ -364,7 +376,7 @@ namespace LifeSimProto
                 if (assignProgress < 100f)
                 {
                     world.Log(displayName + "は課題が間に合わなかった（" + Mathf.RoundToInt(assignProgress) + "%）");
-                    academic = Mathf.Max(0f, academic - 2f);
+                    AddSkill(assignSubject, -2f, false);
                     NegativeEvent(0.9f);
                 }
             }
@@ -445,7 +457,7 @@ namespace LifeSimProto
             study = Random.Range(10f, 40f);
             hobbyNeed = Random.Range(10f, 40f);
             loveNeed = Random.Range(0f, 30f);
-            academic = 20f + diligence * 40f + Random.Range(0f, 15f);
+            InitSkills();
             mana = Random.Range(10f, 40f);
             thinkTimer = Random.Range(0.2f, 1.5f);
             lastFContact = -1000;
@@ -523,11 +535,14 @@ namespace LifeSimProto
             if (state == State.Activity && act == Act.Hobby && hobby == HobbyKind.Magic && r < dt * 0.4f) ShowBubble("✦", 1.0f);
             else if (GetStage(StatusLine.Mana) >= 2 && r < dt * 0.2f) ShowBubble("（ぱちぱち）", 1.2f);
             else if (GetStage(StatusLine.Love) >= 1 && r < dt * 0.1f) ShowBubble(GetStage(StatusLine.Love) >= 3 ? "…はぁ♡" : "…♡", 1.4f);
-            else if (GetStage(StatusLine.Sleep) >= 1 && r < dt * 0.08f) ShowBubble("ふぁ…", 1.2f);
-            else if (GetStage(StatusLine.MoodDown) >= 2 && r < dt * 0.06f) ShowBubble("はぁ…", 1.4f);
-            else if (GetStage(StatusLine.Frustration) >= 1 && r < dt * 0.06f) ShowBubble("むしゃくしゃ…", 1.4f);
+            else if (GetStage(StatusLine.Sleep) >= 1 && r < dt * 0.08f) ShowBubble(Say("sleepy", "ふぁ…"), 1.2f);
+            else if (GetStage(StatusLine.MoodDown) >= 2 && r < dt * 0.06f) ShowBubble(Say("sigh", "はぁ…"), 1.4f);
+            else if (GetStage(StatusLine.Frustration) >= 1 && r < dt * 0.06f) ShowBubble(Say("frustr", "むしゃくしゃ…"), 1.4f);
             else if (act == Act.Study && hasAssignment && assignProgress < 100f && r < dt * 0.08f)
-                ShowBubble(assignProgress < 50f && (assignDeadline - world.Now) < 1440 ? "終わらない…！" : "課題、課題…", 1.4f);
+                ShowBubble(assignProgress < 50f && (assignDeadline - world.Now) < 1440 ? "終わらない…！" : Say("busy", "課題、課題…"), 1.4f);
+            else if (HasTrait(CharTrait.WinterWeak) && Calendar.Season(world.Day) == 3 && r < dt * 0.03f) ShowBubble(Say("cold", "寒い…"), 1.4f);
+            else if (HasTrait(CharTrait.FullMoon) && Calendar.IsFullMoon(world.Day) && LoungeWorld.IsNight(world.MinuteOfDay) == false && world.MinuteOfDay >= 1080f && r < dt * 0.05f) ShowBubble(Say("moon", "そわそわ…"), 1.4f);
+            else if (HasTrait(CharTrait.RainWings) && Calendar.WeatherOf(world.Day) == Weather.Rain && r < dt * 0.03f) ShowBubble(Say("rain", "翼が重い…"), 1.4f);
         }
 
         // ================= 欲求 =================
@@ -545,13 +560,18 @@ namespace LifeSimProto
             if (GetStage(StatusLine.ManaOut) == 0) mana += gm * (hobby == HobbyKind.Magic ? 0.035f : 0.02f);
 
             float lonelyMul = RateMul(NeedKind.Lonely), tiredMul = RateMul(NeedKind.Tired), boredMul = RateMul(NeedKind.Bored);
+            // 種族などの特徴
+            if (HasTrait(CharTrait.Lonely)) lonelyMul *= 1.4f;
+            if (HasTrait(CharTrait.WinterWeak) && Calendar.Season(world.Day) == 3) tiredMul *= 1.3f;
+            if (HasTrait(CharTrait.RainWings) && Calendar.WeatherOf(world.Day) == Weather.Rain) tiredMul *= 1.3f;
+            if (HasTrait(CharTrait.FullMoon) && Calendar.IsFullMoon(world.Day)) boredMul *= 1.5f;
             switch (state)
             {
                 case State.Away:
                     if (awayKind == AwayKind.Stroll) { hobbyNeed -= gm * 2.5f; bored -= gm * 2f; }
                     else if (awayKind == AwayKind.Outing) { bored -= gm * 2f; lonely -= gm * 1f; hobbyNeed -= gm * 0.5f; }
                     else if (awayKind == AwayKind.Job) { tired += gm * 0.15f; bored += gm * 0.05f; }
-                    else { study -= gm * 0.35f; weekStudy += gm * 0.35f; academic += gm * 0.004f; }
+                    else { study -= gm * 0.35f; weekStudy += gm * 0.35f; }
                     break;
                 case State.Private:
                     desire -= gm * 4f; lonely -= gm * 2f; loveNeed -= gm * 3f; lastFContact = world.Now; break;
@@ -560,6 +580,7 @@ namespace LifeSimProto
                     float recover = 0.6f;
                     if (!napping && !sickRest && !deepSleep && LoungeWorld.IsNight(world.MinuteOfDay) && desire >= 60f) recover *= 0.25f;
                     if (deepSleep) recover *= 1.5f;
+                    if (HasTrait(CharTrait.DeepSleeper)) recover *= 1.25f;
                     sleepy -= gm * recover; tired -= dt * 5f; bored -= dt * 2f; lonely += dt * 0.1f;
                     break;
                 }
@@ -626,48 +647,165 @@ namespace LifeSimProto
             sleepy = Mathf.Clamp(sleepy, 0f, 100f);
             desire = Mathf.Clamp(desire, 0f, 100f);
             mana = Mathf.Clamp(mana, 0f, 100f);
-            academic = Mathf.Clamp(academic, 0f, 100f);
         }
 
         void Studying(float dt, float gm)
         {
             float eff = Prod(e => e.studyEfficiency) * (requestEffort >= 0f ? 0.7f + requestEffort * 0.6f : 1f);
             float amount = dt * 2.5f * eff;
+            if (studySubject < 0 || world.Now - studyPickedAt > 120) PickStudySubject();
+            int subj = hasAssignment && assignProgress < 100f && assignSubject >= 0 ? assignSubject : studySubject;
             study -= amount;
             weekStudy += amount * 0.4f;
-            academic += amount * 0.003f;
+            if (subj >= 0) weekSubject[subj] += amount * 0.4f;
+            AddSkill(subj, amount * 0.006f);
             focusMin += gm;
             bored += dt * 0.3f;
             if (hasAssignment && assignProgress < 100f)
             {
-                assignProgress += amount * 0.45f * (0.5f + academic / 100f);
+                assignProgress += amount * 0.45f * (0.5f + SkillOf(assignSubject) / 100f);
                 if (assignProgress >= 100f)
                 {
                     assignProgress = 100f;
-                    academic += 1f;
-                    world.Log(displayName + "が課題を終わらせた");
-                    ShowBubble("終わった〜！", 1.8f);
+                    AddSkill(assignSubject, 1f);
+                    world.Log(displayName + "が課題（" + SubjectName(assignSubject) + "）を終わらせた");
+                    ShowBubble(Say("done", "終わった〜！"), 1.8f);
                     PositiveEvent(0.3f);
                 }
             }
-            // 近くで課題をしている子に教える（学力が高い子ほど）
+            // 実技の自主練習は、たまにちょっとした失敗をする（1日1回まで）
+            if (subj >= 0 && Academics.IsPractical(subj) && mishapDay != world.Day && Random.value < dt * 0.012f * (profile != null && profile.IsWeak(subj) ? 2f : 1f))
+                PracticeMishap(subj);
+            // 近くで課題をしている子に教える（その科目が得意な子・学力が高い子ほど）
             foreach (var o in world.characters)
             {
                 if (o == this || !o.hasAssignment || o.assignProgress >= 100f || o.act != Act.Study) continue;
                 if (o.state != State.Sitting && o.state != State.Activity) continue;
-                if (academic < o.academic + 10f) continue;
+                int os = o.assignSubject;
+                bool strong = profile != null && profile.IsStrong(os);
+                if (!strong && SkillOf(os) < o.SkillOf(os) + 15f) continue;
+                if (SkillOf(os) < o.SkillOf(os) + 5f) continue;
                 Vector3 d = o.transform.position - transform.position;
                 if (Mathf.Abs(d.y) > 0.5f || d.sqrMagnitude > 2.5f * 2.5f) continue;
-                o.assignProgress += amount * 0.15f * (academic / 100f);
+                o.assignProgress += amount * 0.15f * (SkillOf(os) / 100f);
+                o.AddSkill(os, amount * 0.004f);
+                AddSkill(os, amount * 0.002f);
                 world.rel.Add(id, o.id, amount * 0.02f, world.simTime);
                 if (taughtDay != world.Day)
                 {
                     taughtDay = world.Day;
-                    ShowBubble("ここはね…", 1.5f);
-                    world.Log(displayName + "が" + o.displayName + "に課題を教えている");
+                    ShowBubble(Say("teach", "ここはね…"), 1.5f);
+                    o.ShowBubble(o.Say("thanks", "ありがとう"), 1.5f);
+                    world.Log(displayName + "が" + o.displayName + "に" + SubjectName(os) + "の課題を教えている");
                 }
             }
         }
+
+        // ================= 科目と学力 =================
+        void InitSkills()
+        {
+            for (int i = 0; i < Academics.Count; i++)
+            {
+                float v = 22f + diligence * 18f + Random.Range(0f, 10f);
+                if (profile != null && profile.IsStrong(i)) v += 18f;
+                if (profile != null && profile.IsWeak(i)) v -= 14f;
+                if (IsTarget) v = 8f + Random.Range(0f, 6f); // 篤は異世界から来たばかり
+                skill[i] = Mathf.Clamp(v, 0f, 100f);
+            }
+        }
+
+        public bool Enrolled(int s) { return profile != null && s >= 0 && System.Array.IndexOf(profile.enrolled, s) >= 0; }
+        public float SkillOf(int s) { return s >= 0 && s < Academics.Count ? skill[s] : AverageSkill(); }
+        public static string SubjectName(int s) { return s >= 0 && s < Academics.Count ? Academics.Names[s] : "勉強"; }
+
+        float AverageSkill()
+        {
+            if (profile == null || profile.enrolled.Length == 0) return 0f;
+            float sum = 0f;
+            foreach (int s in profile.enrolled) sum += skill[s];
+            return sum / profile.enrolled.Length;
+        }
+
+        /// <summary>学力を足し引きする。grow が true なら、得意（1.5倍）・苦手（0.6倍）で伸び方が変わる。</summary>
+        public void AddSkill(int s, float v, bool grow = true)
+        {
+            if (s < 0 || s >= Academics.Count) return;
+            if (grow && v > 0f && profile != null) v *= profile.Growth(s);
+            skill[s] = Mathf.Clamp(skill[s] + v, 0f, 100f);
+        }
+
+        /// <summary>今から勉強する科目を決める。課題があれば課題の科目、試験の前の日は苦手な科目。</summary>
+        void PickStudySubject()
+        {
+            studyPickedAt = world.Now;
+            if (hasAssignment && assignProgress < 100f && assignSubject >= 0) { studySubject = assignSubject; return; }
+            if (profile == null || profile.enrolled.Length == 0) { studySubject = -1; return; }
+            if (world.ExamEveToday || Random.value < 0.3f * diligence)
+            {
+                int low = profile.enrolled[0];
+                foreach (int s in profile.enrolled) if (skill[s] < skill[low]) low = s;
+                studySubject = low;
+                return;
+            }
+            studySubject = profile.enrolled[Random.Range(0, profile.enrolled.Length)];
+        }
+
+        /// <summary>実技の自主練習での、ちょっとした失敗。回復魔法が得意な子が駆けつける。</summary>
+        void PracticeMishap(int subj)
+        {
+            mishapDay = world.Day;
+            ShowBubble(Academics.MishapSound(subj), 1.6f);
+            world.Log("★ " + displayName + "が" + SubjectName(subj) + "の自主練習で" + Academics.MishapText(subj) + "！");
+            tired = Mathf.Min(100f, tired + 10f);
+            foreach (var o in world.characters)
+            {
+                if (o == this || !o.Present || o.InPrivate || o.state == State.Sleeping) continue;
+                if ((o.transform.position - transform.position).sqrMagnitude < 16f) o.ShowBubble(o.Say("surprise", "わっ！"), 1.4f);
+            }
+            StartCoroutine(MishapAfter());
+            // 駆けつける：回復魔法が得意な子 → いなければ回復魔法の学力が高い子
+            SimCharacter healer = null;
+            float best = -1f;
+            foreach (var o in world.characters)
+            {
+                if (o == this || o.IsTarget || !o.AvailableForTalk || o.OnMission || o.hasOrder || !o.CanActNow()) continue;
+                if (o.state == State.Talking || o.state == State.Sleeping) continue;
+                float v = o.SkillOf(Academics.Healing) + (o.profile != null && o.profile.IsStrong(Academics.Healing) ? 40f : 0f);
+                if (Mathf.Abs(o.transform.position.y - transform.position.y) > 1f) v -= 30f;
+                if (v > best) { best = v; healer = o; }
+            }
+            if (healer != null && best >= 40f)
+            {
+                healer.ShowBubble("！", 1.2f);
+                healer.BeginApproach(this, false, Intent.Heal);
+                world.Log(healer.displayName + "が" + displayName + "のところへ駆けつける");
+            }
+        }
+
+        IEnumerator MishapAfter()
+        {
+            yield return new WaitForSeconds(1.7f);
+            ShowBubble(Say("hurt", "いてて…"), 1.8f);
+        }
+
+        /// <summary>そのキャラらしいせりふ（決まっていなければ fallback）。{0} は相手の名前。</summary>
+        public string Say(string key, string fallback, string other = null)
+        {
+            string[] v;
+            string line = fallback;
+            if (profile != null && profile.lines.TryGetValue(key, out v) && v.Length > 0) line = v[Random.Range(0, v.Length)];
+            if (other != null && line.Contains("{0}")) line = line.Replace("{0}", other);
+            return line;
+        }
+
+        string[] Pool(string key, string[] fallback)
+        {
+            string[] v;
+            if (profile != null && profile.lines.TryGetValue(key, out v) && v.Length > 0) return v;
+            return fallback;
+        }
+
+        bool HasTrait(CharTrait t) { return profile != null && (profile.traits & t) != 0; }
 
         /// <summary>性欲の増え方。「好き」以上だけが増え、気持ちが強いほど加速度的に速くなる。Fは自分を好きな子の気持ちで増える。</summary>
         float DesireRate()
@@ -722,6 +860,9 @@ namespace LifeSimProto
         {
             hasAssignment = true;
             assignProgress = 0f;
+            // 課題の科目：取っている科目からひとつ
+            assignSubject = profile != null && profile.enrolled.Length > 0 ? profile.enrolled[Random.Range(0, profile.enrolled.Length)] : -1;
+            studySubject = assignSubject;
             assignDeadline = deadline;
             nightOwlLogged = false;
             study = Mathf.Max(study, 40f);
@@ -777,6 +918,8 @@ namespace LifeSimProto
                         awayUntil = it.end;
                         awayKind = AwayKind.Class;
                         classBlocks = Mathf.Max(1, Mathf.RoundToInt((float)((it.end - it.start) / 100.0)));
+                        classSubjects.Clear(); classSubjects.AddRange(it.subjects);
+                        classSlots.Clear(); classSlots.AddRange(it.slots);
                         awayLabel = it.Label == "試験" ? "試験を受けている" : "授業に出ている";
                         StartLeave(it.Label == "試験" ? "試験を受けに行く" : "授業に出かける");
                         return true;
@@ -939,11 +1082,34 @@ namespace LifeSimProto
                 float m = world.MinuteOfDay;
                 if (m >= 12.5f * 60f && m <= 16.5f * 60f) hunger = Mathf.Min(hunger, 25f);
                 if (IsTarget && world.player != null) world.player.Earn(15 * classBlocks, "授業に出た");
+                AfterClass();
             }
             if (awayKind == AwayKind.Job && world.player != null && IsTarget) world.player.Earn(70, "街のアルバイト");
             gathering = null;
             hasOrder = false;
             if (!GoTo(world.entrancePoint, State.Walking)) { goal = Goal.None; SetState(State.Idle); }
+        }
+
+        /// <summary>授業から帰ったとき：科目の学力が伸び、同じ授業に出た子と仲よくなる。実技はたまに失敗の話が伝わる。</summary>
+        void AfterClass()
+        {
+            foreach (int s in classSubjects) { AddSkill(s, 2.2f); weekSubject[s] += 6f; }
+            foreach (var o in world.characters)
+            {
+                if (o == this || o.classSlots.Count == 0) continue;
+                int same = 0;
+                foreach (int k in classSlots) if (o.classSlots.Contains(k)) same++;
+                if (same > 0) world.rel.Add(id, o.id, 0.75f * same, world.simTime);
+            }
+            foreach (int s in classSubjects)
+            {
+                if (!Academics.IsPractical(s)) continue;
+                float p = profile != null && profile.IsWeak(s) ? 0.3f : 0.1f;
+                if (Random.value >= p) continue;
+                world.Log(displayName + "は" + SubjectName(s) + "の授業で" + Academics.MishapText(s) + "らしい");
+                ShowBubble(Say("hurt", "いてて…"), 1.8f);
+                break;
+            }
         }
 
         void WakeUp()
@@ -1450,7 +1616,9 @@ namespace LifeSimProto
                 float score = PlaceBonus(s.position) * 0.6f + (visit ? 1.5f : 0.5f) + Random.value - Vector3.Distance(transform.position, s.position) * 0.05f;
                 if (score > bestScore) { bestScore = score; bestSeat = s; useDesk = false; }
             }
-            string what = hasAssignment && assignProgress < 100f ? "課題をしている" : "勉強している";
+            PickStudySubject();
+            string what = hasAssignment && assignProgress < 100f ? SubjectName(assignSubject) + "の課題をしている"
+                : (studySubject >= 0 && Academics.IsPractical(studySubject) ? SubjectName(studySubject) + "の自主練習をしている" : SubjectName(studySubject) + "の勉強をしている");
             if (useDesk) return GoToPoi(room.desk, Act.Study, "机で" + what, Random.Range(18f, 30f) * mul);
             if (bestSeat == null) return false;
             string label = bestSeat.room != null ? bestSeat.label + "で" + what : what;
@@ -1680,6 +1848,7 @@ namespace LifeSimProto
             p += GetStage(StatusLine.MoodUp) * 0.1f - GetStage(StatusLine.MoodDown) * 0.15f;
             p -= GetStage(StatusLine.Sleep) * 0.1f + (tired > 70f ? 0.2f : 0f) + recent * 0.12f;
             if (kind == RequestKind.Study) p += diligence * 0.2f - (study < 20f ? 0.15f : 0f);
+            if (kind == RequestKind.Teach) p += 0.15f + (TeachSubjectFor(from) >= 0 ? 0f : -0.5f);
             if (kind == RequestKind.Rest) p += tired / 200f;
             if (kind == RequestKind.Meet && meet != null) p += (world.rel.Get(id, meet.id) - 40f) / 200f;
             p = Mathf.Clamp(p, 0.05f, 0.95f);
@@ -1687,18 +1856,56 @@ namespace LifeSimProto
             string what = PlayerControl.RequestName(kind, meet);
             if (roll >= p)
             {
-                ShowBubble(recent >= 2 ? "また？ ごめん…" : "ごめん、今はちょっと…", 2f);
+                ShowBubble(recent >= 2 ? "また？ ごめん…" : Say("refuse", "ごめん、今はちょっと…"), 2f);
                 world.Log(displayName + "は「" + what + "」を断った");
                 return;
             }
             float effort = Mathf.Clamp01((p - roll) / p);
+            if (kind == RequestKind.Teach) { TeachNow(from, effort); return; }
             string mood = effort > 0.6f ? "張り切って" : (effort > 0.25f ? "" : "しぶしぶ");
-            ShowBubble(effort > 0.6f ? "まかせて！" : (effort > 0.25f ? "いいよ" : "…わかった"), 1.8f);
+            ShowBubble(effort > 0.25f ? Say("accept", "まかせて！") : "…わかった", 1.8f);
             world.Log(displayName + "は「" + what + "」を" + (mood.Length > 0 ? mood : "") + "引き受けた");
             hasPendingRequest = true;
             pendingRequestKind = kind;
             pendingRequestMeet = meet;
             requestEffort = effort;
+        }
+
+        /// <summary>相手（篤など）に教えられる科目：自分の得意な勉学で、相手が取っている科目。なければ相手より学力が高い科目。</summary>
+        public int TeachSubjectFor(SimCharacter learner)
+        {
+            if (learner == null || profile == null) return -1;
+            int best = -1;
+            float gap = 5f;
+            foreach (int s in profile.enrolled)
+            {
+                if (!learner.Enrolled(s)) continue;
+                float g = SkillOf(s) - learner.SkillOf(s) + (profile.IsStrong(s) ? 20f : 0f);
+                if (g > gap) { gap = g; best = s; }
+            }
+            return best;
+        }
+
+        /// <summary>お願いされて、その場で勉強を教える。教えた側も教わった側も学力が伸び、仲よくなる。</summary>
+        void TeachNow(SimCharacter learner, float effort)
+        {
+            int s = TeachSubjectFor(learner);
+            if (s < 0) { ShowBubble(Say("refuse", "ごめん、教えられることがないかも"), 2f); return; }
+            ShowBubble(Say("teach", "ここはね…"), 2f);
+            float k = 0.6f + effort * 0.6f;
+            learner.AddSkill(s, 3f * k);
+            learner.weekSubject[s] += 8f * k;
+            AddSkill(s, 1f * k);
+            world.rel.Add(id, learner.id, 3f + 3f * effort, world.simTime);
+            if (learner.IsTarget) world.ChangeLove(this, 1.5f);
+            world.Log(displayName + "が" + learner.displayName + "に" + SubjectName(s) + "を教えた");
+            StartCoroutine(ThanksLater(learner));
+        }
+
+        IEnumerator ThanksLater(SimCharacter who)
+        {
+            yield return new WaitForSeconds(2.1f);
+            if (who != null) who.ShowBubble(who.Say("thanks", "ありがとう"), 1.8f);
         }
 
         void ExecuteRequest()
@@ -1743,6 +1950,7 @@ namespace LifeSimProto
                 case Intent.Bake: verb = "にお菓子を渡しに行く"; break;
                 case Intent.Give: verb = "に渡し物をしに行く"; break;
                 case Intent.Request: verb = "にお願いをしに行く"; break;
+                case Intent.Heal: verb = "のところへ駆けつける"; break;
                 default: verb = "に会いに行く"; break;
             }
             actionText = who.displayName + verb + (order ? "（指示）" : "");
@@ -1888,9 +2096,30 @@ namespace LifeSimProto
         }
 
         // ================= 会話 =================
-        static readonly string[] Topics = { "授業の話", "魔法の練習", "食堂のメニュー", "読んでいる本", "寮のうわさ", "週末の予定", "試験の話", "故郷の話", "使い魔の話", "図書館の話", "課題の話" };
         static readonly string[] Chatter = { "それでね…", "へえ！", "ほんとに？", "うんうん", "わかる〜", "そうなの？", "ふふっ", "なるほど", "えっ！", "それで？" };
-        static readonly string[] KoibanaLines = { "Fくんってさ…", "えっ、わかる！", "きゃー", "内緒だよ？", "応援する！", "ふふ、顔赤いよ" };
+        static readonly string[] KoibanaLines = { "えっ、わかる！", "きゃー", "内緒だよ？", "応援する！", "ふふ、顔赤いよ" };
+
+        /// <summary>話題を選ぶ。半分くらいは自分の好きなことの話をする。</summary>
+        TalkTopic PickTopic()
+        {
+            var all = CharProfiles.Topics;
+            if (profile != null && profile.likes.Length > 0 && Random.value < 0.5f)
+            {
+                var mine = new List<TalkTopic>();
+                foreach (var t in all) foreach (var g in t.tags) if (profile.Likes(g)) { mine.Add(t); break; }
+                if (mine.Count > 0) return mine[Random.Range(0, mine.Count)];
+            }
+            return all[Random.Range(0, all.Length)];
+        }
+
+        /// <summary>話題が好きなら 1、苦手なら -1、どちらでもなければ 0。</summary>
+        public int TopicFeeling(TalkTopic t)
+        {
+            if (profile == null || t == null) return 0;
+            bool like = false, dislike = false;
+            foreach (var g in t.tags) { if (profile.Likes(g)) like = true; if (profile.Dislikes(g)) dislike = true; }
+            return dislike ? -1 : (like ? 1 : 0);
+        }
 
         IEnumerator TalkRoutine(SimCharacter partner)
         {
@@ -1908,8 +2137,26 @@ namespace LifeSimProto
                 actionText = partner.displayName + "に渡している";
                 ShowBubble("これ、どうぞ", 1.6f);
                 yield return new WaitForSeconds(1.7f);
-                partner.ShowBubble(giftItem == ItemKind.Present || giftItem == ItemKind.Bouquet ? "わぁ…ありがとう！" : "ありがとう", 1.8f);
+                partner.ShowBubble(giftItem == ItemKind.Present || giftItem == ItemKind.Bouquet ? "わぁ…" + partner.Say("thanks", "ありがとう！") : partner.Say("thanks", "ありがとう"), 1.8f);
                 partner.ApplyItem(giftItem, this);
+                yield return new WaitForSeconds(1.9f);
+                EndTalk(partner);
+                yield break;
+            }
+
+            // ---- 実技の失敗に駆けつけて、回復魔法で手当てする ----
+            if (intent == Intent.Heal)
+            {
+                actionText = partner.displayName + "を手当てしている";
+                partner.actionText = displayName + "に手当てしてもらっている";
+                ShowBubble(Say("heal", "大丈夫？ 治すね"), 1.8f);
+                yield return new WaitForSeconds(1.9f);
+                ShowBubble("✦", 1.2f);
+                partner.ShowBubble(partner.Say("thanks", "ありがとう"), 1.8f);
+                partner.tired = Mathf.Max(0f, partner.tired - 15f);
+                AddSkill(Academics.Healing, 0.6f);
+                world.rel.Add(id, partner.id, 4f, world.simTime);
+                world.Log(displayName + "が" + partner.displayName + "を回復魔法で手当てした");
                 yield return new WaitForSeconds(1.9f);
                 EndTalk(partner);
                 yield break;
@@ -1991,7 +2238,9 @@ namespace LifeSimProto
             // ---- ふつうの会話／恋バナ／お見舞い ----
             bool visit = partner.sickRest;
             bool koibana = !visit && !IsTarget && !partner.IsTarget && LoveStage >= 1 && partner.LoveStage >= 1 && Random.value < 0.45f;
-            string topic = visit ? "お見舞い" : (koibana ? "恋バナ" : Topics[Random.Range(0, Topics.Length)]);
+            TalkTopic tp = visit || koibana ? null : PickTopic();
+            string topic = visit ? "お見舞い" : (koibana ? "恋バナ" : tp.text);
+            int feelMe = TopicFeeling(tp), feelYou = partner.TopicFeeling(tp);
             actionText = partner.displayName + "と" + topic;
             partner.actionText = displayName + "と" + topic;
 
@@ -2000,14 +2249,18 @@ namespace LifeSimProto
             {
                 SimCharacter speaker = (i % 2 == 0) ? this : partner;
                 string line;
-                if (i == 0) line = visit ? "具合どう？" : (koibana ? "ねえ、恋バナしよ？" : topic + "なんだけど…");
+                if (i == 0) line = visit ? "具合どう？" : (koibana ? "ねえ、恋バナしよ？" : Say("topic", "{0}なんだけど…", topic));
                 else if (i == 1 && visit) line = "来てくれたんだ…";
-                else line = koibana ? KoibanaLines[Random.Range(0, KoibanaLines.Length)] : Chatter[Random.Range(0, Chatter.Length)];
+                else if (i == 1 && !koibana && feelYou != 0) line = feelYou > 0 ? partner.Say("like", "それ好き！") : partner.Say("dislike", "その話はちょっと…");
+                else if (koibana) line = i == 2 && speaker.profile != null && speaker.profile.callF.Length > 0 ? speaker.profile.callF + "ってさ…" : KoibanaLines[Random.Range(0, KoibanaLines.Length)];
+                else line = speaker.Say("chatter", Chatter[Random.Range(0, Chatter.Length)]);
                 speaker.ShowBubble(line, 1.5f);
                 yield return new WaitForSeconds(1.6f);
             }
 
             float bonus = (koibana ? 0.3f : 0f) + (visit ? 0.3f : 0f) + TalkBonus() + partner.TalkBonus();
+            // 好きな話題だと楽しく、苦手な話題だと気まずくなりやすい
+            bonus += (feelYou > 0 ? 0.25f : (feelYou < 0 ? -0.35f : 0f)) + (feelMe > 0 ? 0.1f : 0f);
             if ((IsTarget && partner.IsLover) || (IsLover && partner.IsTarget)) bonus += 0.15f;
             if (requestEffort >= 0f && hasOrder) bonus += (requestEffort - 0.4f) * 0.4f;
             TalkResult result = world.rel.Roll(id, partner.id, bonus);
@@ -2117,6 +2370,7 @@ namespace LifeSimProto
             bool eating = state == State.Eating && o.state == State.Eating;
             bool meal = eating && (act == Act.Meal || o.act == Act.Meal);
             bool bath = state == State.Bathing;
+            string key = meal ? "meal" : (eating ? "snack" : (bath ? "bath" : "seat"));
             string[] pool = meal ? MealLines : (eating ? SnackLines : (bath ? BathLines : SeatLines));
             string place = meal ? "食事しながら" : (eating ? "おやつを食べながら" : (bath ? "お風呂の中" : "座りながら"));
             int lines = Random.Range(2, 5);
@@ -2125,7 +2379,8 @@ namespace LifeSimProto
             {
                 if (!StillChat(o)) { ok = false; break; }
                 var speaker = i % 2 == 0 ? this : o;
-                speaker.ShowBubble(pool[Random.Range(0, pool.Length)], 1.5f);
+                var sp = speaker.Pool(key, pool);
+                speaker.ShowBubble(sp[Random.Range(0, sp.Length)], 1.5f);
                 yield return new WaitForSeconds(1.6f);
             }
             if (ok && StillChat(o))
@@ -2183,18 +2438,21 @@ namespace LifeSimProto
         {
             float aff = world.rel.Get(id, o.id);
             float m = world.MinuteOfDay;
-            string hello = m < 600f ? "おはよう" : (m >= 1260f ? "おやすみ" : "やあ");
+            string hk = m < 600f ? "hello_m" : (m >= 1260f ? "hello_n" : "hello_d");
+            string hello = Say(hk, m < 600f ? "おはよう" : (m >= 1260f ? "おやすみ" : "やあ"));
             string a, b;
             if (aff < 25f) { a = "（会釈）"; b = "（会釈）"; }
-            else if (aff < 60f) { a = hello; b = hello == "やあ" ? "おつかれ" : hello; }
-            else { a = "あ、" + o.displayName + "！"; b = Random.value < 0.5f ? "あとで話そ♪" : "ふふっ"; }
+            else if (aff < 60f) { a = hello; b = o.Say(hk, "おつかれ"); }
+            else { a = Say("close", "あ、{0}！", o.displayName); b = o.Say("reply", Random.value < 0.5f ? "あとで話そ♪" : "ふふっ"); }
             // Fとのすれ違い
             SimCharacter girl = IsTarget ? o : (o.IsTarget ? this : null);
             if (girl != null && girl.LoveStage >= 1)
             {
                 var f = IsTarget ? this : o;
-                string gl = girl.GetStage(StatusLine.Shy) > 0 ? "っ…（目をそらす）" : (girl.LoveStage >= 2 ? "あ…" + f.displayName + "くん♡" : "あ、" + f.displayName + "くん");
-                if (girl == this) { a = gl; b = hello; } else { a = hello; b = gl; }
+                string call = girl.profile != null && girl.profile.callF.Length > 0 ? girl.profile.callF : f.displayName;
+                string gl = girl.GetStage(StatusLine.Shy) > 0 ? "っ…（目をそらす）" : (girl.LoveStage >= 2 ? "あ…" + call + "♡" : "あ、" + call);
+                string fh = f.Say(hk, "やあ");
+                if (girl == this) { a = gl; b = fh; } else { a = fh; b = gl; }
                 world.ChangeLove(girl, 0.4f);
                 girl.lastFContact = world.Now;
             }
@@ -2568,7 +2826,7 @@ namespace LifeSimProto
                         if (bedItem != null) bedItem.done = true;
                         actionText = "寝ている";
                         SetState(State.Sleeping);
-                        ShowBubble("おやすみ", 1.5f);
+                        ShowBubble(Say("night", "おやすみ"), 1.5f);
                         world.Log(displayName + "が寝た");
                     }
                     else SetState(State.Idle);

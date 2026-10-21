@@ -4,7 +4,7 @@ using UnityEngine;
 namespace LifeSimProto
 {
     public enum ItemKind { Sweets, Bouquet, Present, CheerPotion, WakePotion, SleepIncense, ColdMedicine, LoveCharm }
-    public enum RequestKind { Meet, Study, Rest }
+    public enum RequestKind { Meet, Study, Rest, Teach }
 
     public class ItemDef
     {
@@ -34,13 +34,13 @@ namespace LifeSimProto
             list = new List<ItemDef>
             {
                 new ItemDef { kind = ItemKind.Sweets, name = "お菓子", price = 10, desc = "好感度＋3・空腹−30", selfUse = true },
-                new ItemDef { kind = ItemKind.Bouquet, name = "花束", price = 40, desc = "好感度＋6・Fへの気持ち＋5・ときどきご機嫌" },
-                new ItemDef { kind = ItemKind.Present, name = "小さなプレゼント", price = 80, desc = "好感度＋10・Fへの気持ち＋8・気分が1段階上がる" },
+                new ItemDef { kind = ItemKind.Bouquet, name = "花束", price = 40, desc = "好感度＋6・篤への気持ち＋5・ときどきご機嫌" },
+                new ItemDef { kind = ItemKind.Present, name = "小さなプレゼント", price = 80, desc = "好感度＋10・篤への気持ち＋8・気分が1段階上がる" },
                 new ItemDef { kind = ItemKind.CheerPotion, name = "元気の薬", price = 50, desc = "落ち込み系を1段階回復（なければご機嫌）・疲れ−30", selfUse = true },
                 new ItemDef { kind = ItemKind.WakePotion, name = "目覚めの薬", price = 40, desc = "寝不足系を治す・眠気−50", selfUse = true },
                 new ItemDef { kind = ItemKind.SleepIncense, name = "安眠のお香", price = 30, desc = "今夜はぐっすり眠れる（翌朝の寝不足を防ぐ）", selfUse = true },
                 new ItemDef { kind = ItemKind.ColdMedicine, name = "風邪薬", price = 30, desc = "風邪を1段階治す", selfUse = true },
-                new ItemDef { kind = ItemKind.LoveCharm, name = "恋のおまじない", price = 120, desc = "Fを「気になる」以上の子だけに効く。恋心＋30・恋わずらい（1日1回）", oncePerDay = true },
+                new ItemDef { kind = ItemKind.LoveCharm, name = "恋のおまじない", price = 120, desc = "篤を「気になる」以上の子だけに効く。恋心＋30・恋わずらい（1日1回）", oncePerDay = true },
             };
         }
     }
@@ -122,6 +122,7 @@ namespace LifeSimProto
             {
                 case RequestKind.Meet: return (target != null ? target.displayName : "だれか") + "に会いに行って";
                 case RequestKind.Study: return "勉強して";
+                case RequestKind.Teach: return "勉強を教えて";
                 default: return "休んで";
             }
         }

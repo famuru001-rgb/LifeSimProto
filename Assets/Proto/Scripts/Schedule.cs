@@ -13,6 +13,8 @@ namespace LifeSimProto
         public double end;
         public bool done;
         public string title;  // 「試験」など、名前を変えたいとき
+        public readonly List<int> subjects = new List<int>(); // 授業の科目（コマの順）
+        public readonly List<int> slots = new List<int>();    // 授業のコマ（日×10＋コマ）。同じコマのキャラは一緒に出かける
 
         public string Label
         {
@@ -22,7 +24,11 @@ namespace LifeSimProto
                 switch (kind)
                 {
                     case TaskKind.Breakfast: return "朝食";
-                    case TaskKind.Class: return "授業";
+                    case TaskKind.Class:
+                        if (subjects.Count == 0) return "授業";
+                        var n = new List<string>();
+                        foreach (var x in subjects) n.Add(Academics.Names[x]);
+                        return "授業（" + string.Join("・", n.ToArray()) + "）";
                     case TaskKind.Lunch: return "昼食";
                     case TaskKind.Dinner: return "夕食";
                     case TaskKind.Bath: return "お風呂";
@@ -34,8 +40,8 @@ namespace LifeSimProto
 
     /// <summary>
     /// キャラごとに違う1日の予定を作る。
-    /// 平日：起床 6:30〜7:15 → 朝食 → 授業（4コマから1〜3コマ）→ 昼食 → 夕食 → お風呂 → 就寝 22:45〜23:30
-    /// 休日：起床 7:15〜8:15、授業なし。試験の日：午前は全員が試験（9:00〜12:15）。
+    /// 授業の日（光・火・風・月）：起床 6:30〜7:15 → 朝食 → 取っている科目の授業（時間割どおり）→ 昼食 → 夕食 → お風呂 → 就寝 22:45〜23:30
+    /// 休日：起床 7:15〜8:15、授業なし。試験の日（土）：午前は全員が試験（9:00〜12:15）。
     /// </summary>
     public static class ScheduleMaker
     {
@@ -47,7 +53,9 @@ namespace LifeSimProto
         {
             var rnd = new System.Random(charId * 7919 + day * 104729 + 1);
             bool holiday = Calendar.IsHoliday(day, holidays);
-            return DayStart(day) + (holiday ? 435 + rnd.Next(0, 61) : 390 + rnd.Next(0, 46));
+            var prof = CharProfiles.ById(charId);
+            int late = prof != null && (prof.traits & CharTrait.DeepSleeper) != 0 ? 15 : 0; // 眠りが深い
+            return DayStart(day) + late + (holiday ? 435 + rnd.Next(0, 61) : 390 + rnd.Next(0, 46));
         }
 
         public static List<ScheduleItem> Make(int charId, int day, bool[] holidays)
@@ -55,7 +63,6 @@ namespace LifeSimProto
             var rnd = new System.Random(charId * 7919 + day * 104729);
             double d0 = DayStart(day);
             double wake = WakeTime(charId, day, holidays);
-            bool holiday = Calendar.IsHoliday(day, holidays);
             bool exam = Calendar.IsExamDay(day, holidays);
             var list = new List<ScheduleItem>();
 
@@ -65,26 +72,27 @@ namespace LifeSimProto
             if (exam)
             {
                 list.Add(new ScheduleItem { kind = TaskKind.Class, title = "試験", start = d0 + Blocks[0, 0] - 15, end = d0 + Blocks[1, 1] + 15 });
-                if (rnd.Next(0, 2) == 0)
-                {
-                    int b = 2 + rnd.Next(0, 2);
-                    list.Add(new ScheduleItem { kind = TaskKind.Class, start = d0 + Blocks[b, 0] - 15, end = d0 + Blocks[b, 1] + 15 });
-                }
             }
-            else if (!holiday)
+            else if (Calendar.IsClassDay(day, holidays))
             {
-                int count = 1 + rnd.Next(0, 3);
-                var chosen = new List<int> { 0, 1, 2, 3 };
-                for (int i = 0; i < 4; i++) { int j = rnd.Next(i, 4); int t = chosen[i]; chosen[i] = chosen[j]; chosen[j] = t; }
-                chosen = chosen.GetRange(0, count);
-                chosen.Sort();
+                // 時間割のうち、取っている科目のコマに出る（続いているコマはまとめて出かける）
+                int row = Academics.TimetableRow(Calendar.Weekday(day));
+                var prof = CharProfiles.ById(charId);
+                var chosen = new List<int>();
+                for (int b = 0; b < 4; b++)
+                {
+                    int subj = Academics.Timetable[row, b];
+                    if (prof != null && System.Array.IndexOf(prof.enrolled, subj) >= 0) chosen.Add(b);
+                }
                 int k = 0;
                 while (k < chosen.Count)
                 {
                     int first = chosen[k];
                     int last = first;
                     while (k + 1 < chosen.Count && chosen[k + 1] == last + 1) { k++; last = chosen[k]; }
-                    list.Add(new ScheduleItem { kind = TaskKind.Class, start = d0 + Blocks[first, 0] - 15, end = d0 + Blocks[last, 1] + 15 });
+                    var item = new ScheduleItem { kind = TaskKind.Class, start = d0 + Blocks[first, 0] - 15, end = d0 + Blocks[last, 1] + 15 };
+                    for (int b = first; b <= last; b++) { item.subjects.Add(Academics.Timetable[row, b]); item.slots.Add(day * 10 + b); }
+                    list.Add(item);
                     k++;
                 }
             }

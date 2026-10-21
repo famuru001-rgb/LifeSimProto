@@ -39,6 +39,13 @@ namespace LifeSimProto
             }
         }
 
+        /// <summary>最初の間柄を決める（CharProfiles.ApplyInitialRelations から）。</summary>
+        public void SetInitial(int i, int j, float aff, float c)
+        {
+            affinity[i, j] = affinity[j, i] = Mathf.Clamp(aff, 0f, 100f);
+            compat[i, j] = compat[j, i] = c;
+        }
+
         public float Get(int i, int j) { return affinity[i, j]; }
         public float Compat(int i, int j) { return compat[i, j]; }
         public float LastChange(int i, int j) { return flashTime[i, j]; }
@@ -93,7 +100,7 @@ namespace LifeSimProto
     }
 
     /// <summary>
-    /// みんなから1人（F）への恋愛の気持ち。
+    /// みんなから1人（篤）への恋愛の気持ち。
     /// 段階：なし 0〜19 / 気になる 20〜49 / 好き 50〜100 / 恋人（告白が成功したら）。恋人は何人でもなれる。
     /// </summary>
     public class Romance
@@ -118,7 +125,7 @@ namespace LifeSimProto
             {
                 flashTime[i] = -100f;
                 if (i == targetId) continue;
-                love[i] = (float)(rnd.NextDouble() * 32.0); // 試作用の仮の初期値
+                love[i] = (float)(rnd.NextDouble() * 12.0); // はじめはみんな篤とは知り合い（気持ちは「なし」）
             }
         }
 

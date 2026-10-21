@@ -69,6 +69,8 @@ namespace LifeSimProto
                 world.Log("明日は試験。みんな少しそわそわしている");
             }
             if (Calendar.Weekday(day) == 5) world.todayNotes.Add("課題が出る 9:00（光の日 23:00 まで）");
+            if (Calendar.IsClassDay(day, hol)) world.todayNotes.Add("授業の日");
+            if (Calendar.IsFullMoon(day)) world.todayNotes.Add("満月の夜");
             if (Calendar.IsFestival(day))
             {
                 string fn = Calendar.FestivalNames[Calendar.Season(day)];
@@ -85,7 +87,8 @@ namespace LifeSimProto
             Weather w = Calendar.WeatherOf(day);
             if (w == Weather.Rain) world.Log("今日は雨。外には出にくい");
             if (w == Weather.Snow) world.Log("今日は雪。暖炉のまわりが人気");
-            if (Calendar.Weekday(day) == 0) foreach (var c in world.characters) c.weekStudy = 0f;
+            if (Calendar.Weekday(day) == 0)
+                foreach (var c in world.characters) { c.weekStudy = 0f; for (int s = 0; s < Academics.Count; s++) c.weekSubject[s] = 0f; }
         }
 
         void CheckTimed()
@@ -130,22 +133,8 @@ namespace LifeSimProto
                 world.Log("課題が出た！（光の日 23:00 まで）");
             }
 
-            // ---- 試験の結果発表 ----
-            if (Calendar.IsExamDay(day, hol) && m >= 1080f && Once("exam"))
-            {
-                var parts = new List<string>();
-                foreach (var c in world.characters)
-                {
-                    float score = c.academic * 0.6f + c.weekStudy * 0.25f + Random.Range(0f, 15f) - c.GetStage(StatusLine.Sleep) * 5f;
-                    string mark;
-                    if (score >= 55f) { mark = "◎"; c.PositiveEvent(0.8f); c.academic += 1f; }
-                    else if (score < 35f) { mark = "×"; c.NegativeEvent(0.8f); }
-                    else mark = "○";
-                    parts.Add(c.displayName + mark);
-                    if (c.IsTarget && world.player != null) world.player.Earn(mark == "◎" ? 50 : (mark == "○" ? 20 : 0), "試験の成績");
-                }
-                world.Log("試験の結果発表：" + string.Join("　", parts.ToArray()));
-            }
+            // ---- 試験の結果発表（取っている科目ごと。1位はご機嫌・篤は成績で奨学金）----
+            if (Calendar.IsExamDay(day, hol) && m >= 1080f && Once("exam")) AnnounceExam(day);
 
             // ---- 季節のお祭り（みんなで出かける。Fと恋人は一緒に回る）----
             if (Calendar.IsFestival(day) && m >= 960f && m < 1140f && Once("festival"))
@@ -229,6 +218,64 @@ namespace LifeSimProto
                 if (m < kv.Value || !Once("bake" + kv.Key.id)) continue;
                 if (kv.Key.StartBaking()) world.Log(kv.Key.displayName + "が食堂でお菓子を作りはじめた");
             }
+        }
+
+        void AnnounceExam(int day)
+        {
+            Academics.ClearExam();
+            Academics.lastExamDay = day;
+            var avg = new Dictionary<SimCharacter, float>();
+            foreach (var c in world.characters)
+            {
+                if (c.profile == null || c.profile.enrolled.Length == 0) continue;
+                float sum = 0f;
+                foreach (int s in c.profile.enrolled)
+                {
+                    float score = c.skill[s] * 0.75f + Mathf.Min(20f, c.weekSubject[s] * 0.3f) + Random.Range(0f, 15f) - c.GetStage(StatusLine.Sleep) * 5f;
+                    score = Mathf.Clamp(score, 0f, 100f);
+                    Academics.LastExam[s].Add(new Academics.ExamEntry { who = c, score = score, mark = Academics.Mark(score) });
+                    sum += score;
+                }
+                avg[c] = sum / c.profile.enrolled.Length;
+            }
+            foreach (var l in Academics.LastExam) l.Sort((x, y) => y.score.CompareTo(x.score));
+            foreach (var kv in avg) Academics.LastOverall.Add(kv);
+            Academics.LastOverall.Sort((x, y) => y.Value.CompareTo(x.Value));
+
+            // ご機嫌・落ち込み（平均の点）と、篤の奨学金（科目ごとの印）
+            var parts = new List<string>();
+            foreach (var kv in Academics.LastOverall)
+            {
+                var c = kv.Key;
+                float v = kv.Value;
+                string mark = Academics.Mark(v);
+                if (v >= 55f) { c.PositiveEvent(0.8f); c.ShowBubble(c.Say("examGood", "やった！"), 2f); }
+                else if (v < 32f) { c.NegativeEvent(0.8f); c.ShowBubble(c.Say("examBad", "うぅ…"), 2f); }
+                parts.Add(c.displayName + mark);
+                if (c.IsTarget && world.player != null)
+                {
+                    int money = 0;
+                    for (int s = 0; s < Academics.Count; s++)
+                        foreach (var e in Academics.LastExam[s])
+                            if (e.who == c) money += e.mark == "◎" ? 25 : (e.mark == "○" ? 12 : (e.mark == "△" ? 5 : 0));
+                    world.player.Earn(money, "奨学金（試験の成績）");
+                }
+            }
+            world.Log("試験の結果発表：" + string.Join("　", parts.ToArray()) + "（G キーで成績表）");
+
+            // 科目ごとの1位（同じ子は1回だけご機嫌に）
+            var top = new HashSet<SimCharacter>();
+            var tops = new List<string>();
+            for (int s = 0; s < Academics.Count; s++)
+            {
+                var l = Academics.LastExam[s];
+                if (l.Count < 2) continue;
+                var best = l[0];
+                tops.Add(Academics.Names[s] + "：" + best.who.displayName);
+                if (best.mark == "◎") best.who.AddSkill(s, 1f);
+                if (top.Add(best.who)) { best.who.PositiveEvent(0.6f); best.who.ShowBubble(best.who.Say("rank1", "一番！"), 2.2f); }
+            }
+            if (tops.Count > 0) world.Log("★ 科目の1位　" + string.Join("／", tops.ToArray()));
         }
 
         /// <summary>終わった集まりの効果（ご機嫌・仲の良さ・恋の気持ち）。</summary>

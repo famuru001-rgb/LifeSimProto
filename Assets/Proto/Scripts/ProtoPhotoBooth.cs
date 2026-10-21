@@ -44,11 +44,11 @@ namespace LifeSimProto
                 foreach (var c in world.characters)
                 {
                     var pb = c.GetComponent<ProtoBody>();
-                    report.AppendLine(c.displayName + "：" + (pb != null ? pb.DebugInfo : "仮モデルなし（仮の人形）") + "　今=" + c.actionText + "　姿勢=" + c.BodyPoseNow);
+                    report.AppendLine(c.letter + " " + c.displayName + "：" + (pb != null ? pb.DebugInfo : "仮モデルなし（仮の人形）") + "　今=" + c.actionText + "　姿勢=" + c.BodyPoseNow);
                     Vector3 center = c.transform.position + Vector3.up * (c.BodyPoseNow == BodyPose.Stand ? 0.9f : 0.6f);
-                    Shoot(c.gameObject, center + c.transform.forward * 3f + Vector3.up * 0.5f, center, "キャラ_" + c.displayName + "_前.png", true);
-                    Shoot(c.gameObject, center + c.transform.right * 3f + Vector3.up * 0.5f, center, "キャラ_" + c.displayName + "_横.png", true);
-                    Shoot(c.gameObject, center + c.transform.forward * 1.8f + Vector3.up * 2.4f, center, "キャラ_" + c.displayName + "_周り.png", false);
+                    Shoot(c.gameObject, center + c.transform.forward * 3f + Vector3.up * 0.5f, center, "キャラ_" + c.letter + "_前.png", true);
+                    Shoot(c.gameObject, center + c.transform.right * 3f + Vector3.up * 0.5f, center, "キャラ_" + c.letter + "_横.png", true);
+                    Shoot(c.gameObject, center + c.transform.forward * 1.8f + Vector3.up * 2.4f, center, "キャラ_" + c.letter + "_周り.png", false);
                 }
             }
 
@@ -56,7 +56,7 @@ namespace LifeSimProto
             var letters = new List<string>();
             if (world != null)
                 foreach (var c in world.characters)
-                    if (Resources.Load<GameObject>("Chars/" + c.displayName + "/Char" + c.displayName) != null) letters.Add(c.displayName);
+                    if (Resources.Load<GameObject>("Chars/" + c.letter + "/Char" + c.letter) != null) letters.Add(c.letter);
             if (letters.Count == 0) { letters.Add("A"); letters.Add("F"); }
             var items = new[] { "立つ", "歩く", "歩きながら手を振る", "話す", "椅子", "食べる", "正座", "居眠り", "寝る", "お風呂",
                                 "服_タオル", "服_私服", "服_寝間着",
