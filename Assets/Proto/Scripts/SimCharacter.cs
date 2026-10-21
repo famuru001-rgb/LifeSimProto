@@ -534,7 +534,7 @@ namespace LifeSimProto
             foreach (var r in GetComponentsInChildren<Renderer>(true)) if (r.enabled) rl.Add(r);
             renderers = rl.ToArray();
             colliders = GetComponentsInChildren<Collider>(true);
-            baseSpeed = male ? 1.35f : 1.2f;
+            baseSpeed = male ? 1.55f : 1.4f; // 歩くモーションに合わせて少し速く（もとは 1.35・1.2。famuru 2026-10-21）
             lonely = Random.Range(10f, 40f);
             tired = Random.Range(0f, 20f);
             bored = Random.Range(10f, 40f);
