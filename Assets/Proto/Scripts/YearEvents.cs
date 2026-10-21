@@ -99,6 +99,7 @@ namespace LifeSimProto
             }
             RaceEvents(m);
             FMagic.Check(world, world.RomanceTarget);
+            if (Time.frameCount % 120 == 0) PlaceGates.Check(world);
             // 年の終わり：春の朝に戻る（ループを抜けていたら、続けるかもう一周するかを選ぶ）
             if (!Loop.EndlessDays && Calendar.Year(day) == 1 && Calendar.DayOfYear(day) == Loop.RewindDayOfYear && m >= Loop.RewindHour * 60f && !rewinding)
             {
@@ -191,6 +192,7 @@ namespace LifeSimProto
                     foreach (var c in members)
                     {
                         c.AddSkill(5, 2f); c.AddSkill(1, 1.5f);
+                        c.GrowAbility(Abilities.Body, 0.5f); c.GrowAbility(Abilities.Magic, 0.5f);
                         if (wet == null && c.profile != null && c.profile.IsWeak(5)) wet = c;
                     }
                     world.Log("湖での野外実習：みんなの元素魔法と薬草学が少し伸びた" + (wet != null ? "。" + wet.displayName + "は水の魔法で頭から水をかぶったらしい" : ""));
@@ -199,7 +201,8 @@ namespace LifeSimProto
                 }
                 case "race":
                 {
-                    var rank = Rank(members, c => c.SkillOf(7) + Random.Range(0f, 25f) + (c.IsTarget ? -20f : 0f));
+                    var rank = Rank(members, c => c.SkillOf(7) + c.Ab(Abilities.Body) * 0.3f + c.Ab(Abilities.Magic) * 0.2f + Random.Range(0f, 15f) + (FMagic.Has(7) || !c.IsTarget ? 0f : -30f));
+                    foreach (var c in members) c.GrowAbility(Abilities.Body, 1f);
                     if (rank.Count > 0)
                     {
                         var w = rank[0];
@@ -218,6 +221,8 @@ namespace LifeSimProto
                     {
                         float best = 0f;
                         for (int s = 5; s < Academics.Count; s++) best = Mathf.Max(best, c.SkillOf(s));
+                        best += c.Ab(Abilities.Magic) * 0.2f + c.Ab(Abilities.Body) * 0.1f - 15f;
+                        c.GrowAbility(Abilities.Magic, 1f);
                         sum += best;
                         if (best > mvpV && !c.IsTarget) { mvpV = best; mvp = c; }
                     }
@@ -236,7 +241,10 @@ namespace LifeSimProto
                     float mood = 0f;
                     foreach (var a in members) foreach (var b in members) if (a.id < b.id) mood += world.rel.Get(a.id, b.id);
                     int pairs = members.Count * (members.Count - 1) / 2;
-                    bool hit = pairs > 0 && mood / pairs + Random.Range(0f, 30f) > 45f;
+                    float charm = 0f;
+                    foreach (var c in members) { charm += c.Ab(Abilities.Charm); c.GrowAbility(Abilities.Charm, 1f); }
+                    charm = members.Count > 0 ? charm / members.Count : 50f;
+                    bool hit = pairs > 0 && mood / pairs + Random.Range(0f, 30f) + (charm - 55f) * 0.5f > 45f;
                     world.dormReputation += hit ? 6 : 3;
                     foreach (var c in members) c.PositiveEvent(hit ? 0.8f : 0.4f);
                     world.Log("★ 学園祭：寮の出し物は「" + shop + "」" + (hit ? "。大盛況！" : "。まずまずのにぎわい"));
@@ -248,18 +256,19 @@ namespace LifeSimProto
                     memo = "寮の歓迎会。篤もみんなに迎えてもらった";
                     break;
                 case "stars":
-                    foreach (var c in members) c.PositiveEvent(0.5f);
+                    foreach (var c in members) { c.PositiveEvent(0.5f); c.GrowAbility(Abilities.Mind, 0.3f); }
                     memo = "屋上での星見の夜（" + Names(members) + "）";
                     break;
                 case "waterplay":
-                    foreach (var c in members) { c.PositiveEvent(0.6f); c.bored = 0f; }
+                    foreach (var c in members) { c.PositiveEvent(0.6f); c.bored = 0f; c.GrowAbility(Abilities.Body, 0.5f); }
                     memo = "湖での水遊び（" + Names(members) + "）";
                     break;
                 case "cooking":
                 {
                     var rank = Rank(members, c =>
                     {
-                        float v = Random.Range(0f, 40f) + c.diligence * 10f;
+                        float v = Random.Range(0f, 30f) + c.Ab(Abilities.Dex) * 0.4f;
+                        c.GrowAbility(Abilities.Dex, 1f);
                         if (c.profile != null && c.profile.Likes("料理")) v += 25f;
                         if (c.IsTarget) v += 30f; // 転生前の料理
                         return v;
@@ -278,7 +287,7 @@ namespace LifeSimProto
                 case "summerfest":
                 {
                     SimCharacter fire = null; float best = -1f;
-                    foreach (var c in members) if (c.SkillOf(5) > best && !c.IsTarget) { best = c.SkillOf(5); fire = c; }
+                    foreach (var c in members) if (c.SkillOf(5) + c.Ab(Abilities.Magic) * 0.5f > best && !c.IsTarget) { best = c.SkillOf(5) + c.Ab(Abilities.Magic) * 0.5f; fire = c; }
                     foreach (var c in members) c.PositiveEvent(0.8f);
                     world.Log("夏祭り：" + (fire != null ? fire.displayName + "の元素魔法の花火が夜空に咲いた" : "花火がきれいだった"));
                     memo = "夏祭りと花火" + (fire != null ? "（" + fire.displayName + "の花火）" : "");
@@ -310,7 +319,8 @@ namespace LifeSimProto
                     var ria = ByLetter("I");
                     if (ria == null || !members.Contains(ria)) break;
                     bool cheer = f != null && world.Now - ria.LastFContact < 120;
-                    float p = 0.25f + world.rel.Get(ria.id, f != null ? f.id : 0) / 200f + (cheer ? 0.25f : 0f) + (e.key == "riacook2" ? 0.2f : 0f);
+                    float p = 0.05f + ria.Ab(Abilities.Dex) / 250f + world.rel.Get(ria.id, f != null ? f.id : 0) / 200f + (cheer ? 0.25f : 0f) + (e.key == "riacook2" ? 0.2f : 0f);
+                    ria.GrowAbility(Abilities.Dex, 1.5f);
                     if (Random.value < p)
                     {
                         riaCooked = true;
@@ -327,7 +337,8 @@ namespace LifeSimProto
                     var g7 = ByLetter("G");
                     if (g7 == null || !members.Contains(g7)) break;
                     bool cheer = f != null && world.Now - g7.LastFContact < 240;
-                    float p = 0.2f + g7.SkillOf(2) / 150f + (cheer ? 0.2f : 0f);
+                    float p = 0.05f + g7.SkillOf(2) / 200f + g7.Ab(Abilities.Dex) / 300f + (cheer ? 0.2f : 0f);
+                    g7.GrowAbility(Abilities.Dex, 1.5f);
                     if (Random.value < p)
                     {
                         g7.PositiveEvent(1f);

@@ -15,6 +15,7 @@ namespace LifeSimProto
     {
         public static int Count = 1;                          // 何周目か
         public static float[] fSkills;                        // 篤の学力（持ち越し）
+        public static float[] fAbilities;                     // 篤の能力値（持ち越し）
         public static readonly HashSet<string> Zukan = new HashSet<string>();      // 図鑑でわかったこと（"A:好き:本" など）
         public static readonly List<string> OpenedPlaces = new List<string>();     // 開いた場所（場所ができたら使う）
         public static bool Escaped;                           // 物語でループを抜けた
@@ -29,7 +30,7 @@ namespace LifeSimProto
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetAll()
         {
-            Count = 1; fSkills = null; Zukan.Clear(); OpenedPlaces.Clear();
+            Count = 1; fSkills = null; fAbilities = null; Zukan.Clear(); OpenedPlaces.Clear();
             Escaped = false; EndlessDays = false; AskChoice = false;
             Album.Entries.Clear();
             FMagic.Unlocked.Clear();
@@ -61,7 +62,7 @@ namespace LifeSimProto
         public static void Rewind(LoungeWorld w)
         {
             var f = w.RomanceTarget;
-            if (f != null) fSkills = (float[])f.skill.Clone();
+            if (f != null) { fSkills = (float[])f.skill.Clone(); fAbilities = (float[])f.ability.Clone(); }
             Album.Add(w, "…気がつくと、また春の朝だった（" + Count + "周目が終わった）");
             Count++;
             PickRewind();
@@ -70,6 +71,50 @@ namespace LifeSimProto
 #else
             SceneManager.LoadScene(SceneManager.GetActiveScene().name);
 #endif
+        }
+    }
+
+    /// <summary>
+    /// 場所の開き方の目安（場所はまだ作っていないので、条件を満たすと「開いた」と記録だけする）。
+    /// ふつうの場所：篤の能力値＋関係の深いキャラと友達（あとで「キャラの物語」に置きかえる）。
+    /// </summary>
+    public static class PlaceGates
+    {
+        public class Gate { public string place, ability; public int abilityIndex; public string[] friends; }
+
+        public static readonly Gate[] All =
+        {
+            new Gate { place = "中庭", abilityIndex = Abilities.Body, ability = "C", friends = new[] { "C", "E", "H" } },
+            new Gate { place = "温室", abilityIndex = Abilities.Mind, ability = "C", friends = new[] { "B" } },
+            new Gate { place = "図書室", abilityIndex = Abilities.Mind, ability = "B", friends = new[] { "A", "I" } },
+            new Gate { place = "工房", abilityIndex = Abilities.Dex, ability = "C", friends = new[] { "G", "J" } },
+            new Gate { place = "屋上の天文台", abilityIndex = Abilities.Magic, ability = "D", friends = new[] { "D", "H" } },
+            new Gate { place = "台所", abilityIndex = Abilities.Dex, ability = "D", friends = new[] { "I" } },
+        };
+
+        public static string Text(Gate g)
+        {
+            var n = new System.Collections.Generic.List<string>();
+            foreach (var l in g.friends) { var p = CharProfiles.All.Find(x => x.letter == l); n.Add(p != null ? p.name : l); }
+            return "篤の" + Abilities.Names[g.abilityIndex] + " " + g.ability + "以上・" + string.Join("か", n.ToArray()) + "と友達";
+        }
+
+        /// <summary>条件を満たした場所を開く（1日1回くらい呼ぶ）。</summary>
+        public static void Check(LoungeWorld w)
+        {
+            var f = w.RomanceTarget;
+            if (f == null) return;
+            foreach (var g in All)
+            {
+                if (Loop.OpenedPlaces.Contains(g.place)) continue;
+                if (f.Ab(g.abilityIndex) < Abilities.RankMin(g.ability)) continue;
+                bool friend = false;
+                foreach (var c in w.characters) if (System.Array.IndexOf(g.friends, c.letter) >= 0 && w.rel.Get(c.id, f.id) >= 40f) friend = true;
+                if (!friend) continue;
+                Loop.OpenedPlaces.Add(g.place);
+                w.Log("★ 「" + g.place + "」が開いた（場所はこれから作る。ループしても開いたまま）");
+                Album.Add(w, "「" + g.place + "」に入れるようになった");
+            }
         }
     }
 
@@ -127,6 +172,7 @@ namespace LifeSimProto
             if (!Has(subject) || UsedToday(subject, w.Day) || f == null) return false;
             usedDay[subject] = w.Day;
             f.AddSkill(subject, 1.5f);
+            f.GrowAbility(Abilities.Magic, 1f);
             switch (subject)
             {
                 case 5:

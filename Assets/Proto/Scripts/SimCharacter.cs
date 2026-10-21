@@ -48,7 +48,8 @@ namespace LifeSimProto
         readonly List<int> classSlots = new List<int>();
         /// <summary>学力（取っている科目の平均）。</summary>
         public float academic { get { return AverageSkill(); } }
-        public float mana;            // 魔力（0〜100）
+        public float mana;            // 魔力のたまり（0〜100。たまりすぎると暴走）
+        public readonly float[] ability = new float[Abilities.Count]; // 能力値（体力・魅力・器用さ・魔力・知力）
         public float weekStudy;       // 今週の勉強量
         public bool hasAssignment;
         public float assignProgress;  // 課題の進み具合（0〜100）
@@ -358,7 +359,18 @@ namespace LifeSimProto
             int ms = GetStage(StatusLine.Mana);
             if (target != ms && GetStage(StatusLine.ManaOut) == 0)
             {
-                if (target == 3 && Present && state != State.Sleeping && state != State.Private) ManaBurst();
+                if (target == 3 && Present && state != State.Sleeping && state != State.Private)
+                {
+                    // 魔力が強い子は、半分くらいはうまく逃がせる（使いこなせる）
+                    if (Ab(Abilities.Magic) >= 70f && Random.value < 0.5f)
+                    {
+                        mana = 60f;
+                        ShowBubble("✦（ふう、逃がせた）", 1.6f);
+                        SetStage(StatusLine.Mana, 1, false, true);
+                        GrowAbility(Abilities.Magic, 0.5f);
+                    }
+                    else ManaBurst();
+                }
                 else if (target < 3) SetStage(StatusLine.Mana, target, false, target < ms);
             }
 
@@ -561,11 +573,13 @@ namespace LifeSimProto
             sleepy += gm * 0.075f * RateMul(NeedKind.Sleepy);
             if (!IsTarget && LoveStage >= 1) loveNeed += gm * 0.05f * (0.5f + world.romance.love[id] / 50f) * RateMul(NeedKind.Love);
             desire += gm * DesireRate();
-            if (GetStage(StatusLine.ManaOut) == 0) mana += gm * (hobby == HobbyKind.Magic ? 0.035f : 0.02f);
+            if (GetStage(StatusLine.ManaOut) == 0) mana += gm * (hobby == HobbyKind.Magic ? 0.035f : 0.02f) * (0.5f + Ab(Abilities.Magic) / 100f); // 魔力が強い子ほどたまりやすい
 
             float lonelyMul = RateMul(NeedKind.Lonely), tiredMul = RateMul(NeedKind.Tired), boredMul = RateMul(NeedKind.Bored);
             // 種族などの特徴
             if (HasTrait(CharTrait.Lonely)) lonelyMul *= 1.4f;
+            tiredMul *= Mathf.Clamp(1.25f - Ab(Abilities.Body) / 200f, 0.7f, 1.3f); // 体力があるほど疲れにくい
+            GrowFromActivity(dt, gm);
             if (HasTrait(CharTrait.WinterWeak) && Calendar.Season(world.Day) == 3) tiredMul *= 1.3f;
             if (HasTrait(CharTrait.RainWings) && Calendar.WeatherOf(world.Day) == Weather.Rain) tiredMul *= 1.3f;
             if (HasTrait(CharTrait.FullMoon) && Calendar.IsFullMoon(world.Day)) boredMul *= 1.5f;
@@ -637,7 +651,7 @@ namespace LifeSimProto
                 {
                     loveNeed -= gm * 0.3f;
                     lastFContact = world.Now;
-                    world.ChangeLove(this, gm * 0.015f);
+                    world.ChangeLove(this, gm * 0.015f * (0.6f + f.Ab(Abilities.Charm) / 125f)); // 篤の魅力で育ち方が変わる
                 }
             }
 
@@ -663,11 +677,13 @@ namespace LifeSimProto
             weekStudy += amount * 0.4f;
             if (subj >= 0) weekSubject[subj] += amount * 0.4f;
             AddSkill(subj, amount * 0.006f);
+            if (subj >= 0 && Academics.IsPractical(subj)) { GrowAbility(Abilities.Magic, amount * 0.0015f); if (subj == 8 || subj == 7) GrowAbility(Abilities.Body, amount * 0.001f); if (subj == 9) GrowAbility(Abilities.Dex, amount * 0.001f); }
+            else GrowAbility(Abilities.Mind, amount * 0.0012f);
             focusMin += gm;
             bored += dt * 0.3f;
             if (hasAssignment && assignProgress < 100f)
             {
-                assignProgress += amount * 0.45f * (0.5f + SkillOf(assignSubject) / 100f);
+                assignProgress += amount * 0.45f * (0.5f + SkillOf(assignSubject) / 100f) * MindMul;
                 if (assignProgress >= 100f)
                 {
                     assignProgress = 100f;
@@ -678,7 +694,8 @@ namespace LifeSimProto
                 }
             }
             // 実技の自主練習は、たまにちょっとした失敗をする（1日1回まで）
-            if (subj >= 0 && Academics.IsPractical(subj) && mishapDay != world.Day && Random.value < dt * 0.012f * (profile != null && profile.IsWeak(subj) ? 2f : 1f))
+            float clumsy = Mathf.Clamp(1.5f - Ab(Abilities.Dex) / 100f, 0.5f, 1.5f); // 器用な子ほど失敗しにくい
+            if (subj >= 0 && Academics.IsPractical(subj) && mishapDay != world.Day && Random.value < dt * 0.012f * clumsy * (profile != null && profile.IsWeak(subj) ? 2f : 1f))
                 PracticeMishap(subj);
             // 近くで課題をしている子に教える（その科目が得意な子・学力が高い子ほど）
             foreach (var o in world.characters)
@@ -700,6 +717,7 @@ namespace LifeSimProto
                     taughtDay = world.Day;
                     ShowBubble(Say("teach", "ここはね…"), 1.5f);
                     o.ShowBubble(o.Say("thanks", "ありがとう"), 1.5f);
+                    GrowAbility(Abilities.Mind, 0.2f);
                     world.Log(displayName + "が" + o.displayName + "に" + SubjectName(os) + "の課題を教えている");
                 }
             }
@@ -718,6 +736,10 @@ namespace LifeSimProto
             }
             // 篤の学力はループで持ち越す
             if (IsTarget && Loop.fSkills != null) for (int i = 0; i < Academics.Count && i < Loop.fSkills.Length; i++) skill[i] = Loop.fSkills[i];
+            // 能力値（性格と種族から。少しだけばらつく。篤の分はループで持ち越す）
+            var init = Abilities.Initial(letter);
+            for (int i = 0; i < Abilities.Count; i++) ability[i] = Mathf.Clamp(init[i] + (IsTarget ? 0f : Random.Range(-3f, 3f)), 0f, 100f);
+            if (IsTarget && Loop.fAbilities != null) for (int i = 0; i < Abilities.Count && i < Loop.fAbilities.Length; i++) ability[i] = Loop.fAbilities[i];
         }
 
         public bool Enrolled(int s) { return profile != null && s >= 0 && System.Array.IndexOf(profile.enrolled, s) >= 0; }
@@ -736,8 +758,58 @@ namespace LifeSimProto
         public void AddSkill(int s, float v, bool grow = true)
         {
             if (s < 0 || s >= Academics.Count) return;
-            if (grow && v > 0f && profile != null) v *= profile.Growth(s);
+            if (grow && v > 0f && profile != null) v *= profile.Growth(s) * MindMul;
             skill[s] = Mathf.Clamp(skill[s] + v, 0f, 100f);
+        }
+
+        public float Ab(int a) { return a >= 0 && a < Abilities.Count ? ability[a] : 50f; }
+
+        /// <summary>能力値を伸ばす（高いほど伸びにくい）。</summary>
+        public void GrowAbility(int a, float v)
+        {
+            if (a < 0 || a >= Abilities.Count || v == 0f) return;
+            string before = Abilities.Rank(ability[a]);
+            if (v > 0f) v *= Mathf.Clamp(1.3f - ability[a] / 100f, 0.3f, 1.3f);
+            ability[a] = Mathf.Clamp(ability[a] + v, 0f, 100f);
+            string after = Abilities.Rank(ability[a]);
+            if (after != before && v > 0f && world != null) world.Log(displayName + "の" + Abilities.Names[a] + "が " + after + " になった");
+        }
+
+        /// <summary>知力による覚えのよさ（知力50でほぼ1倍、85で約1.2倍、30で約0.9倍）。</summary>
+        float MindMul { get { return 0.7f + Ab(Abilities.Mind) / 170f; } }
+
+        public string AbilityText()
+        {
+            var parts = new List<string>();
+            for (int i = 0; i < Abilities.Count; i++) parts.Add(Abilities.Names[i] + " " + Abilities.Rank(ability[i]));
+            return string.Join("　", parts.ToArray());
+        }
+
+        /// <summary>していることで能力値が少しずつ伸びる。</summary>
+        void GrowFromActivity(float dt, float gm)
+        {
+            switch (state)
+            {
+                case State.Away:
+                    if (awayKind == AwayKind.Stroll) GrowAbility(Abilities.Body, gm * 0.004f);
+                    else if (awayKind == AwayKind.Outing) GrowAbility(Abilities.Charm, gm * 0.002f);
+                    else if (awayKind == AwayKind.Job) GrowAbility(Abilities.Dex, gm * 0.003f);
+                    break;
+                case State.Sitting:
+                case State.Activity:
+                    if (act == Act.Hobby)
+                    {
+                        if (hobby == HobbyKind.Reading) GrowAbility(Abilities.Mind, dt * 0.004f);
+                        else if (hobby == HobbyKind.Magic) { GrowAbility(Abilities.Magic, dt * 0.003f); GrowAbility(Abilities.Dex, dt * 0.002f); }
+                        else if (hobby == HobbyKind.Tea) GrowAbility(Abilities.Charm, dt * 0.003f);
+                    }
+                    else if (act == Act.Work) GrowAbility(Abilities.Dex, dt * 0.004f);
+                    else if (act == Act.Fun && gathering != null) GrowAbility(Abilities.Charm, dt * 0.002f);
+                    break;
+                case State.Bathing:
+                    GrowAbility(Abilities.Body, dt * 0.001f);
+                    break;
+            }
         }
 
         /// <summary>今から勉強する科目を決める。課題があれば課題の科目、試験の前の日は苦手な科目。</summary>
@@ -1100,7 +1172,17 @@ namespace LifeSimProto
         /// <summary>授業から帰ったとき：科目の学力が伸び、同じ授業に出た子と仲よくなる。実技はたまに失敗の話が伝わる。</summary>
         void AfterClass()
         {
-            foreach (int s in classSubjects) { AddSkill(s, 2.2f); weekSubject[s] += 6f; }
+            foreach (int s in classSubjects)
+            {
+                AddSkill(s, 2.2f); weekSubject[s] += 6f;
+                if (!Academics.IsPractical(s)) GrowAbility(Abilities.Mind, 0.3f);
+                else
+                {
+                    GrowAbility(Abilities.Magic, 0.3f);
+                    if (s == 7 || s == 8) GrowAbility(Abilities.Body, 0.3f);
+                    if (s == 9) GrowAbility(Abilities.Dex, 0.3f);
+                }
+            }
             foreach (var o in world.characters)
             {
                 if (o == this || o.classSlots.Count == 0) continue;
@@ -1111,7 +1193,7 @@ namespace LifeSimProto
             foreach (int s in classSubjects)
             {
                 if (!Academics.IsPractical(s)) continue;
-                float p = profile != null && profile.IsWeak(s) ? 0.3f : 0.1f;
+                float p = (profile != null && profile.IsWeak(s) ? 0.3f : 0.1f) * Mathf.Clamp(1.5f - Ab(Abilities.Dex) / 100f, 0.5f, 1.5f);
                 if (Random.value >= p) continue;
                 world.Log(displayName + "は" + SubjectName(s) + "の授業で" + Academics.MishapText(s) + "らしい");
                 ShowBubble(Say("hurt", "いてて…"), 1.8f);
@@ -2292,7 +2374,9 @@ namespace LifeSimProto
             if (tp != null && (feelYou != 0 || feelMe != 0)) NoteZukan(tp, feelMe, partner, feelYou);
             if ((IsTarget && partner.IsLover) || (IsLover && partner.IsTarget)) bonus += 0.15f;
             if (requestEffort >= 0f && hasOrder) bonus += (requestEffort - 0.4f) * 0.4f;
+            bonus += (Ab(Abilities.Charm) + partner.Ab(Abilities.Charm) - 100f) / 500f; // 魅力がある2人ほど楽しくなりやすい
             TalkResult result = world.rel.Roll(id, partner.id, bonus);
+            if (result == TalkResult.Fun) { GrowAbility(Abilities.Charm, 0.15f); partner.GrowAbility(Abilities.Charm, 0.15f); }
             string icon = result == TalkResult.Fun ? "♪ ♥" : (result == TalkResult.Normal ? "…" : "（汗）");
             ShowBubble(icon, 2.2f);
             partner.ShowBubble(icon, 2.2f);
@@ -2414,7 +2498,7 @@ namespace LifeSimProto
             }
             if (ok && StillChat(o))
             {
-                TalkResult result = world.rel.Roll(id, o.id, 0.1f + TalkBonus() + o.TalkBonus());
+                TalkResult result = world.rel.Roll(id, o.id, 0.1f + TalkBonus() + o.TalkBonus() + (Ab(Abilities.Charm) + o.Ab(Abilities.Charm) - 100f) / 500f);
                 if (result == TalkResult.Fun) { ShowBubble("♪", 1.2f); o.ShowBubble("♪", 1.2f); }
                 world.ReportTalk(this, o, result, false, place);
                 AfterTalkStatuses(o, result);

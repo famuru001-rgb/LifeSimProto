@@ -592,7 +592,17 @@ namespace LifeSimProto
             float y = r.y + 46;
             var magic = new List<string>();
             foreach (var sp in FMagic.All) magic.Add(FMagic.Has(sp.subject) ? sp.name : "？（" + Academics.Names[sp.needSubject] + " " + Mathf.RoundToInt(sp.need) + "で開く）");
-            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "篤の魔法：" + string.Join("／", magic.ToArray()), tiny); y += 28;
+            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "篤の魔法：" + string.Join("／", magic.ToArray()), tiny); y += 24;
+            var fx = world.RomanceTarget;
+            if (fx != null) { GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "篤の能力（持ち越し）：" + fx.AbilityText(), tiny); y += 24; }
+            var gates = new List<string>();
+            foreach (var g in PlaceGates.All) gates.Add(g.place + (Loop.OpenedPlaces.Contains(g.place) ? "（開いた）" : "（" + PlaceGates.Text(g) + "）"));
+            for (int k = 0; k < gates.Count; k += 2)
+            {
+                GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), (k == 0 ? "場所：" : "　　　") + string.Join("　", gates.GetRange(k, Mathf.Min(2, gates.Count - k)).ToArray()), tiny);
+                y += 22;
+            }
+            y += 6;
 
             GUI.Label(new Rect(r.x + 14, y, 300, 24), "キャラ図鑑（会話で埋まる）", small); y += 26;
             foreach (var c in world.characters)
@@ -687,9 +697,10 @@ namespace LifeSimProto
                     y += 20;
                 }
             }
+            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "能力：" + c.AbilityText(), small); y += 22;
             GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "話したい度 " + Level(c.sociability) + "　気まぐれ " + Level(c.whim) + "　真面目さ " + Level(c.diligence), small); y += 22;
             string assign = c.hasAssignment ? "　課題（" + SimCharacter.SubjectName(c.assignSubject) + "）" + Mathf.RoundToInt(c.assignProgress) + "%（締切 " + ScheduleMaker.Clock(c.assignDeadline) + "）" : "";
-            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "学力 " + Mathf.RoundToInt(c.academic) + "　魔力 " + Mathf.RoundToInt(c.mana) + "　今週の勉強 " + Mathf.RoundToInt(c.weekStudy) + assign, small); y += 28;
+            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "学力 " + Mathf.RoundToInt(c.academic) + "　魔力のたまり " + Mathf.RoundToInt(c.mana) + "　今週の勉強 " + Mathf.RoundToInt(c.weekStudy) + assign, small); y += 28;
 
             // 状態異常
             if (c.statuses.Count == 0) { GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "状態：ふつう", small); y += 24; }

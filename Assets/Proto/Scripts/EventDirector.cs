@@ -214,7 +214,8 @@ namespace LifeSimProto
                 float sum = 0f;
                 foreach (int s in c.profile.enrolled)
                 {
-                    float score = c.skill[s] * 0.8f + Mathf.Min(25f, c.weekSubject[s] * 0.4f) + Random.Range(0f, 15f) - c.GetStage(StatusLine.Sleep) * 5f;
+                    float score = c.skill[s] * 0.8f + Mathf.Min(25f, c.weekSubject[s] * 0.4f) + Random.Range(0f, 15f) - c.GetStage(StatusLine.Sleep) * 5f
+                        + (c.Ab(Abilities.ForSubject(s)) - 50f) * 0.1f; // 勉学は知力、実技は魔力（体術は体力）
                     score = Mathf.Clamp(score, 0f, 100f);
                     Academics.LastExam[s].Add(new Academics.ExamEntry { who = c, score = score, mark = Academics.Mark(score) });
                     sum += score;
