@@ -87,7 +87,7 @@ namespace LifeSimProto
             I("item:やすらぎのハーブティー", "やすらぎのハーブティー", ModSource.Item).Rate(Lonely, 0.7f).Rate(Bored, 0.7f).Desc("さみしさと退屈がたまりにくい");
             I("item:集中のキャンドル", "集中のキャンドル", ModSource.Item).Rate(Study, 1.4f).Relief(Study, 1.3f).Desc("勉強したい気持ちが高まり、勉強がはかどる");
             I("item:疲れ知らずの飴", "疲れ知らずの飴", ModSource.Item).Rate(Tired, 0.7f).Rate(Hunger, 0.8f).Desc("疲れと空腹がたまりにくい");
-            I("item:落ち着きのお茶", "落ち着きのお茶", ModSource.Item).Build(Desire, 0.5f).Drain(Desire, 1.5f).Relief(Desire, 1.3f).Desc("気持ちが静まる（性欲のたまりがたまりにくく、減りやすい）");
+            I("item:落ち着きのお茶", "落ち着きのお茶", ModSource.Item).Build(Desire, 0.8f).Drain(Desire, 1.1f).Relief(Desire, 1.2f).Desc("気持ちが静まる（性欲のたまりがたまりにくく、減りやすい）");
             I("item:ときめきの香水", "ときめきの香水", ModSource.Item).Rate(Love, 1.3f).Rate(Lonely, 0.9f).Desc("恋心が育ちやすい");
             I("item:ぐっすりの枕香", "ぐっすりの枕香", ModSource.Item).Relief(Sleepy, 1.4f).Relief(Tired, 1.2f).Desc("眠ると眠気と疲れがよく取れる");
 

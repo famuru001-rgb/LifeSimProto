@@ -1695,11 +1695,11 @@ namespace LifeSimProto
             if (state == State.Approaching || state == State.Waiting || state == State.Walking) return;
             if (hasOrder) return; // プレイヤーの指示を実行中
 
-            // ---- 寮生の私物：1日に1回、性欲が高いと自分で買って使うことがある ----
-            if (!IsTarget && selfBuyDay != world.Day && world.MinuteOfDay >= 9f * 60f && world.MinuteOfDay < 20f * 60f && desire >= 50f)
+            // ---- 寮生の買い物：自分の状態と好みで、効く物を考えて買う（購買部が開いている 9〜20時。1時間半に1回考える）----
+            if (!IsTarget && now >= nextShopThink && world.MinuteOfDay >= 9f * 60f && world.MinuteOfDay < 20f * 60f)
             {
-                selfBuyDay = world.Day;
-                if (Random.value < Mathf.Clamp01((desire - 50f) / 80f)) SelfBuy();
+                nextShopThink = now + ShopThinkEvery;
+                SelfBuy(false);
             }
 
             // ---- 性欲が最大（昼）：相手を探して会いに行く ----
@@ -1912,50 +1912,147 @@ namespace LifeSimProto
         {
             if (desire < 60f) return null;
             if (!PrivateNight && desire < 99.9f) return null;
+            // 篤との関係に関係なく起きる（famuru 決定 2026-10-21）。寮生同士では起きない
             if (!IsTarget)
             {
-                if (LoveStage < 2) return null;
                 var f = world.RomanceTarget;
                 if (f != null && f.AvailableForTalk && f.desire >= 40f && !f.hasOrder) return f;
                 return null;
             }
             if (hasOrder) return null;
             SimCharacter best = null;
+            float bestScore = float.MinValue;
             foreach (var c in world.characters)
             {
-                if (c == this || c.LoveStage < 2 || !c.AvailableForTalk || c.desire < 40f) continue;
-                if (best == null || c.desire > best.desire) best = c;
+                if (c == this || c.IsTarget || !c.AvailableForTalk || c.desire < 40f) continue;
+                float sc = c.desire + world.romance.love[c.id] * 0.3f + world.rel.Get(id, c.id) * 0.2f;
+                if (sc > bestScore) { bestScore = sc; best = c; }
             }
             return best;
         }
 
-        int selfBuyDay = -1;
+        // ================= 寮生の買い物（自分で考えてバフ・デバフを選ぶ） =================
+        // 数字は試作用の仮の値。famuru 決定（2026-10-21）：今の状態＋性格の好み＋気まぐれで選ぶ／困っているのはデバフの状態異常だけ見る・
+        // バフの状態異常がある欲求は優先度を下げる／お金はまだ使わず、必要なら何回でも買う（同じ物が効いている間は買わない）。あとで寮生にもお小遣いを持たせる
+        const double ShopThinkEvery = 90;   // 考える間隔（ゲーム内の分）
+        const float ShopBuyAt = 0.35f;      // この点数を超えた物があれば買う
+        static readonly ItemShelf[] ShopShelves = { ItemShelf.Needs, ItemShelf.Personal }; // 寮生が自分で買う棚
+        double nextShopThink;
 
-        /// <summary>寮生の私物を自分で買って使う（試験用に外からも呼べる）。</summary>
-        public void SelfBuy()
+        /// <summary>状態異常 → 関係する欲求と、バフかデバフか。</summary>
+        static readonly KeyValuePair<StatusLine, NeedKind[]>[] DebuffNeeds =
         {
-            if (IsTarget) return;
-            var list = new List<ItemDef>();
-            foreach (var d in ItemBook.All) if (d.npcOnly) list.Add(d);
-            if (list.Count == 0) return;
-            var it = list[Random.Range(0, list.Count)];
-            world.Log(displayName + "は購買部で「" + it.name + "」を買った");
-            ApplyItem(it.kind, this);
+            new KeyValuePair<StatusLine, NeedKind[]>(StatusLine.MoodDown, new[] { NeedKind.Lonely, NeedKind.Bored }),
+            new KeyValuePair<StatusLine, NeedKind[]>(StatusLine.Sleep, new[] { NeedKind.Sleepy, NeedKind.Tired }),
+            new KeyValuePair<StatusLine, NeedKind[]>(StatusLine.Love, new[] { NeedKind.Love }),
+            new KeyValuePair<StatusLine, NeedKind[]>(StatusLine.Cold, new[] { NeedKind.Tired }),
+            new KeyValuePair<StatusLine, NeedKind[]>(StatusLine.Lonely, new[] { NeedKind.Lonely }),
+            new KeyValuePair<StatusLine, NeedKind[]>(StatusLine.Frustration, new[] { NeedKind.Bored }),
+            new KeyValuePair<StatusLine, NeedKind[]>(StatusLine.Desire, new[] { NeedKind.Desire }),
+        };
+        static readonly KeyValuePair<StatusLine, NeedKind[]>[] BuffNeeds =
+        {
+            new KeyValuePair<StatusLine, NeedKind[]>(StatusLine.MoodUp, new[] { NeedKind.Lonely, NeedKind.Bored }),
+            new KeyValuePair<StatusLine, NeedKind[]>(StatusLine.Focus, new[] { NeedKind.Study }),
+        };
+
+        float Gauge(NeedKind n)
+        {
+            switch (n)
+            {
+                case NeedKind.Lonely: return lonely;
+                case NeedKind.Tired: return tired;
+                case NeedKind.Bored: return bored;
+                case NeedKind.Hunger: return hunger;
+                case NeedKind.Study: return study;
+                case NeedKind.Hobby: return hobbyNeed;
+                case NeedKind.Love: return loveNeed;
+                case NeedKind.Sleepy: return sleepy;
+                default: return desire;
+            }
         }
 
-        /// <summary>性欲が最大のときに探しに行く相手（女の子→篤、篤→篤を好きな子）。</summary>
+        /// <summary>その欲求をどのくらい何とかしたいか（ゲージの高さ＋デバフの状態異常。バフの状態異常があると半分）。</summary>
+        float Urgency(NeedKind n)
+        {
+            float u = Gauge(n) / 100f;
+            foreach (var kv in DebuffNeeds) if (System.Array.IndexOf(kv.Value, n) >= 0) u += 0.5f * GetStage(kv.Key);
+            foreach (var kv in BuffNeeds) if (System.Array.IndexOf(kv.Value, n) >= 0 && GetStage(kv.Key) > 0) u *= 0.5f;
+            return u;
+        }
+
+        /// <summary>品物の点数（よくなる分 − 困る分 ＋ 好み ＋ 気まぐれ）。</summary>
+        public float ItemAppeal(ItemDef d)
+        {
+            var m = d.Mod;
+            if (m == null) return 0f;
+            float score = 0f;
+            foreach (NeedKind n in System.Enum.GetValues(typeof(NeedKind)))
+            {
+                float rate = NeedMod.Get(m.rate, n), relief = NeedMod.Get(m.relief, n), build = NeedMod.Get(m.build, n), drain = NeedMod.Get(m.drain, n);
+                if (rate == 1f && relief == 1f && build == 1f && drain == 1f) continue;
+                if (n == NeedKind.Study)
+                {
+                    // 勉強したい気持ちは「高まる」がよい。真面目な子・課題がある子ほど欲しがる
+                    float e = (rate - 1f) + (relief - 1f) * 0.5f;
+                    float w = 0.3f + diligence * 0.6f + (hasAssignment ? 0.4f : 0f) + (GetStage(StatusLine.Focus) > 0 ? -0.2f : 0f);
+                    score += e * w;
+                    continue;
+                }
+                if (n == NeedKind.Desire)
+                {
+                    // 性欲を上げる物（私物）は好みで、下げる物は悶々・発情のときにほしくなる
+                    float up = (rate - 1f) + (build - 1f) - (relief - 1f) * 0.5f - (drain - 1f) * 0.5f;
+                    if (up > 0f) score += up * PersonalTaste();
+                    else score += -up * (GetStage(StatusLine.Desire) >= 2 ? 1.2f : desire / 200f);
+                    continue;
+                }
+                // ほかの欲求は「たまりにくい・下がりやすい」がよい
+                float good = (1f - rate) + (relief - 1f) * 0.5f;
+                if (good >= 0f) score += good * Urgency(n) * 1.5f;
+                else score += good * (0.3f + Gauge(n) / 100f); // 困った所：その欲求がもう高いと、なおさらいや
+            }
+            score += whim * Random.value * 0.4f; // 気まぐれ
+            return score;
+        }
+
+        /// <summary>性欲を上げる私物の好み（性欲が0でも少しは買う。気まぐれな子・恋をしている子・性欲が高い子ほど）。</summary>
+        float PersonalTaste()
+        {
+            return 0.3f + whim * 0.5f + (LoveStage >= 1 ? 0.2f : 0f) + desire / 150f;
+        }
+
+        /// <summary>自分で考えて品物を買って使う。force なら点数に関係なく、いちばんよい物を買う（試験用）。</summary>
+        public void SelfBuy(bool force = true)
+        {
+            if (IsTarget) return;
+            ItemDef best = null;
+            float bestScore = float.MinValue;
+            foreach (var d in ItemBook.All)
+            {
+                if (System.Array.IndexOf(ShopShelves, d.shelf) < 0 || d.Mod == null) continue;
+                if (mods.Exists(a => a.mod.id == d.modId)) continue; // 同じ物が効いている間は買わない
+                float sc = ItemAppeal(d);
+                if (sc > bestScore) { bestScore = sc; best = d; }
+            }
+            if (best == null || (!force && bestScore < ShopBuyAt)) return;
+            world.Log(displayName + "は購買部で「" + best.name + "」を買った");
+            ApplyItem(best.kind, this);
+        }
+
+        /// <summary>性欲が最大のときに探しに行く相手（寮生→篤、篤→性欲のいちばん高い寮生。関係に関係なく）。</summary>
         SimCharacter SeekPartner()
         {
             var f = world.RomanceTarget;
             if (!IsTarget)
             {
-                if (LoveStage < 2 || f == null || !f.Present || f.InPrivate) return null;
+                if (f == null || !f.Present || f.InPrivate) return null;
                 return f;
             }
             SimCharacter best = null;
             foreach (var c in world.characters)
             {
-                if (c == this || c.IsTarget || c.LoveStage < 2 || !c.Present || c.InPrivate || c.state == State.Sleeping || c.state == State.Bathing) continue;
+                if (c == this || c.IsTarget || !c.Present || c.InPrivate || c.state == State.Sleeping || c.state == State.Bathing) continue;
                 if (best == null || c.desire > best.desire) best = c;
             }
             return best;
@@ -1967,7 +2064,7 @@ namespace LifeSimProto
             if (privateEscorts.Count >= 2) return;
             foreach (var c in world.characters)
             {
-                if (c == this || c == target || c.IsTarget || c.LoveStage < 2 || c.desire < 80f) continue;
+                if (c == this || c == target || c.IsTarget || c.desire < 80f) continue;
                 if (!c.AvailableForTalk || c.privatePending || c.escortLeader != null || privateEscorts.Contains(c) || c.sickRest) continue;
                 Vector3 d = c.transform.position - transform.position;
                 if (Mathf.Abs(d.y) > 0.5f || Flat(d).magnitude > 3.0f) continue;
@@ -2585,7 +2682,7 @@ namespace LifeSimProto
 
         bool CanJoinPrivate(SimCharacter by)
         {
-            bool pair = (IsTarget && by.LoveStage >= 2) || (LoveStage >= 2 && by.IsTarget);
+            bool pair = (IsTarget && !by.IsTarget) || (!IsTarget && by.IsTarget); // 篤と寮生（関係に関係なく）
             // 昼は、相手の性欲が最大なら応じる（夜は自分の性欲が40以上なら）
             return pair && !sickRest && (desire >= 40f || (!PrivateNight && by.desire >= 99.9f));
         }
@@ -3095,11 +3192,11 @@ namespace LifeSimProto
             var group = new List<SimCharacter> { this, partner };
             if (PrivateNight)
             {
-                // 夜：篤を好きで、二人きりになりたい子が集まる（最大4人）
+                // 夜：二人きりになりたい子（性欲55以上）が集まる（最大4人。篤との関係に関係なく）
                 foreach (var c in world.characters)
                 {
                     if (group.Count >= 4) break;
-                    if (group.Contains(c) || c.IsTarget || c.LoveStage < 2 || c.desire < 55f || !c.AvailableForTalk) continue;
+                    if (group.Contains(c) || c.IsTarget || c.desire < 55f || !c.AvailableForTalk) continue;
                     c.privatePending = true;
                     group.Add(c);
                     c.ShowBubble("私も…", 1.5f);
@@ -3110,7 +3207,7 @@ namespace LifeSimProto
                 // 昼：探しに行く途中でついて来た子と、同じ相手を探しに来ていた子（性欲が最大）だけ
                 foreach (var c in world.characters)
                 {
-                    if (c == this || c == partner || c.IsTarget || privateEscorts.Contains(c) || c.LoveStage < 2 || c.desire < 99.9f) continue;
+                    if (c == this || c == partner || c.IsTarget || privateEscorts.Contains(c) || c.desire < 99.9f) continue;
                     if (c.target == partner && c.intent == Intent.Private && (c.state == State.Approaching || c.state == State.Waiting) && !c.privatePending)
                         privateEscorts.Add(c);
                 }
@@ -3288,9 +3385,10 @@ namespace LifeSimProto
             loveNeed = 0f;
             if (!IsTarget)
             {
-                world.ChangeLove(this, 4f);
+                // 二人きりで過ごすと、篤との関係が進む（篤への気持ち＋6・好感度＋4）
+                world.ChangeLove(this, 6f);
                 var f = world.RomanceTarget;
-                if (f != null) world.rel.Add(id, f.id, 2f, world.simTime);
+                if (f != null) world.rel.Add(id, f.id, 4f, world.simTime);
             }
             actionText = "ぼんやりしている";
             SetState(State.Idle);
