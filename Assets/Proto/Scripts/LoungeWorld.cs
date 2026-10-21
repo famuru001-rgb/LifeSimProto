@@ -89,6 +89,8 @@ namespace LifeSimProto
         [Header("倍速の設定")]
         [Tooltip("画面上の速さボタン（倍）")]
         public float[] speedOptions = { 1f, 2f, 4f, 10f };
+        /// <summary>デバッグ用の速さ（画面の上のボタン・5と6のキー）。</summary>
+        [System.NonSerialized] public float[] debugSpeedOptions = { 30f, 60f };
         [Tooltip("全員が寝ている間の速さ（倍）")]
         public float allAsleepSpeed = 30f;
 
@@ -224,7 +226,8 @@ namespace LifeSimProto
             autoFast = allAsleep && userSpeed > 0f && allAsleepSpeed > userSpeed;
             float ts = userSpeed <= 0f ? 0f : (autoFast ? allAsleepSpeed : userSpeed);
             Time.timeScale = Mathf.Clamp(ts, 0f, 100f);
-            Time.maximumDeltaTime = ts > 8f ? 0.6f : 0.3333f;
+            // 速い速度でも1コマの時間を切り詰めない（Unity の画面が裏にあってコマ数が落ちても。キャラは SimCharacter で細かく分けて動く）
+            Time.maximumDeltaTime = ts > 8f ? Mathf.Max(0.6f, ts / 10f) : 0.3333f; // 1秒に10コマまで落ちても速さを保つ
         }
 
         // ================= 道さがし =================

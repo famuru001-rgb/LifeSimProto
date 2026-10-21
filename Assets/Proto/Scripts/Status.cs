@@ -4,7 +4,7 @@ using UnityEngine;
 namespace LifeSimProto
 {
     /// <summary>状態異常の系統。1つの系統につき、同時に1段階だけ持つ。</summary>
-    public enum StatusLine { MoodDown, MoodUp, Sleep, Love, Cold, Lonely, Frustration, Focus, Shy, Jealousy, Mana, ManaOut, Full }
+    public enum StatusLine { MoodDown, MoodUp, Sleep, Love, Cold, Lonely, Frustration, Focus, Shy, Jealousy, Mana, ManaOut, Full, Desire }
 
     public enum NeedKind { Lonely, Tired, Bored, Hunger, Study, Hobby, Love, Sleepy, Desire }
 
@@ -118,8 +118,13 @@ namespace LifeSimProto
             // ---- 恋 ----
             a = E("篤のことを考えてしまう"); a.rate[NeedKind.Love] = 1.3f; a.studyEfficiency = 0.8f; a.studyScore = 0.8f;
             b = E("篤を目で追い、まわりをうろつく"); b.rate[NeedKind.Love] = 1.6f; b.studyEfficiency = 0.6f; b.studyScore = 0.6f; b.loveScore = 1.3f;
-            c = E("篤と二人きりになりたくてたまらない"); c.rate[NeedKind.Desire] = 3f; c.rate[NeedKind.Love] = 1.5f; c.studyEfficiency = 0.5f; c.privateScore = 1.5f;
-            Def(StatusLine.Love, StatusPolarity.Love, new[] { "恋わずらい", "恋の病", "発情" }, new[] { 720f, 720f, 360f }, a, b, c);
+            Def(StatusLine.Love, StatusPolarity.Love, new[] { "恋わずらい", "恋の病" }, new[] { 720f, 720f }, a, b);
+
+            // ---- 性欲（たまりで段階が決まる。Buildup.cs）----
+            a = E("なんだか落ち着かない"); a.studyEfficiency = 0.9f; a.studyScore = 0.9f;
+            b = E("もやもやして、勉強も手につかない"); b.studyEfficiency = 0.7f; b.studyScore = 0.7f; b.funScore = 0.9f;
+            c = E("二人きりになりたくてたまらない"); c.rate[NeedKind.Desire] = 3f; c.studyEfficiency = 0.5f; c.studyScore = 0.6f; c.privateScore = 1.5f;
+            Def(StatusLine.Desire, StatusPolarity.Love, new[] { "そわそわ", "悶々", "発情" }, new[] { 0f, 0f, 0f }, a, b, c).decays = false;
 
             // ---- 体調 ----
             a = E("疲れやすく、話した相手にうつることがある"); a.rate[NeedKind.Tired] = 1.5f; a.rate[NeedKind.Hunger] = 0.8f; a.speed = 0.9f; a.talkBonus = -0.05f;

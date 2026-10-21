@@ -569,7 +569,7 @@ namespace LifeSimProto
         void BuildWing(int side)
         {
             float s = side;
-            float inner = 6.4f, corr = 8.0f, outer = 13f;
+            float inner = 6.4f, corr = 8.4f, outer = 13f; // 廊下の幅 2m（2026-10-21 に 1.6m から広げた）
             // 土台（1階の部分）と2階の床
             Box("Wing_Base", new Vector3(s * (inner + outer) / 2f, (Floor2Y - 0.05f) / 2f, 0f), new Vector3(outer - inner, Floor2Y - 0.05f, HalfD * 2f), mortarDark);
             Box("Wing_Floor", new Vector3(s * (inner + outer) / 2f, Floor2Y - 0.025f, 0f), new Vector3(outer - inner, 0.05f, HalfD * 2f), woodFloor);
@@ -587,7 +587,7 @@ namespace LifeSimProto
             {
                 float cz = -4f + i * 2f;
                 float along = cz + HalfD; // a.z = -HalfD から測る
-                gaps.Add(new Vector4(along - 0.5f, along + 0.5f, Floor2Y, Floor2Y + 2.2f));
+                gaps.Add(new Vector4(along - 0.6f, along + 0.6f, Floor2Y, Floor2Y + 2.2f)); // 扉の幅 1.2m
             }
             Wall(new Vector2(s * corr, -HalfD), new Vector2(s * corr, HalfD), Floor2Y, WingTop, it, gaps.ToArray());
             // 部屋の仕切り
@@ -627,11 +627,11 @@ namespace LifeSimProto
                 };
                 seats.Add(room.bed);
                 // 来客用：座布団2枚と小さなテーブル、床に敷く布団
-                Box("LowTable_Room", new Vector3(s * 9.25f, Floor2Y + 0.15f, cz + 0.5f), new Vector3(0.5f, 0.3f, 0.5f), woodMid);
-                blockers1.Add(Rect.MinMaxRect(Mathf.Min(s * 9.0f, s * 9.5f), cz + 0.25f, Mathf.Max(s * 9.0f, s * 9.5f), cz + 0.75f));
+                Box("LowTable_Room", new Vector3(s * 9.65f, Floor2Y + 0.15f, cz + 0.5f), new Vector3(0.5f, 0.3f, 0.5f), woodMid);
+                blockers1.Add(Rect.MinMaxRect(Mathf.Min(s * 9.4f, s * 9.9f), cz + 0.25f, Mathf.Max(s * 9.4f, s * 9.9f), cz + 0.75f));
                 for (int k = 0; k < 2; k++)
                 {
-                    float cx = s * (k == 0 ? 8.7f : 9.8f);
+                    float cx = s * (k == 0 ? 9.1f : 10.2f);
                     Box("Cushion", new Vector3(cx, Floor2Y + 0.04f, cz + 0.5f), new Vector3(0.5f, 0.08f, 0.5f), fabricGreen);
                     var cu = new Seat
                     {
@@ -644,13 +644,13 @@ namespace LifeSimProto
                     room.cushions.Add(cu);
                     seats.Add(cu);
                 }
-                Box("GuestFuton", new Vector3(s * 9.85f, Floor2Y + 0.05f, cz - 0.55f), new Vector3(1.7f, 0.1f, 0.75f), fabricWhite);
+                Box("GuestFuton", new Vector3(s * 10.0f, Floor2Y + 0.05f, cz - 0.55f), new Vector3(1.7f, 0.1f, 0.75f), fabricWhite);
                 room.futon = new Seat
                 {
                     kind = SeatKind.Bed, floorSeat = true, label = "来客用の布団", area = name,
-                    position = new Vector3(s * 9.85f, Floor2Y, cz - 0.55f),
+                    position = new Vector3(s * 10.0f, Floor2Y, cz - 0.55f),
                     forward = new Vector3(s, 0f, 0f),
-                    approach = new Vector3(s * 9.85f, Floor2Y, cz),
+                    approach = new Vector3(s * 10.0f, Floor2Y, cz),
                     room = room
                 };
                 seats.Add(room.futon);
@@ -813,10 +813,10 @@ namespace LifeSimProto
             // 出入口
             nav0.Open(Rect.MinMaxRect(-0.75f, -5.75f, 0.75f, -4.6f));
             nav0.Open(Rect.MinMaxRect(-0.75f, -11.55f, 0.75f, -10.6f));
-            nav0.Open(Rect.MinMaxRect(-2.45f, -8.35f, -1.55f, -7.65f));
-            nav0.Open(Rect.MinMaxRect(1.55f, -8.35f, 2.45f, -7.65f));
+            nav0.Open(Rect.MinMaxRect(-2.45f, -8.5f, -1.55f, -7.5f));
+            nav0.Open(Rect.MinMaxRect(1.55f, -8.5f, 2.45f, -7.5f));
             OpenPlacesNav();
-            float inflate = 0.15f;
+            float inflate = 0.1f; // 家具のまわりのすき間（小さいほど通路が広い）
             foreach (var r in blockers0)
                 nav0.Block(Rect.MinMaxRect(r.xMin - inflate, r.yMin - inflate, r.xMax + inflate, r.yMax + inflate));
 
@@ -824,15 +824,15 @@ namespace LifeSimProto
             for (int side = -1; side <= 1; side += 2)
             {
                 float s = side;
-                nav1.Open(Rect.MinMaxRect(Mathf.Min(s * 6.55f, s * 7.85f), -4.75f, Mathf.Max(s * 6.55f, s * 7.85f), 4.75f)); // 廊下
+                nav1.Open(Rect.MinMaxRect(Mathf.Min(s * 6.55f, s * 8.25f), -4.75f, Mathf.Max(s * 6.55f, s * 8.25f), 4.75f)); // 廊下
                 for (int i = 0; i < 5; i++)
                 {
                     float cz = -4f + i * 2f;
-                    nav1.Open(Rect.MinMaxRect(Mathf.Min(s * 8.25f, s * 12.75f), cz - 0.75f, Mathf.Max(s * 8.25f, s * 12.75f), cz + 0.75f)); // 部屋
-                    nav1.Open(Rect.MinMaxRect(Mathf.Min(s * 7.7f, s * 8.4f), cz - 0.35f, Mathf.Max(s * 7.7f, s * 8.4f), cz + 0.35f));    // 部屋の扉
+                    nav1.Open(Rect.MinMaxRect(Mathf.Min(s * 8.6f, s * 12.75f), cz - 0.75f, Mathf.Max(s * 8.6f, s * 12.75f), cz + 0.75f)); // 部屋
+                    nav1.Open(Rect.MinMaxRect(Mathf.Min(s * 8.1f, s * 8.8f), cz - 0.45f, Mathf.Max(s * 8.1f, s * 8.8f), cz + 0.45f));    // 部屋の扉
                 }
                 nav1.Open(Rect.MinMaxRect(Mathf.Min(s * 4.85f, s * 5.75f), 2.6f, Mathf.Max(s * 4.85f, s * 5.75f), 3.6f));  // 踊り場
-                nav1.Open(Rect.MinMaxRect(Mathf.Min(s * 5.6f, s * 6.7f), 2.75f, Mathf.Max(s * 5.6f, s * 6.7f), 3.45f));   // 踊り場→廊下の扉
+                nav1.Open(Rect.MinMaxRect(Mathf.Min(s * 5.6f, s * 6.7f), 2.65f, Mathf.Max(s * 5.6f, s * 6.7f), 3.55f));   // 踊り場→廊下の扉
             }
             nav1.Open(Rect.MinMaxRect(-13.15f, 5.65f, -6.65f, 11.15f)); // 屋上の天文台（扉は ApplyPlaces で開け閉め）
             foreach (var r in blockers1)

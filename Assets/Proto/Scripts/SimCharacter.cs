@@ -84,9 +84,9 @@ namespace LifeSimProto
         Vector3 gatherFocus;
         SimCharacter clingTarget;
         float statusCheck, focusMin, highLonelyMin, highBoredMin;
-        // 発情のたまり（0〜100。画面には出さない）：性欲60以上のあいだ少しずつたまり（性欲が高いほど早い）、いっぱいになると［発情］になる
-        float heat;
-        public float Heat { get { return heat; } }
+        // 性欲のたまり（0〜100。画面には出さない。決まりは Buildup.cs）：たまりで［そわそわ・悶々・発情］が変わり、たまりが多いと性欲が下がりにくい
+        readonly Buildup desireBuild = new Buildup(BuildupBook.Desire);
+        public float Heat { get { return desireBuild.value; } }
         int taughtDay = -1;
 
         // ---- プレイヤーの指示（F）・お願い ----
@@ -280,12 +280,54 @@ namespace LifeSimProto
             foreach (var s in statuses) yield return StatusBook.Get(s.line).EffectOf(s.stage);
         }
 
+        // ================= 欲求の補正（種族・衣装・装飾品・家具・アイテム。表は NeedMods.cs） =================
+        readonly List<ActiveMod> mods = new List<ActiveMod>();
+
+        /// <summary>今ついている補正（種族＋衣装・アイテムなど）。</summary>
+        public IEnumerable<NeedMod> Mods()
+        {
+            var r = NeedBook.Race(profile != null ? profile.race : null);
+            if (r != null) yield return r;
+            foreach (var a in mods) yield return a.mod;
+        }
+
+        /// <summary>補正をつける（minutes が 0 以下なら外すまで続く。同じ id は付け直し）。</summary>
+        public void AddMod(NeedMod m, float minutes = 0f)
+        {
+            if (m == null) return;
+            mods.RemoveAll(a => a.mod.id == m.id);
+            mods.Add(new ActiveMod { mod = m, until = minutes > 0f ? world.Now + minutes : 0 });
+        }
+
+        public void RemoveMod(string id) { mods.RemoveAll(a => a.mod.id == id); }
+
+        void ExpireMods()
+        {
+            double now = world.Now;
+            mods.RemoveAll(a => a.until > 0 && now >= a.until);
+        }
+
+        float ModMul(NeedKind n, System.Func<NeedMod, Dictionary<NeedKind, float>> pick)
+        {
+            float m = 1f;
+            foreach (var x in Mods()) m *= NeedMod.Get(pick(x), n);
+            return m;
+        }
+
+        /// <summary>ゲージの増え方（状態異常 × 種族 × 衣装・アイテムなど）。</summary>
         float RateMul(NeedKind n)
         {
             float m = 1f;
             foreach (var e in Effects()) { float v; if (e.rate.TryGetValue(n, out v)) m *= v; }
-            return m;
+            return m * ModMul(n, x => x.rate);
         }
+
+        /// <summary>ゲージの下がり方（満たしたとき）。</summary>
+        float ReliefMul(NeedKind n) { return ModMul(n, x => x.relief); }
+        /// <summary>たまりのたまりやすさ。</summary>
+        float BuildMul(NeedKind n) { return ModMul(n, x => x.build); }
+        /// <summary>たまりの減りやすさ。</summary>
+        float DrainMul(NeedKind n) { return ModMul(n, x => x.drain); }
 
         float Prod(System.Func<StageEffect, float> f)
         {
@@ -334,6 +376,7 @@ namespace LifeSimProto
             statusCheck += gm;
             if (statusCheck < 30f) return;
             statusCheck = 0f;
+            if (NightSleeping) return; // 夜に眠っているあいだは状態異常にかからない
 
             // 孤独
             highLonelyMin = lonely > 80f ? highLonelyMin + 30f : 0f;
@@ -354,10 +397,9 @@ namespace LifeSimProto
             if (!IsTarget && LoveStage >= 2)
             {
                 int lv = GetStage(StatusLine.Love);
-                if (lv < 3 && heat >= 100f) BecomeHeat();
-                else if (lv == 0 && loveNeed > 70f && Chance(0.3f)) SetStage(StatusLine.Love, 1);
+                if (lv == 0 && loveNeed > 70f && Chance(0.3f)) SetStage(StatusLine.Love, 1);
                 else if (lv == 1 && loveNeed > 85f && now - lastFContact > 120 && Chance(0.25f)) SetStage(StatusLine.Love, 2);
-                if (lv > 0 && loveNeed < 20f && lv < 3) Ease(StatusLine.Love);
+                if (lv > 0 && loveNeed < 20f) Ease(StatusLine.Love);
             }
 
             // 風邪の悪化
@@ -506,6 +548,9 @@ namespace LifeSimProto
             }
         }
 
+        /// <summary>歩く・会いに行くの1回の動きの最大の長さ（秒）。速い速度（30倍・60倍など）では、1コマの歩きを細かく分ける（すり抜け・行き過ぎを防ぐ）。欲求や考える処理は1コマに1回。</summary>
+        const float MaxMoveStep = 0.15f;
+
         void Update()
         {
             float dt = Time.deltaTime;
@@ -515,9 +560,15 @@ namespace LifeSimProto
             UpdateNeeds(dt);
             if (Present)
             {
-                if (state == State.Walking || state == State.Approaching) { Move(dt); CheckStuck(dt); }
-                if (state == State.Approaching) UpdateApproach(dt);
-                if (state == State.Waiting) UpdateWaiting(dt);
+                int n = Mathf.Clamp(Mathf.CeilToInt(dt / MaxMoveStep), 1, 24);
+                float sdt = dt / n;
+                for (int i = 0; i < n; i++)
+                {
+                    if (state == State.Walking || state == State.Approaching) { Move(sdt); CheckStuck(sdt); }
+                    if (state == State.Approaching) UpdateApproach(sdt);
+                    else if (state == State.Waiting) UpdateWaiting(sdt);
+                    else if (state != State.Walking) break;
+                }
                 if (state == State.Talking && talkPartner != null) FaceTowards(talkPartner.transform.position, dt);
                 if (state == State.Activity && poi != null) FaceTowards(poi.lookAt, dt);
                 if (state == State.Activity && poi == null && gathering != null) FaceTowards(gatherFocus, dt);
@@ -565,7 +616,8 @@ namespace LifeSimProto
             float r = Random.value;
             if (state == State.Activity && act == Act.Hobby && hobby == HobbyKind.Magic && r < dt * 0.4f) ShowBubble("✦", 1.0f);
             else if (GetStage(StatusLine.Mana) >= 2 && r < dt * 0.2f) ShowBubble("（ぱちぱち）", 1.2f);
-            else if (GetStage(StatusLine.Love) >= 1 && r < dt * 0.1f) ShowBubble(GetStage(StatusLine.Love) >= 3 ? "…はぁ♡" : "…♡", 1.4f);
+            else if (GetStage(StatusLine.Desire) >= 3 && r < dt * 0.1f) ShowBubble(LoveStage >= 2 ? "…はぁ♡" : "…はぁ", 1.4f);
+            else if (GetStage(StatusLine.Love) >= 1 && r < dt * 0.1f) ShowBubble("…♡", 1.4f);
             else if (GetStage(StatusLine.Sleep) >= 1 && r < dt * 0.08f) ShowBubble(Say("sleepy", "ふぁ…"), 1.2f);
             else if (GetStage(StatusLine.MoodDown) >= 2 && r < dt * 0.06f) ShowBubble(Say("sigh", "はぁ…"), 1.4f);
             else if (GetStage(StatusLine.Frustration) >= 1 && r < dt * 0.06f) ShowBubble(Say("frustr", "むしゃくしゃ…"), 1.4f);
@@ -586,16 +638,21 @@ namespace LifeSimProto
         {
             float gm = dt * world.GameMinutesPerSecond(); // 進んだゲーム内の分
             UpdateStatuses(gm);
+            // ゲージの変動の大きさ（NeedBook.Swing。さみしさ・退屈・勉強・趣味はゆっくり動く）
+            float lonely0 = lonely, bored0 = bored, study0 = study, hobby0 = hobbyNeed;
 
             hunger += gm * 0.2f * RateMul(NeedKind.Hunger);
             study += gm * 0.05f * (0.5f + diligence) * RateMul(NeedKind.Study);
             hobbyNeed += gm * 0.09f * RateMul(NeedKind.Hobby);
             sleepy += gm * 0.075f * RateMul(NeedKind.Sleepy);
             if (!IsTarget && LoveStage >= 1) loveNeed += gm * 0.05f * (0.5f + world.romance.love[id] / 50f) * RateMul(NeedKind.Love);
-            desire += gm * DesireRate();
+            ExpireMods();
+            bool studyingNow = ((state == State.Sitting || state == State.Activity) && act == Act.Study) || (state == State.Away && awayKind == AwayKind.Class) || inPlaceClass;
+            desire += gm * DesireRate() * (studyingNow ? 2f : 1f); // 勉強中はたまりやすい
             if (GetStage(StatusLine.ManaOut) == 0) mana += gm * (hobby == HobbyKind.Magic ? 0.035f : 0.02f) * (0.5f + Ab(Abilities.Magic) / 100f); // 魔力が強い子ほどたまりやすい
 
             float lonelyMul = RateMul(NeedKind.Lonely), tiredMul = RateMul(NeedKind.Tired), boredMul = RateMul(NeedKind.Bored);
+            float desireRelief = 0f, buildDrain = 0f; // 性欲を下げる量・性欲のたまりを減らす量（1分あたり）
             // 種族などの特徴
             if (HasTrait(CharTrait.Lonely)) lonelyMul *= 1.4f;
             tiredMul *= Mathf.Clamp(1.25f - Ab(Abilities.Body) / 200f, 0.7f, 1.3f); // 体力があるほど疲れにくい
@@ -612,7 +669,7 @@ namespace LifeSimProto
                     else { study -= gm * 0.35f; weekStudy += gm * 0.35f; }
                     break;
                 case State.Private:
-                    desire -= gm * 4f; lonely -= gm * 2f; loveNeed -= gm * 3f; lastFContact = world.Now; break;
+                    desire -= gm * 4f * desireBuild.Relief * ReliefMul(NeedKind.Desire); lonely -= gm * 2f; loveNeed -= gm * 3f; lastFContact = world.Now; break;
                 case State.Sleeping:
                 {
                     float recover = 0.6f;
@@ -620,6 +677,8 @@ namespace LifeSimProto
                     if (deepSleep) recover *= 1.5f;
                     if (HasTrait(CharTrait.DeepSleeper)) recover *= 1.25f;
                     sleepy -= gm * recover; tired -= dt * 5f; bored -= dt * 2f; lonely += dt * 0.1f;
+                    // 眠っても性欲のゲージは下がらない（たまりは、よく眠れると少し減る）
+                    buildDrain += 0.08f * Mathf.Min(1f, recover / 0.6f);
                     break;
                 }
                 case State.Walking:
@@ -630,7 +689,7 @@ namespace LifeSimProto
                     lonely += dt * 0.9f * (0.4f + sociability) * lonelyMul;
                     tired -= dt * 3.5f;
                     if (act == Act.Study) Studying(dt, gm);
-                    else if (act == Act.Hobby) { hobbyNeed -= dt * 3f; bored -= dt * 2f; focusMin += gm; }
+                    else if (act == Act.Hobby) { hobbyNeed -= dt * 3f; bored -= dt * 2f; focusMin += gm; desireRelief += 0.12f; buildDrain += 0.15f; }
                     else if (act == Act.Fun) { bored -= dt * 2.5f; lonely -= dt * 1.2f; }
                     else bored += dt * (0.5f + whim * 0.4f) * boredMul;
                     break;
@@ -641,14 +700,16 @@ namespace LifeSimProto
                     if (act == Act.Tea) { hobbyNeed -= dt * 3f; bored -= dt * 2f; }
                     break;
                 case State.Bathing:
-                    tired -= dt * 4f; bored -= dt * 2f; break;
+                    tired -= dt * 4f; bored -= dt * 2f;
+                    desireRelief += 0.15f; buildDrain += 0.3f; // お風呂でさっぱりすると性欲も少し下がる
+                    break;
                 case State.Activity:
                     lonely += dt * 0.9f * (0.4f + sociability) * lonelyMul;
                     tired += dt * 0.3f * tiredMul;
                     if (act == Act.Study) Studying(dt, gm);
                     else if (act == Act.Hobby)
                     {
-                        hobbyNeed -= dt * 3f; bored -= dt * 3f; focusMin += gm;
+                        hobbyNeed -= dt * 3f; bored -= dt * 3f; focusMin += gm; desireRelief += 0.12f; buildDrain += 0.15f; // 趣味に打ち込むと性欲も下がる
                         if (hobby == HobbyKind.Magic && poi != null && poi.hobby >= 0) mana -= dt * 4f;
                     }
                     else if (act == Act.Work) { tired += dt * 0.5f; }
@@ -675,6 +736,10 @@ namespace LifeSimProto
                 }
             }
 
+            lonely = lonely0 + (lonely - lonely0) * NeedBook.Swing(NeedKind.Lonely);
+            bored = bored0 + (bored - bored0) * NeedBook.Swing(NeedKind.Bored);
+            study = study0 + (study - study0) * NeedBook.Swing(NeedKind.Study);
+            hobbyNeed = hobby0 + (hobbyNeed - hobby0) * NeedBook.Swing(NeedKind.Hobby);
             lonely = Mathf.Clamp(lonely, 0f, 100f);
             tired = Mathf.Clamp(tired, 0f, 100f);
             bored = Mathf.Clamp(bored, 0f, 100f);
@@ -685,16 +750,13 @@ namespace LifeSimProto
             sleepy = Mathf.Clamp(sleepy, 0f, 100f);
             desire = Mathf.Clamp(desire, 0f, 100f);
             if (desire >= 99.9f && PrivateNight) desireMaxAtNight = true;
-            // 発情のたまり：性欲60以上でたまる（性欲100なら約6時間、80なら約9時間、60なら約18時間でいっぱい）。
-            // 性欲が60より下だと少しずつ減り、二人きりの時間を過ごすと大きく減る
-            if (!IsTarget && LoveStage >= 2)
-            {
-                if (state == State.Private) heat -= gm * 1.5f;
-                else if (desire >= 60f) heat += gm * (100f / 360f) * ((desire - 40f) / 60f);
-                else heat -= gm * 0.1f;
-                heat = Mathf.Clamp(heat, 0f, 100f);
-            }
-            else heat = 0f;
+            // 性欲：お風呂・睡眠・趣味で下がる（たまりが多いほど下がりにくい）
+            desire = Mathf.Clamp(desire - gm * desireRelief * desireBuild.Relief * ReliefMul(NeedKind.Desire), 0f, 100f);
+            // 性欲のたまり：性欲60以上でたまり、60より下だと少しずつ減る。二人きりの時間・お風呂・睡眠・趣味で減る。［発情］のあいだはたまりやすい
+            if (state == State.Private) buildDrain += 1.5f;
+            desireBuild.Tick(gm, desire, GetStage(StatusLine.Desire), buildDrain * DrainMul(NeedKind.Desire), BuildMul(NeedKind.Desire));
+            int dst = desireBuild.StageFor(GetStage(StatusLine.Desire));
+            if (dst != GetStage(StatusLine.Desire) && !NightSleeping) SetStage(StatusLine.Desire, dst, true); // 眠っているあいだは起きてから変わる
             mana = Mathf.Clamp(mana, 0f, 100f);
         }
 
@@ -1027,6 +1089,8 @@ namespace LifeSimProto
         bool HasTrait(CharTrait t) { return profile != null && (profile.traits & t) != 0; }
 
         /// <summary>性欲の増え方。「好き」以上だけが増え、気持ちが強いほど加速度的に速くなる。Fは自分を好きな子の気持ちで増える。</summary>
+        /// <summary>性欲の増え方（1分あたり）：だれでも少しずつ増え（0.02）、篤を「好き」以上なら気持ちの強さでさらに増える。</summary>
+        const float DesireBase = 0.02f;
         float DesireRate()
         {
             var rom = world.romance;
@@ -1035,11 +1099,11 @@ namespace LifeSimProto
                 float sum = 0f;
                 foreach (var c in world.characters)
                     if (!c.IsTarget && c.LoveStage >= 2) { float x = rom.love[c.id] / 50f; sum += x * x; }
-                return Mathf.Min(0.15f, 0.015f * sum) * RateMul(NeedKind.Desire);
+                return (DesireBase + Mathf.Min(0.15f, 0.015f * sum)) * RateMul(NeedKind.Desire);
             }
-            if (LoveStage < 2) return 0f;
-            float l = rom.love[id] / 50f;
-            return 0.025f * l * l * l * RateMul(NeedKind.Desire);
+            float love = 0f;
+            if (LoveStage >= 2) { float l = rom.love[id] / 50f; love = 0.025f * l * l * l; }
+            return (DesireBase + love) * RateMul(NeedKind.Desire);
         }
 
         float PlaceBonus(Vector3 p)
@@ -1405,11 +1469,10 @@ namespace LifeSimProto
                 {
                     desire = Mathf.Min(desire, 50f);
                     bool toHeat = false;
-                    if (!IsTarget && LoveStage >= 2)
-                    {
-                        heat = Mathf.Min(100f, heat + 50f);
-                        if (heat >= 100f && GetStage(StatusLine.Love) < 3) { BecomeHeat(true); toHeat = true; }
-                    }
+                    desireBuild.value = Mathf.Min(100f, desireBuild.value + 50f);
+                    int dst = desireBuild.StageFor(GetStage(StatusLine.Desire));
+                    if (dst >= 3 && GetStage(StatusLine.Desire) < 3) toHeat = true;
+                    if (dst != GetStage(StatusLine.Desire)) SetStage(StatusLine.Desire, dst, true, true);
                     world.Log(displayName + "は眠れない夜を過ごした（寝不足" + (toHeat ? "・発情" : "") + "）");
                 }
                 desireMaxAtNight = false;
@@ -1779,6 +1842,9 @@ namespace LifeSimProto
             return GoTo(p, State.Walking);
         }
 
+        /// <summary>夜に眠っている（昼寝・寝込みは入らない）。このあいだは状態異常にかからない。</summary>
+        bool NightSleeping { get { return state == State.Sleeping && !napping && !sickRest; } }
+
         /// <summary>二人きりの時間の「夜」（21時〜朝6時半）。夜以外は性欲が最大のときだけ起こる。</summary>
         bool PrivateNight { get { float m = world.MinuteOfDay; return m >= 21f * 60f || m < 6.5f * 60f; } }
 
@@ -1861,13 +1927,6 @@ namespace LifeSimProto
         {
             foreach (var c in privateEscorts) if (c != null && c.escortLeader == this) c.escortLeader = null;
             privateEscorts.Clear();
-        }
-
-        /// <summary>発情のたまりがいっぱいになった：［発情］になり、たまりは空になる。</summary>
-        void BecomeHeat(bool quiet = false)
-        {
-            SetStage(StatusLine.Love, 3, true, quiet);
-            heat = 0f;
         }
 
         bool StartSocial()
@@ -3109,10 +3168,9 @@ namespace LifeSimProto
         {
             if (privateRoom != null) transform.position = world.NearestFree(privateRoom.bed.approach + new Vector3(Random.Range(-0.5f, 0.5f), 0f, Random.Range(-0.4f, 0.6f)));
             else transform.position = world.NearestFree(transform.position + transform.forward * 0.7f);
-            desire = 0f;
+            desire *= 1f - desireBuild.Relief; // たまりが少なければ0に、多いと少し残る
             lonely = Mathf.Max(0f, lonely - 40f);
             loveNeed = 0f;
-            if (GetStage(StatusLine.Love) >= 3) SetStage(StatusLine.Love, 0);
             if (!IsTarget)
             {
                 world.ChangeLove(this, 4f);
@@ -3209,20 +3267,26 @@ namespace LifeSimProto
                 if (state == State.Walking) Arrive();
                 return;
             }
-            Vector3 pos = transform.position;
-            Vector3 next = path[0];
-            Vector3 to = next - pos;
             float effort = (requestEffort >= 0f && hasOrder) ? 0.9f + requestEffort * 0.3f : 1f;
             float step = baseSpeed * Prod(e => e.speed) * effort * dt;
-            if (to.magnitude <= step)
+            // 道の点をいくつ越えても、進める分だけ進む（速い速度でも遅くならない）
+            while (path.Count > 0 && step > 0f)
             {
-                transform.position = next;
-                path.RemoveAt(0);
-            }
-            else
-            {
-                transform.position = pos + to.normalized * step;
-                FaceTowards(pos + Flat(to), dt);
+                Vector3 pos = transform.position;
+                Vector3 to = path[0] - pos;
+                float d = to.magnitude;
+                if (d <= step)
+                {
+                    transform.position = path[0];
+                    path.RemoveAt(0);
+                    step -= d;
+                }
+                else
+                {
+                    transform.position = pos + to / d * step;
+                    FaceTowards(pos + Flat(to), dt);
+                    step = 0f;
+                }
             }
         }
 
@@ -3570,7 +3634,7 @@ namespace LifeSimProto
                     fwd.Normalize();
                     Vector3 perp = new Vector3(fwd.z, 0f, -fwd.x);
                     float side = Vector3.Dot(perp, d) >= 0f ? 1f : -1f;
-                    np = transform.position + perp * side * Time.deltaTime * 1.2f;
+                    np = transform.position + perp * side * Mathf.Min(Time.deltaTime, 0.25f) * 1.2f;
                 }
                 else if (!meMoving && oMoving)
                 {

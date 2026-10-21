@@ -28,7 +28,7 @@ namespace LifeSimProto
         float Scale { get { return Mathf.Max(0.55f, Screen.height / VirtualHeight); } }
         float VW { get { return Screen.width / Scale; } }
 
-        Rect TopBar { get { return new Rect(12, 12, 1610, 50); } }
+        Rect TopBar { get { return new Rect(12, 12, 1780, 50); } }
         Rect MemoryPanel { get { return new Rect(VW / 2f - 470f, 120f, 940f, 820f); } }
         Rect ChoicePanel { get { return new Rect(VW / 2f - 300f, 380f, 600f, 170f); } }
         Rect ExamPanel { get { return new Rect(VW / 2f - 470f, 120f, 940f, 96f + Academics.Count * 30f + 40f); } }
@@ -94,6 +94,12 @@ namespace LifeSimProto
                     if (kb.digit2Key.wasPressedThisFrame && opts.Length > 1) SetSpeed(opts[1]);
                     if (kb.digit3Key.wasPressedThisFrame && opts.Length > 2) SetSpeed(opts[2]);
                     if (kb.digit4Key.wasPressedThisFrame && opts.Length > 3) SetSpeed(opts[3]);
+                }
+                var dbg = world.debugSpeedOptions;
+                if (dbg != null)
+                {
+                    if (kb.digit5Key.wasPressedThisFrame && dbg.Length > 0) SetSpeed(dbg[0]);
+                    if (kb.digit6Key.wasPressedThisFrame && dbg.Length > 1) SetSpeed(dbg[1]);
                 }
                 if (kb.escapeKey.wasPressedThisFrame) { if (shopOpen) shopOpen = false; else if (examOpen) examOpen = false; else if (memoryOpen) memoryOpen = false; else Select(null); }
                 if (kb.gKey.wasPressedThisFrame) examOpen = !examOpen;
@@ -371,6 +377,18 @@ namespace LifeSimProto
                 bool on = Mathf.Approximately(cur, sp);
                 if (GUI.Button(new Rect(x, r.y + 8, 76, 34), sp + "倍", on ? buttonOn : button)) SetSpeed(sp);
                 x += 84;
+            }
+            if (world.debugSpeedOptions != null)
+            {
+                var oldc = GUI.color;
+                foreach (var sp in world.debugSpeedOptions)
+                {
+                    bool on = Mathf.Approximately(cur, sp);
+                    GUI.color = new Color(1f, 0.75f, 0.6f); // デバッグ用は色を変える
+                    if (GUI.Button(new Rect(x, r.y + 8, 76, 34), sp + "倍", on ? buttonOn : button)) SetSpeed(sp);
+                    x += 84;
+                }
+                GUI.color = oldc;
             }
             x += 16;
             if (GUI.Button(new Rect(x, r.y + 8, 130, 34), WallModeName(world.wallMode), button)) CycleWallMode();
