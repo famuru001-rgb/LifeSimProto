@@ -32,6 +32,11 @@ namespace LifeSimProto
         public int hobby = -1;    // 趣味専用の場所（SimCharacter.HobbyKind）。-1 はだれでも
         public bool snack;        // 談話室のおやつワゴン
         public bool dynamicSpot;  // 使い魔など、動く相手のまわり
+        public string place;      // 新しい場所（中庭など）の見どころなら、その場所の名前
+        public int subject = -1;  // その科目の自主練習に使う場所（Academics の番号）
+        public bool classOnly;    // 実技の授業のときだけ使う
+        public bool outdoor;      // 外（雨や雪の日は使われにくい）
+        public bool kitchen;      // 台所（お菓子づくり）
 
         public int FreeSlot()
         {
@@ -179,6 +184,7 @@ namespace LifeSimProto
             UpdateSpeed();
             UpdateLighting();
             UpdateCutaway();
+            UpdatePlaces();
         }
 
         // ================= 時間 =================

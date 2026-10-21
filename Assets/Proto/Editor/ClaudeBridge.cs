@@ -43,9 +43,9 @@ namespace LifeSimProto.EditorTools
             {
                 string cmd = raw.Trim().ToLowerInvariant();
                 if (cmd.Length == 0) continue;
-                // 試験用：skipto（日 時）＝ゲームの時刻を進める／speed（倍）＝速さ／gamelog＝寮の記録を game_log.txt に書く
+                // 試験用：skipto（日 時）＝ゲームの時刻を進める／speed（倍）＝速さ／gamelog＝寮の記録を game_log.txt に書く／openall＝新しい場所を全部開く／placeshots＝場所の写真
                 var w = EditorApplication.isPlaying ? LifeSimProto.LoungeWorld.Instance : null;
-                if (cmd.StartsWith("skipto ") || cmd.StartsWith("speed ") || cmd == "gamelog")
+                if (cmd.StartsWith("skipto ") || cmd.StartsWith("speed ") || cmd == "gamelog" || cmd == "openall" || cmd == "placeshots" || cmd == "status")
                 {
                     if (w == null) { log.AppendLine(cmd + ": not playing"); continue; }
                     var a = cmd.Split(' ');
@@ -59,6 +59,26 @@ namespace LifeSimProto.EditorTools
                     {
                         w.SetUserSpeed(float.Parse(a[1], System.Globalization.CultureInfo.InvariantCulture));
                         log.AppendLine("speed: " + w.userSpeed);
+                    }
+                    else if (cmd == "openall")
+                    {
+                        // 試験用：新しい場所を全部開く（ループの持ち越しにも残るので、確認が終わったら再生し直す）
+                        foreach (var g in LifeSimProto.PlaceGates.All) if (!LifeSimProto.Loop.OpenedPlaces.Contains(g.place)) LifeSimProto.Loop.OpenedPlaces.Add(g.place);
+                        log.AppendLine("openall: ok");
+                    }
+                    else if (cmd == "placeshots")
+                    {
+                        new GameObject("PlaceShots").AddComponent<LifeSimProto.PlaceShots>();
+                        log.AppendLine("placeshots: started");
+                    }
+                    else if (cmd == "status")
+                    {
+                        // 試験用：みんなが今どこで何をしているかを status.txt に追記する
+                        var sb = new StringBuilder();
+                        sb.AppendLine("== " + w.Day + "日目 " + LifeSimProto.ScheduleMaker.Clock(w.Now));
+                        foreach (var c in w.characters) sb.AppendLine(c.displayName + "：" + w.AreaName(c.transform.position) + "　" + c.actionText);
+                        File.AppendAllText(Path.Combine(Path.GetDirectoryName(ResultPath), "status.txt"), sb.ToString(), Encoding.UTF8);
+                        log.AppendLine("status: ok");
                     }
                     else if (cmd == "gamelog")
                     {

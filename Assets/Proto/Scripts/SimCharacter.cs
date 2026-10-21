@@ -45,6 +45,8 @@ namespace LifeSimProto
         double studyPickedAt = -1000;
         int mishapDay = -1;
         readonly List<int> classSubjects = new List<int>();
+        bool inPlaceClass;      // 開いた場所（中庭・工房・温室）で実技の授業を受けている
+        double classUntil;
         readonly List<int> classSlots = new List<int>();
         /// <summary>学力（取っている科目の平均）。</summary>
         public float academic { get { return AverageSkill(); } }
@@ -143,7 +145,8 @@ namespace LifeSimProto
             get
             {
                 return mealPending || snackPick || bakePending || privatePending || goal == Goal.Counter || goal == Goal.DiningSeat || goal == Goal.Bath
-                    || goal == Goal.Bed || goal == Goal.Nap || goal == Goal.Exit || goal == Goal.Return || goal == Goal.Private || goal == Goal.MoveTo || act == Act.Work;
+                    || goal == Goal.Bed || goal == Goal.Nap || goal == Goal.Exit || goal == Goal.Return || goal == Goal.Private || goal == Goal.MoveTo || act == Act.Work
+                    || (inPlaceClass && world != null && world.Now < classUntil); // 場所での授業中
             }
         }
 
@@ -695,6 +698,7 @@ namespace LifeSimProto
             }
             // 実技の自主練習は、たまにちょっとした失敗をする（1日1回まで）
             float clumsy = Mathf.Clamp(1.5f - Ab(Abilities.Dex) / 100f, 0.5f, 1.5f); // 器用な子ほど失敗しにくい
+            if (inPlaceClass) clumsy *= 0.3f; // 授業中は先生が見ているので失敗は少なめ
             if (subj >= 0 && Academics.IsPractical(subj) && mishapDay != world.Day && Random.value < dt * 0.012f * clumsy * (profile != null && profile.IsWeak(subj) ? 2f : 1f))
                 PracticeMishap(subj);
             // 近くで課題をしている子に教える（その科目が得意な子・学力が高い子ほど）
@@ -833,7 +837,7 @@ namespace LifeSimProto
         {
             mishapDay = world.Day;
             ShowBubble(Academics.MishapSound(subj), 1.6f);
-            world.Log("★ " + displayName + "が" + SubjectName(subj) + "の自主練習で" + Academics.MishapText(subj) + "！");
+            world.Log("★ " + displayName + "が" + SubjectName(subj) + (inPlaceClass ? "の授業で" : "の自主練習で") + Academics.MishapText(subj) + "！");
             tired = Mathf.Min(100f, tired + 10f);
             foreach (var o in world.characters)
             {
@@ -999,6 +1003,7 @@ namespace LifeSimProto
                         classSubjects.Clear(); classSubjects.AddRange(it.subjects);
                         classSlots.Clear(); classSlots.AddRange(it.slots);
                         bool examItem = it.Label.EndsWith("試験");
+                        if (!examItem && TryClassInPlace(it)) return true;
                         awayLabel = examItem ? "試験を受けている" : "授業に出ている";
                         StartLeave(examItem ? it.Label + "を受けに行く" : "授業に出かける");
                         return true;
@@ -1169,6 +1174,45 @@ namespace LifeSimProto
             if (!GoTo(world.entrancePoint, State.Walking)) { goal = Goal.None; SetState(State.Idle); }
         }
 
+        /// <summary>
+        /// 実技の授業が見える場所（中庭：飛行術・体術、工房：錬成、温室：薬草学）が開いていれば、外出せずにその場所で授業を受ける。
+        /// </summary>
+        bool TryClassInPlace(ScheduleItem it)
+        {
+            if (it.subjects.Count == 0) return false;
+            foreach (int sj in it.subjects)
+            {
+                string pl = LoungeWorld.ClassPlace(sj);
+                if (pl == null || !world.PlaceOpen(pl)) return false;
+            }
+            int s0 = it.subjects[0];
+            if (LoungeWorld.ClassPlace(s0) == LoungeWorld.Courtyard && world.BadWeatherToday) return false;
+            Poi p = FindPoi(x => x.classOnly && x.subject == s0 && x.FreeSlot() >= 0);
+            if (p == null) return false;
+            classSubjects.Clear(); classSubjects.AddRange(it.subjects);
+            classSlots.Clear(); classSlots.AddRange(it.slots);
+            classBlocks = Mathf.Max(1, Mathf.RoundToInt((float)((it.end - it.start) / 100.0)));
+            studySubject = s0;
+            studyPickedAt = world.Now;
+            classUntil = it.end;
+            inPlaceClass = true;
+            float secs = world.GameToSimSeconds((float)(it.end - world.Now));
+            if (!GoToPoi(p, Act.Study, SubjectName(s0) + "の授業を受けている", Mathf.Max(5f, secs))) { inPlaceClass = false; return false; }
+            return true;
+        }
+
+        static readonly HashSet<string> classEndLogged = new HashSet<string>();
+
+        void EndPlaceClass()
+        {
+            inPlaceClass = false;
+            if (IsTarget && world.player != null) world.player.Earn(15 * classBlocks, "授業に出た");
+            AfterClass();
+            string ck = Loop.Count + ":" + world.Day + ":" + (classSlots.Count > 0 ? classSlots[0] : 0);
+            if (classEndLogged.Add(ck)) world.Log(world.AreaName(transform.position) + "での" + SubjectName(classSubjects.Count > 0 ? classSubjects[0] : -1) + "の授業が終わった");
+            if (state == State.Activity && act == Act.Study) { LeaveCurrentSpot(); SetState(State.Idle); actionText = "授業が終わった"; }
+        }
+
         /// <summary>授業から帰ったとき：科目の学力が伸び、同じ授業に出た子と仲よくなる。実技はたまに失敗の話が伝わる。</summary>
         void AfterClass()
         {
@@ -1286,9 +1330,10 @@ namespace LifeSimProto
         public bool StartBaking()
         {
             if (!AvailableForTalk || state == State.Sleeping) return false;
-            Poi counter = FindPoi(p => p.counter && p.FreeSlot() >= 0);
+            Poi counter = FindPoi(p => p.kitchen && p.FreeSlot() >= 0); // 台所が開いていれば台所で
+            if (counter == null) counter = FindPoi(p => p.counter && p.FreeSlot() >= 0);
             if (counter == null) return false;
-            bool ok = GoToPoi(counter, Act.Hobby, "お菓子を作っている", 35f);
+            bool ok = GoToPoi(counter, Act.Hobby, counter.kitchen ? "台所でお菓子を作っている" : "お菓子を作っている", 35f);
             bakePending = ok;
             return ok;
         }
@@ -1298,6 +1343,7 @@ namespace LifeSimProto
         {
             EnsureSchedule();
             double now = world.Now;
+            if (inPlaceClass && now >= classUntil) EndPlaceClass();
             if (chatting) return; // その場での会話が終わるまで待つ
 
             switch (state)
@@ -1340,6 +1386,7 @@ namespace LifeSimProto
                     actionText = "ぼんやりしている";
                     break;
                 case State.Activity:
+                    if (inPlaceClass && now < classUntil && act == Act.Study) return; // 授業中は最後まで受ける
                     if (mealPending)
                     {
                         if (stateTime >= 2.5f) GoDiningSeat();
@@ -1667,13 +1714,14 @@ namespace LifeSimProto
             float total = 0f;
             foreach (var p in world.pois)
             {
-                if (p.counter || p.snack || p.hobby >= 0 || p.owner >= 0) continue;
+                if (p.counter || p.snack || p.hobby >= 0 || p.owner >= 0 || p.classOnly) continue;
                 int fs = p.FreeSlot();
                 if (fs < 0) continue;
                 float w = 1f / (1f + Vector3.Distance(transform.position, p.slots[fs]) / 6f);
                 w *= Mathf.Exp(0.35f * Mathf.Clamp(PlaceBonus(p.slots[fs]), -4f, 6f));
                 if (p.dynamicSpot) w *= 4f;
                 if (world.BadWeatherToday && p.label == "暖炉にあたっている") w *= 2f;
+                if (p.outdoor && (world.BadWeatherToday || LoungeWorld.IsNight(world.MinuteOfDay))) w *= p.subject == 4 && !world.BadWeatherToday ? 1.5f : 0.08f; // 外は雨・雪・夜は行きにくい（星は夜）
                 candidates.Add(p);
                 weights.Add(w);
                 total += w;
@@ -1699,13 +1747,20 @@ namespace LifeSimProto
             foreach (var s in world.seats)
             {
                 if (s.kind != SeatKind.Sit || (s.occupant != null && s.occupant != this)) continue;
-                bool table = s.label == "大きなテーブル";
+                bool table = s.label == "大きなテーブル" || s.label == "図書室の机" || s.label == "工房の椅子";
                 bool visit = s.room != null && s.room != room && CanVisitRoom(s.room);
                 if (!table && !visit) continue;
-                float score = PlaceBonus(s.position) * 0.6f + (visit ? 1.5f : 0.5f) + Random.value - Vector3.Distance(transform.position, s.position) * 0.05f;
+                float score = PlaceBonus(s.position) * 0.6f + (visit ? 1.5f : (s.label == "図書室の机" ? 1.0f : 0.5f)) + Random.value - Vector3.Distance(transform.position, s.position) * 0.05f;
                 if (score > bestScore) { bestScore = score; bestSeat = s; useDesk = false; }
             }
             PickStudySubject();
+            // 実技の自主練習は、開いた場所（中庭・工房・温室）でする
+            if (studySubject >= 0 && !(hasAssignment && assignProgress < 100f) && Random.value < 0.7f)
+            {
+                int sj = studySubject;
+                Poi pp = FindPoi(x => !x.classOnly && x.subject == sj && x.FreeSlot() >= 0 && !(x.outdoor && world.BadWeatherToday));
+                if (pp != null) return GoToPoi(pp, Act.Study, Academics.IsPractical(sj) ? SubjectName(sj) + "の自主練習をしている" : pp.label, Random.Range(15f, 25f) * mul);
+            }
             string what = hasAssignment && assignProgress < 100f ? SubjectName(assignSubject) + "の課題をしている"
                 : (studySubject >= 0 && Academics.IsPractical(studySubject) ? SubjectName(studySubject) + "の自主練習をしている" : SubjectName(studySubject) + "の勉強をしている");
             if (useDesk) return GoToPoi(room.desk, Act.Study, "机で" + what, Random.Range(18f, 30f) * mul);
@@ -1716,13 +1771,31 @@ namespace LifeSimProto
 
         bool StartReadingSeat()
         {
-            Seat s = BestSeat(x => (x.area == "談話室" && x.label != "大きなテーブル") || (x.room != null && x.room != room && CanVisitRoom(x.room)));
+            Seat s = BestSeat(x => (x.area == "談話室" && x.label != "大きなテーブル") || x.area == LoungeWorld.Library || (x.room != null && x.room != room && CanVisitRoom(x.room)));
             if (s == null) return false;
-            return StartSitAt(s, Act.Hobby, s.room != null ? s.label + "で本を読んでいる" : "本を読んでいる");
+            return StartSitAt(s, Act.Hobby, s.room != null ? s.label + "で本を読んでいる" : (s.area == LoungeWorld.Library ? "図書室で本を読んでいる" : "本を読んでいる"));
         }
 
         bool StartHobby()
         {
+            // 趣味の場所（ヴィエッタ：図書室、シルヴィエル：温室、ロッテ・キッカ：工房、リア：台所、ミレイユ：夜の天文台、ルピナ：中庭）が開いていれば、そこで過ごす
+            string hp = profile != null ? profile.hobbyPlace : null;
+            if (!string.IsNullOrEmpty(hp) && world.PlaceOpen(hp) && Random.value < 0.65f)
+            {
+                bool night = LoungeWorld.IsNight(world.MinuteOfDay) || world.MinuteOfDay >= 19f * 60f;
+                bool outside = hp == LoungeWorld.Courtyard || hp == LoungeWorld.Observatory;
+                bool ok = !(outside && world.BadWeatherToday) && !(hp == LoungeWorld.Observatory && !night) && !(hp == LoungeWorld.Courtyard && night);
+                if (ok)
+                {
+                    var cands = new List<Poi>();
+                    foreach (var p in world.pois) if (p.place == hp && !p.classOnly && p.FreeSlot() >= 0 && (p.hobby < 0 || p.hobby == (int)hobby)) cands.Add(p);
+                    if (cands.Count > 0)
+                    {
+                        var pick = cands[Random.Range(0, cands.Count)];
+                        return GoToPoi(pick, Act.Hobby, pick.label, Random.Range(15f, 25f));
+                    }
+                }
+            }
             HobbyKind h = hobby;
             if (h == HobbyKind.Magic && GetStage(StatusLine.ManaOut) > 0) h = HobbyKind.Reading;
             if (h == HobbyKind.Walk && world.BadWeatherToday) h = HobbyKind.Reading;

@@ -31,6 +31,7 @@ namespace LifeSimProto
         public float social, whim, diligence;
         public SimCharacter.HobbyKind hobby;
         public string hobbyText;   // 趣味の表示
+        public string hobbyPlace;  // 趣味で過ごす場所（開いていれば）
         public string[] likes = new string[0];
         public string[] dislikes = new string[0];
         public CharTrait traits;
@@ -106,7 +107,7 @@ namespace LifeSimProto
             {
                 letter = "A", name = "ヴィエッタ", shortName = "ヴィエ", race = "竜人", personality = "クールで無口、実は世話焼き",
                 color = new Color(0.55f, 0.8f, 1f), social = 0.3f, whim = 0.15f, diligence = 0.75f,
-                hobby = SimCharacter.HobbyKind.Reading, hobbyText = "古文書の読書",
+                hobby = SimCharacter.HobbyKind.Reading, hobbyText = "古文書の読書", hobbyPlace = "図書室",
                 likes = new[] { "本", "辛い料理", "暖炉" }, dislikes = new[] { "寒さ", "甘いもの" },
                 traits = CharTrait.WinterWeak, traitText = "冬に弱い",
                 strongStudy = Ancient, weakStudy = Herb, strongPractical = Element, weakPractical = Heal,
@@ -132,7 +133,7 @@ namespace LifeSimProto
             {
                 letter = "B", name = "シルヴィエル", shortName = "シル", race = "エルフ", personality = "ツンとした高貴、人間の文化に興味",
                 color = new Color(0.35f, 0.7f, 0.35f), social = 0.3f, whim = 0.2f, diligence = 0.8f,
-                hobby = SimCharacter.HobbyKind.Tea, hobbyText = "園芸",
+                hobby = SimCharacter.HobbyKind.Tea, hobbyText = "園芸", hobbyPlace = "温室",
                 likes = new[] { "植物", "ハーブティー", "お菓子" }, dislikes = new[] { "魔道具", "大きな音" },
                 strongStudy = Herb, weakStudy = Tools, strongPractical = Heal, weakPractical = Body,
                 enrolled = new[] { Herb, Heal, Tools, Ancient, Astro, Alchemy }, callF = "篤さん",
@@ -158,7 +159,7 @@ namespace LifeSimProto
             {
                 letter = "C", name = "ルピナ", shortName = "ルピ", race = "銀狼", personality = "人なつこい大型犬",
                 color = new Color(0.78f, 0.8f, 0.86f), social = 0.9f, whim = 0.8f, diligence = 0.2f,
-                hobby = SimCharacter.HobbyKind.Walk, hobbyText = "散歩・鍛錬",
+                hobby = SimCharacter.HobbyKind.Walk, hobbyText = "散歩・鍛錬", hobbyPlace = "中庭",
                 likes = new[] { "肉", "走る", "満月", "なでる" }, dislikes = new[] { "じっとする", "古代語" },
                 traits = CharTrait.FullMoon, traitText = "満月の日はそわそわ",
                 strongStudy = Herb, weakStudy = Ancient, strongPractical = Body, weakPractical = Alchemy,
@@ -184,7 +185,7 @@ namespace LifeSimProto
             {
                 letter = "D", name = "ミレイユ", shortName = "ミレ", race = "羊", personality = "しっかり者の世話焼き",
                 color = new Color(0.95f, 0.92f, 0.82f), social = 0.6f, whim = 0.3f, diligence = 0.75f,
-                hobby = SimCharacter.HobbyKind.Reading, hobbyText = "編み物・星見",
+                hobby = SimCharacter.HobbyKind.Reading, hobbyText = "編み物・星見", hobbyPlace = "屋上の天文台",
                 likes = new[] { "編み物", "甘いもの", "星" }, dislikes = new[] { "高い所", "雷", "大きな音" },
                 traits = CharTrait.DeepSleeper, traitText = "眠りが深い",
                 strongStudy = Astro, weakStudy = Theory, strongPractical = Heal, weakPractical = Fly,
@@ -260,7 +261,7 @@ namespace LifeSimProto
             {
                 letter = "G", name = "ロッテ", shortName = "ロッテ", race = "ドワーフ", personality = "理屈っぽい研究者",
                 color = new Color(0.82f, 0.84f, 0.9f), social = 0.3f, whim = 0.3f, diligence = 0.9f,
-                hobby = SimCharacter.HobbyKind.Magic, hobbyText = "魔道具研究・修理",
+                hobby = SimCharacter.HobbyKind.Magic, hobbyText = "魔道具研究・修理", hobbyPlace = "工房",
                 likes = new[] { "魔道具", "工具", "実験" }, dislikes = new[] { "占星術", "飛ぶ" },
                 strongStudy = Tools, weakStudy = Astro, strongPractical = Alchemy, weakPractical = Fly,
                 enrolled = new[] { Tools, Alchemy, Astro, Theory, Element, Ancient }, callF = "篤さん",
@@ -311,7 +312,7 @@ namespace LifeSimProto
             {
                 letter = "I", name = "リア", shortName = "リア", race = "人間", personality = "上品で世間知らず、言葉は親しみやすい",
                 color = new Color(1f, 0.85f, 0.5f), social = 0.6f, whim = 0.55f, diligence = 0.55f,
-                hobby = SimCharacter.HobbyKind.Tea, hobbyText = "料理の練習",
+                hobby = SimCharacter.HobbyKind.Tea, hobbyText = "料理の練習", hobbyPlace = "台所",
                 likes = new[] { "庶民の食べ物", "料理" }, dislikes = new[] { "薬草学", "正体" },
                 strongStudy = Ancient, weakStudy = Herb, strongPractical = Element, weakPractical = Body,
                 enrolled = new[] { Ancient, Element, Body, Theory, Heal, Astro }, callF = "篤くん",
@@ -336,7 +337,7 @@ namespace LifeSimProto
             {
                 letter = "J", name = "キッカ", shortName = "キッカ", race = "リス", personality = "ちょこまかおしゃべり",
                 color = new Color(0.8f, 0.5f, 0.25f), social = 0.7f, whim = 0.8f, diligence = 0.4f,
-                hobby = SimCharacter.HobbyKind.Walk, hobbyText = "収集・木登り",
+                hobby = SimCharacter.HobbyKind.Walk, hobbyText = "収集・木登り", hobbyPlace = "工房",
                 likes = new[] { "木の実", "光る物" }, dislikes = new[] { "魔道具学", "元素魔法" },
                 strongStudy = Theory, weakStudy = Tools, strongPractical = Alchemy, weakPractical = Element,
                 enrolled = new[] { Theory, Alchemy, Element, Herb, Fly, Body }, callF = "篤さん",

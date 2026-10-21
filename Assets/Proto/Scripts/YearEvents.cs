@@ -150,6 +150,15 @@ namespace LifeSimProto
                 foreach (var l in e.invited) { var c = ByLetter(l); if (c != null) g.invited.Add(c); }
             }
             if (e.honorF) g.honoree = world.RomanceTarget;
+            // 会場の場所が開いていれば、そこで行う（中庭：競技会・学園祭、天文台：星見の夜、台所：リアの料理）
+            string venue = VenueOf(e.key);
+            if (venue != null && world.PlaceOpen(venue) && !(venue == LoungeWorld.Courtyard && world.BadWeatherToday))
+            {
+                g.outing = false;
+                g.area = venue;
+                g.focus = LoungeWorld.FocusOf(venue);
+                world.Log("（会場：" + venue + "）");
+            }
             world.gatherings.Add(g);
             running[k] = g;
             eventOf[k] = e;
@@ -351,6 +360,17 @@ namespace LifeSimProto
                 }
             }
             if (memo != null) Album.Add(world, memo);
+        }
+
+        static string VenueOf(string key)
+        {
+            switch (key)
+            {
+                case "contest": case "schoolfest": return LoungeWorld.Courtyard;
+                case "stars": return LoungeWorld.Observatory;
+                case "riacook": case "riacook2": return LoungeWorld.Kitchen;
+                default: return null;
+            }
         }
 
         // ================= 種族の出来事 =================

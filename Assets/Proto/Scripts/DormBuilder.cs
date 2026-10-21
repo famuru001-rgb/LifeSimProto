@@ -63,7 +63,9 @@ namespace LifeSimProto
             BuildFrontBand();
             BuildWing(-1);
             BuildWing(1);
+            BuildPlaces();   // 新しい場所（DormPlaces.cs）
             BuildNav();
+            ApplyPlaces();
             stairs.Add(new Stair
             {
                 bottomApproach = new Vector3(-5.3f, 0f, -2.0f),
@@ -83,18 +85,19 @@ namespace LifeSimProto
         // ================= 材質と光 =================
         void CreateMaterials()
         {
-            flagstone = ProtoArt.Mat(new Color(0.9f, 0.88f, 0.85f), ProtoArt.Flagstone, new Vector2(5f, 4f), 0.2f);
-            mortarDark = ProtoArt.Mat(new Color(0.55f, 0.52f, 0.5f), ProtoArt.StoneWall, new Vector2(1.5f, 1.5f), 0.1f);
-            woodDark = ProtoArt.Mat(new Color(0.55f, 0.42f, 0.33f), ProtoArt.WoodFine, new Vector2(1f, 1f), 0.3f);
-            woodMid = ProtoArt.Mat(new Color(0.85f, 0.68f, 0.52f), ProtoArt.WoodFine, new Vector2(1f, 1f), 0.3f);
-            woodFloor = ProtoArt.Mat(new Color(0.8f, 0.65f, 0.5f), ProtoArt.WoodPlank, new Vector2(3f, 3f), 0.25f);
-            fabricRed = ProtoArt.Mat(new Color(0.55f, 0.12f, 0.12f), ProtoArt.Fabric, new Vector2(3f, 3f), 0.05f);
-            fabricGreen = ProtoArt.Mat(new Color(0.2f, 0.33f, 0.22f), ProtoArt.Fabric, new Vector2(3f, 3f), 0.05f);
+            // 色は依頼11 の絵（明るい石・蜂蜜色の木・くすんだ赤と緑の絵本調）に合わせた（2026-10-21）
+            flagstone = ProtoArt.Mat(new Color(0.98f, 0.95f, 0.9f), ProtoArt.Flagstone, new Vector2(5f, 4f), 0.2f);
+            mortarDark = ProtoArt.Mat(new Color(0.86f, 0.8f, 0.72f), ProtoArt.StoneWall, new Vector2(1.5f, 1.5f), 0.1f);
+            woodDark = ProtoArt.Mat(new Color(0.66f, 0.5f, 0.38f), ProtoArt.WoodFine, new Vector2(1f, 1f), 0.3f);
+            woodMid = ProtoArt.Mat(new Color(1f, 0.9f, 0.76f), ProtoArt.WoodFine, new Vector2(1f, 1f), 0.3f);
+            woodFloor = ProtoArt.Mat(new Color(0.95f, 0.82f, 0.66f), ProtoArt.WoodPlank, new Vector2(3f, 3f), 0.25f);
+            fabricRed = ProtoArt.Mat(new Color(0.6f, 0.17f, 0.2f), ProtoArt.Fabric, new Vector2(3f, 3f), 0.05f);
+            fabricGreen = ProtoArt.Mat(new Color(0.3f, 0.45f, 0.28f), ProtoArt.Fabric, new Vector2(3f, 3f), 0.05f);
             fabricBrown = ProtoArt.Mat(new Color(0.42f, 0.27f, 0.17f), ProtoArt.Fabric, new Vector2(2f, 2f), 0.1f);
             fabricWhite = ProtoArt.Mat(new Color(0.9f, 0.88f, 0.82f), ProtoArt.Fabric, new Vector2(2f, 2f), 0.05f);
-            rugMat = ProtoArt.Mat(new Color(0.45f, 0.1f, 0.12f), ProtoArt.Fabric, new Vector2(8f, 6f), 0.02f);
+            rugMat = ProtoArt.Mat(new Color(0.58f, 0.18f, 0.22f), ProtoArt.Fabric, new Vector2(8f, 6f), 0.02f);
             iron = ProtoArt.Mat(new Color(0.12f, 0.12f, 0.13f), null, null, 0.4f);
-            groundMat = ProtoArt.Mat(new Color(0.18f, 0.22f, 0.16f), ProtoArt.Fabric, new Vector2(20f, 20f), 0.05f);
+            groundMat = ProtoArt.Mat(new Color(0.42f, 0.56f, 0.3f), ProtoArt.Fabric, new Vector2(20f, 20f), 0.05f);
             glowLamp = ProtoArt.Glow(new Color(1f, 0.8f, 0.5f), 2.5f);
             glowFire = ProtoArt.Glow(new Color(1f, 0.55f, 0.15f), 3f);
             glowEmber = ProtoArt.Glow(new Color(1f, 0.3f, 0.05f), 2f);
@@ -147,7 +150,7 @@ namespace LifeSimProto
                 sun.intensity = Mathf.Lerp(0.12f, 1.1f * wf, day);
                 sun.color = Color.Lerp(new Color(0.55f, 0.65f, 1f), new Color(1f, 0.95f, 0.85f), day);
             }
-            RenderSettings.ambientLight = Color.Lerp(new Color(0.16f, 0.15f, 0.2f), new Color(0.42f, 0.4f, 0.37f), day);
+            RenderSettings.ambientLight = Color.Lerp(new Color(0.17f, 0.17f, 0.24f), new Color(0.5f, 0.47f, 0.42f), day);
 
             Color dayWin = w == Weather.Rain ? new Color(0.5f, 0.55f, 0.65f) : (w == Weather.Snow ? new Color(1.1f, 1.1f, 1.2f) : (w == Weather.Cloudy ? new Color(0.7f, 0.75f, 0.85f) : new Color(0.85f, 0.92f, 1.1f)));
             Color win = Color.Lerp(new Color(0.06f, 0.08f, 0.18f), dayWin, day);
@@ -199,12 +202,12 @@ namespace LifeSimProto
 
         Material StoneFor(float len, float h)
         {
-            return ProtoArt.Mat(new Color(0.95f, 0.92f, 0.88f), ProtoArt.StoneWall, new Vector2(Mathf.Max(0.5f, len / 3f), Mathf.Max(0.5f, h / 2f)), 0.1f);
+            return ProtoArt.Mat(new Color(1f, 0.97f, 0.92f), ProtoArt.StoneWall, new Vector2(Mathf.Max(0.5f, len / 3f), Mathf.Max(0.5f, h / 2f)), 0.1f);
         }
 
         Material PanelFor(float len)
         {
-            return ProtoArt.Mat(new Color(0.55f, 0.42f, 0.33f), ProtoArt.WoodPlank, new Vector2(Mathf.Max(0.5f, len / 2f), 1f), 0.3f);
+            return ProtoArt.Mat(new Color(0.7f, 0.54f, 0.4f), ProtoArt.WoodPlank, new Vector2(Mathf.Max(0.5f, len / 2f), 1f), 0.3f);
         }
 
         /// <summary>
@@ -309,7 +312,7 @@ namespace LifeSimProto
         // ================= 地面 =================
         void BuildGround()
         {
-            Box("Ground", new Vector3(0f, -0.08f, -4f), new Vector3(50f, 0.1f, 40f), groundMat);
+            Box("Ground", new Vector3(-3f, -0.08f, 2f), new Vector3(62f, 0.1f, 58f), groundMat);
             Box("Path_Outside", new Vector3(0f, -0.02f, -14.5f), new Vector3(3f, 0.04f, 7f), flagstone);
             Label(new Vector3(0f, 1.2f, -13.4f), "外（授業へ）");
         }
@@ -324,7 +327,12 @@ namespace LifeSimProto
             Box("Rug", new Vector3(0f, 0.012f, 0.4f), new Vector3(5.6f, 0.02f, 4.4f), rugMat);
 
             float wx = HalfW + t / 2f, wz = HalfD + t / 2f;
-            var back = Wall(new Vector2(-wx - t / 2f, wz), new Vector2(wx + t / 2f, wz), 0f, RoomH, t);
+            // 奥の壁：左は図書室の扉、右は中庭への裏口（どちらも開くまで鍵がかかっている）
+            float b0 = -wx - t / 2f;
+            var back = Wall(new Vector2(b0, wz), new Vector2(wx + t / 2f, wz), 0f, RoomH, t,
+                new Vector4(-3.3f - b0, -2.3f - b0, 0f, 2.6f), new Vector4(2.3f - b0, 3.3f - b0, 0f, 2.6f));
+            back.upper.Add(Box("BackDoor_LintelL", new Vector3(-2.8f, 2.75f, wz), new Vector3(1.3f, 0.3f, t + 0.1f), mortarDark).GetComponent<Renderer>());
+            back.upper.Add(Box("BackDoor_LintelR", new Vector3(2.8f, 2.75f, wz), new Vector3(1.3f, 0.3f, t + 0.1f), mortarDark).GetComponent<Renderer>());
             // 左右の壁：2階の個室へ通じる扉（高さ3m〜5.3m）
             var left = Wall(new Vector2(-wx, -wz), new Vector2(-wx, wz), 0f, RoomH, t, new Vector4(wz + 2.6f, wz + 3.6f, Floor2Y, Floor2Y + 2.3f));
             var right = Wall(new Vector2(wx, -wz), new Vector2(wx, wz), 0f, RoomH, t, new Vector4(wz + 2.6f, wz + 3.6f, Floor2Y, Floor2Y + 2.3f));
@@ -369,8 +377,8 @@ namespace LifeSimProto
             fire.GetComponent<Flicker>().isFire = true;
             blockers0.Add(new Rect(-1.85f, 3.85f, 3.7f, 1.2f));
 
-            Bookshelf(new Vector3(-4.1f, 0f, 4.75f));
-            Bookshelf(new Vector3(4.1f, 0f, 4.75f));
+            Bookshelf(new Vector3(-4.6f, 0f, 4.75f), 2f);
+            Bookshelf(new Vector3(4.6f, 0f, 4.75f), 2f);
 
             Sofa("暖炉の前の椅子", "談話室", new Vector3(-1.3f, 0f, 2.9f), 0f, 1.0f, 1, fabricGreen);
             Sofa("暖炉の前の椅子", "談話室", new Vector3(1.3f, 0f, 2.9f), 0f, 1.0f, 1, fabricGreen);
@@ -406,8 +414,8 @@ namespace LifeSimProto
             BuildStairs(1);
 
             pois.Add(MakePoi("暖炉にあたっている", new Vector3(0f, 0.8f, 4.6f), new Vector3(-0.5f, 0f, 3.55f), new Vector3(0.5f, 0f, 3.55f), new Vector3(0f, 0f, 3.05f)));
-            pois.Add(MakePoi("本棚の本を眺めている", new Vector3(-4.1f, 1.5f, 5f), new Vector3(-4.6f, 0f, 3.9f), new Vector3(-3.6f, 0f, 3.9f)));
-            pois.Add(MakePoi("本棚の本を眺めている", new Vector3(4.1f, 1.5f, 5f), new Vector3(3.6f, 0f, 3.9f), new Vector3(4.6f, 0f, 3.9f)));
+            pois.Add(MakePoi("本棚の本を眺めている", new Vector3(-4.6f, 1.5f, 5f), new Vector3(-5.0f, 0f, 3.9f), new Vector3(-4.15f, 0f, 3.95f)));
+            pois.Add(MakePoi("本棚の本を眺めている", new Vector3(4.6f, 1.5f, 5f), new Vector3(4.15f, 0f, 3.95f), new Vector3(5.0f, 0f, 3.9f)));
             pois.Add(MakePoi("窓の外を眺めている", new Vector3(6f, 2f, -3.4f), new Vector3(5.2f, 0f, -3.4f)));
             // 魔法の練習場所（床の魔法陣）。趣味が「魔法の練習」のキャラだけが使う
             Cyl("MagicCircle", new Vector3(-3.3f, 0.015f, -3.5f), new Vector3(1.8f, 0.004f, 1.8f), Quaternion.identity, ProtoArt.Glow(new Color(0.4f, 0.55f, 1f), 0.6f));
@@ -471,7 +479,7 @@ namespace LifeSimProto
             Wall(new Vector2(-13.4f, -5.2f), new Vector2(-6.4f, -5.2f), 0f, BandH, t);
             Wall(new Vector2(6.4f, -5.2f), new Vector2(13.4f, -5.2f), 0f, BandH, t);
             // 外壁
-            var dl = Wall(new Vector2(-13.2f, -11.4f), new Vector2(-13.2f, -5f), 0f, BandH, t);
+            var dl = Wall(new Vector2(-13.2f, -11.4f), new Vector2(-13.2f, -5f), 0f, BandH, t, new Vector4(0.6f, 1.6f, 0f, 2.4f)); // 台所への扉（z -10.8〜-9.8）
             var br = Wall(new Vector2(13.2f, -11.4f), new Vector2(13.2f, -5f), 0f, BandH, t);
             var fw = Wall(new Vector2(-13.4f, -11.2f), new Vector2(13.4f, -11.2f), 0f, BandH, t, new Vector4(12.4f, 14.4f, 0f, 2.8f));
             // 食堂｜廊下｜浴場 の仕切り（扉つき）
@@ -496,15 +504,15 @@ namespace LifeSimProto
             // --- 食堂 ---
             Label(new Vector3(-7.5f, 3.0f, -5.6f), "食堂");
             AddArea("食堂", new Rect(-13f, FrontZ, 11f, depth), 0);
-            Box("Counter", new Vector3(-12.5f, 0.5f, -8.25f), new Vector3(0.8f, 1.0f, 3.5f), woodDark);
-            Box("Counter_Top", new Vector3(-12.5f, 1.02f, -8.25f), new Vector3(0.9f, 0.05f, 3.6f), woodMid);
-            for (int i = 0; i < 4; i++) Box("Food", new Vector3(-12.45f, 1.12f, -9.6f + i * 0.9f), new Vector3(0.35f, 0.12f, 0.35f), foodMat);
-            blockers0.Add(new Rect(-12.95f, -10.05f, 0.9f, 3.6f));
+            Box("Counter", new Vector3(-12.5f, 0.5f, -8.0f), new Vector3(0.8f, 1.0f, 3.0f), woodDark);
+            Box("Counter_Top", new Vector3(-12.5f, 1.02f, -8.0f), new Vector3(0.9f, 0.05f, 3.1f), woodMid);
+            for (int i = 0; i < 3; i++) Box("Food", new Vector3(-12.45f, 1.12f, -9.0f + i * 0.95f), new Vector3(0.35f, 0.12f, 0.35f), foodMat);
+            blockers0.Add(new Rect(-12.95f, -9.55f, 0.9f, 3.1f));
             pois.Add(new Poi
             {
                 label = "料理を受け取っている",
-                lookAt = new Vector3(-12.5f, 1f, -8.25f),
-                slots = new[] { new Vector3(-11.6f, 0f, -9.4f), new Vector3(-11.6f, 0f, -8.25f), new Vector3(-11.6f, 0f, -7.1f) },
+                lookAt = new Vector3(-12.5f, 1f, -8.0f),
+                slots = new[] { new Vector3(-11.6f, 0f, -9.0f), new Vector3(-11.6f, 0f, -8.0f), new Vector3(-11.6f, 0f, -7.0f) },
                 occupants = new SimCharacter[3],
                 counter = true
             });
@@ -568,7 +576,9 @@ namespace LifeSimProto
 
             float t = 0.4f, it = 0.2f;
             var outerW = Wall(new Vector2(s * (outer + 0.2f), -HalfD - 0.4f), new Vector2(s * (outer + 0.2f), HalfD + 0.4f), Floor2Y, WingTop, t);
-            Wall(new Vector2(s * inner, HalfD + 0.2f), new Vector2(s * (outer + 0.4f), HalfD + 0.2f), Floor2Y, WingTop, t);
+            // 奥の壁：左の廊下の突き当たりは屋上の天文台への扉（x -7.6〜-6.8）
+            if (side < 0) Wall(new Vector2(s * inner, HalfD + 0.2f), new Vector2(s * (outer + 0.4f), HalfD + 0.2f), Floor2Y, WingTop, t, new Vector4(0.4f, 1.2f, Floor2Y, Floor2Y + 2.2f));
+            else Wall(new Vector2(s * inner, HalfD + 0.2f), new Vector2(s * (outer + 0.4f), HalfD + 0.2f), Floor2Y, WingTop, t);
             Wall(new Vector2(s * inner, -HalfD - 0.2f), new Vector2(s * (outer + 0.4f), -HalfD - 0.2f), Floor2Y, WingTop, t);
 
             // 廊下の壁（各部屋の扉つき）
@@ -678,12 +688,13 @@ namespace LifeSimProto
             return new Poi { label = label, lookAt = lookAt, slots = slots, occupants = new SimCharacter[slots.Length] };
         }
 
-        void Bookshelf(Vector3 c)
+        void Bookshelf(Vector3 c, float w = 3f, float yaw = 0f, float h = 3.2f)
         {
             var t = new GameObject("Bookshelf").transform;
             t.SetParent(root, false);
             t.localPosition = c;
-            float w = 3f, h = 3.2f, d = 0.45f;
+            t.localRotation = Quaternion.Euler(0f, yaw, 0f);
+            float d = 0.45f;
             Box("Shelf_Back", new Vector3(0f, h / 2f, 0.18f), new Vector3(w, h, 0.08f), woodDark, t);
             Box("Shelf_SideL", new Vector3(-w / 2f, h / 2f, 0f), new Vector3(0.08f, h, d), woodDark, t);
             Box("Shelf_SideR", new Vector3(w / 2f, h / 2f, 0f), new Vector3(0.08f, h, d), woodDark, t);
@@ -695,7 +706,8 @@ namespace LifeSimProto
                 ProtoArt.Mat(new Color(0.3f, 0.18f, 0.35f)), ProtoArt.Mat(new Color(0.2f, 0.15f, 0.1f))
             };
             var rnd = new System.Random(Mathf.RoundToInt(c.x * 100));
-            for (int s = 0; s < 5; s++)
+            int tiers = Mathf.Max(3, Mathf.RoundToInt(h / 0.64f));
+            for (int s = 0; s < tiers; s++)
             {
                 float y = 0.1f + s * 0.62f;
                 Box("Shelf_Board", new Vector3(0f, y, 0f), new Vector3(w, 0.05f, d), woodDark, t);
@@ -709,7 +721,9 @@ namespace LifeSimProto
                     x += bw + 0.005f;
                 }
             }
-            blockers0.Add(new Rect(c.x - w / 2f - 0.1f, c.z - 0.35f, w + 0.2f, 0.7f));
+            Vector3 pa = t.TransformPoint(new Vector3(-w / 2f - 0.1f, 0f, -0.35f));
+            Vector3 pb = t.TransformPoint(new Vector3(w / 2f + 0.1f, 0f, 0.35f));
+            blockers0.Add(Rect.MinMaxRect(Mathf.Min(pa.x, pb.x), Mathf.Min(pa.z, pb.z), Mathf.Max(pa.x, pb.x), Mathf.Max(pa.z, pb.z)));
         }
 
         /// <summary>ソファ／肘掛け椅子。yaw は座った人が向く方向。</summary>
@@ -789,7 +803,7 @@ namespace LifeSimProto
         // ================= 歩ける場所 =================
         void BuildNav()
         {
-            nav0 = new GridNav(new Vector2(-14f, -14f), new Vector2(14f, 6f), 0.25f, 0f);
+            nav0 = new GridNav(new Vector2(-20f, -14f), new Vector2(14f, 23.5f), 0.25f, 0f);
             // 部屋の中（壁から少し離す）
             nav0.Open(Rect.MinMaxRect(-5.7f, -4.7f, 5.7f, 4.7f));        // 談話室
             nav0.Open(Rect.MinMaxRect(-1.65f, -10.75f, 1.65f, -5.65f));  // 廊下
@@ -801,11 +815,12 @@ namespace LifeSimProto
             nav0.Open(Rect.MinMaxRect(-0.75f, -11.55f, 0.75f, -10.6f));
             nav0.Open(Rect.MinMaxRect(-2.45f, -8.35f, -1.55f, -7.65f));
             nav0.Open(Rect.MinMaxRect(1.55f, -8.35f, 2.45f, -7.65f));
+            OpenPlacesNav();
             float inflate = 0.15f;
             foreach (var r in blockers0)
                 nav0.Block(Rect.MinMaxRect(r.xMin - inflate, r.yMin - inflate, r.xMax + inflate, r.yMax + inflate));
 
-            nav1 = new GridNav(new Vector2(-14f, -6f), new Vector2(14f, 6f), 0.25f, Floor2Y);
+            nav1 = new GridNav(new Vector2(-14f, -6f), new Vector2(14f, 12f), 0.25f, Floor2Y);
             for (int side = -1; side <= 1; side += 2)
             {
                 float s = side;
@@ -819,6 +834,7 @@ namespace LifeSimProto
                 nav1.Open(Rect.MinMaxRect(Mathf.Min(s * 4.85f, s * 5.75f), 2.6f, Mathf.Max(s * 4.85f, s * 5.75f), 3.6f));  // 踊り場
                 nav1.Open(Rect.MinMaxRect(Mathf.Min(s * 5.6f, s * 6.7f), 2.75f, Mathf.Max(s * 5.6f, s * 6.7f), 3.45f));   // 踊り場→廊下の扉
             }
+            nav1.Open(Rect.MinMaxRect(-13.15f, 5.65f, -6.65f, 11.15f)); // 屋上の天文台（扉は ApplyPlaces で開け閉め）
             foreach (var r in blockers1)
                 nav1.Block(Rect.MinMaxRect(r.xMin - inflate, r.yMin - inflate, r.xMax + inflate, r.yMax + inflate));
         }
@@ -836,8 +852,8 @@ namespace LifeSimProto
             foreach (var r in root.GetComponentsInChildren<Renderer>(true))
             {
                 string n = r.gameObject.name;
-                if (System.Array.IndexOf(Floor0Names, n) >= 0) f0.Add(r);
-                else if (System.Array.IndexOf(Floor1Names, n) >= 0) f1.Add(r);
+                if (System.Array.IndexOf(Floor0Names, n) >= 0 || System.Array.IndexOf(PlaceFloor0Names, n) >= 0) f0.Add(r);
+                else if (System.Array.IndexOf(Floor1Names, n) >= 0 || System.Array.IndexOf(PlaceFloor1Names, n) >= 0) f1.Add(r);
             }
             floorGroups = new List<KeyValuePair<float, List<Renderer>>>
             {

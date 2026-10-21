@@ -45,8 +45,8 @@ namespace LifeSimProto
             }
         }
 
-        public static Texture2D StoneWall { get { if (stoneWallTex == null) stoneWallTex = MakeBlocks(256, 64, 32, new Color(0.56f, 0.53f, 0.49f), 0.35f, new Color(0.27f, 0.25f, 0.23f), 11); return stoneWallTex; } }
-        public static Texture2D Flagstone { get { if (flagstoneTex == null) flagstoneTex = MakeBlocks(256, 128, 64, new Color(0.50f, 0.48f, 0.45f), 0.30f, new Color(0.22f, 0.21f, 0.20f), 23); return flagstoneTex; } }
+        public static Texture2D StoneWall { get { if (stoneWallTex == null) stoneWallTex = MakeBlocks(256, 64, 32, new Color(0.8f, 0.73f, 0.62f), 0.3f, new Color(0.56f, 0.5f, 0.42f), 11); return stoneWallTex; } }
+        public static Texture2D Flagstone { get { if (flagstoneTex == null) flagstoneTex = MakeBlocks(256, 128, 64, new Color(0.78f, 0.71f, 0.6f), 0.25f, new Color(0.55f, 0.49f, 0.41f), 23); return flagstoneTex; } }
         public static Texture2D WoodPlank { get { if (woodPlankTex == null) woodPlankTex = MakeWood(256, 32, 41); return woodPlankTex; } }
         public static Texture2D WoodFine { get { if (woodFineTex == null) woodFineTex = MakeWood(128, 128, 57); return woodFineTex; } }
         public static Texture2D Fabric { get { if (fabricTex == null) fabricTex = MakeFabric(128, 71); return fabricTex; } }
@@ -135,7 +135,7 @@ namespace LifeSimProto
             var tex = new Texture2D(size, size, TextureFormat.RGBA32, true);
             tex.wrapMode = TextureWrapMode.Repeat;
             var px = new Color[size * size];
-            Color baseColor = new Color(0.45f, 0.29f, 0.17f);
+            Color baseColor = new Color(0.72f, 0.5f, 0.28f); // 蜂蜜色の木（依頼11 の絵に合わせた）
             for (int y = 0; y < size; y++)
             {
                 for (int x = 0; x < size; x++)
@@ -148,7 +148,7 @@ namespace LifeSimProto
                     float n = Mathf.PerlinNoise(x * 0.03f + plank * 3.1f, y * 0.01f + seed);
                     Color c = baseColor * (0.75f + 0.35f * ph);
                     c *= 0.85f + 0.12f * grain + 0.1f * n;
-                    if (seam) c *= 0.45f;
+                    if (seam) c *= 0.55f;
                     c.a = 1f;
                     px[y * size + x] = c;
                 }
