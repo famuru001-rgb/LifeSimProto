@@ -70,7 +70,7 @@ namespace LifeSimProto.EditorTools
             var noEnd = springs.Where(t => !t.Cast<Transform>().Any(c => Base(c.name).StartsWith("Spring_"))).Select(t => Base(t.name)).ToList();
             sb.AppendLine("  揺れの骨：" + springs.Count + "本" + (noEnd.Count > 0 ? "（先に続く骨がない：" + string.Join(", ", noEnd.ToArray()) + "）" : ""));
             if (noEnd.Count > 0) problems.Add("揺れの鎖の最後に _End の骨がない：" + string.Join(", ", noEnd.ToArray()));
-            if (springs.Count > 40) problems.Add("揺れの骨が40本を超えている（" + springs.Count + "本）");
+            if (springs.Count > 48) problems.Add("揺れの骨が48本を超えている（" + springs.Count + "本）"); // 2026-10-21 胸の揺れの骨を足すため 40→48
 
             // 高さ
             var top = all.FirstOrDefault(t => Base(t.name) == "HeadTop_End") ?? all.FirstOrDefault(t => Base(t.name) == "Head");

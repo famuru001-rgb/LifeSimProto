@@ -171,7 +171,9 @@ namespace LifeSimProto
             Transform top = bones.ContainsKey("HeadTop_End") ? bones["HeadTop_End"] : bones["Head"];
             float h = owner.InverseTransformPoint(top.position).y;
             measuredHeight = h;
-            if (h < 1.2f || h > 2.4f)
+            // 2026-10-22（取り込みのチャット）：小柄なキャラ（キッカ・ロッテ 135cm、頭の骨 1.13m）まで 1.7m に引き伸ばされていたので、
+            // 単位のずれ（100倍・100分の1）のときだけ合わせる
+            if (h < 0.5f || h > 3f)
             {
                 if (h > 0.01f) model.localScale *= height / h;
                 Debug.LogWarning("仮モデルの大きさを調整しました（" + h + "m → " + height + "m）");
@@ -707,7 +709,9 @@ namespace LifeSimProto
             public Transform bone, child, parent;
             public Quaternion restLocal;
             public Vector3 restDirLocal;   // 骨の向き（自分の座標で）
-            public float length, stiffness, drag, gravity;
+            public float length, stiffness, drag, gravity, maxAngle = 60f;
+            public int kind;                          // 1＝スカート、2＝胸
+            public float maxIn = 90f, maxSide = 90f;  // スカートが脚の側へ入る角度・胸が左右へ振れる角度の上限
             public Vector3 tip, prevTip;
             public int depth;
         }
@@ -734,7 +738,10 @@ namespace LifeSimProto
                 sb.restDirLocal = t.InverseTransformDirection(child.position - t.position).normalized;
                 sb.length = (child.position - t.position).magnitude;
                 string part = bn.Substring(7);
-                if (part.StartsWith("Skirt")) { sb.stiffness = 0.35f; sb.drag = 0.35f; sb.gravity = 0.3f; }
+                // 2026-10-21 famuru：スカートが硬くてほとんど揺れない → 柔らかく。胸の揺れ（Spring_Chest）を追加（はっきり揺れる）
+                // 2026-10-21 famuru「1で」：スカートは外へ35度・脚の側へ10度まで（脚が突き抜けないように）、胸は上下20度・左右10度まで（上着の前が開かないように）
+                if (part.StartsWith("Skirt")) { sb.stiffness = 0.16f; sb.drag = 0.18f; sb.gravity = 0.35f; sb.maxAngle = 35f; sb.kind = 1; sb.maxIn = 10f; }
+                else if (part.StartsWith("Chest")) { sb.stiffness = 0.10f; sb.drag = 0.10f; sb.gravity = 0.15f; sb.maxAngle = 20f; sb.kind = 2; sb.maxSide = 10f; }
                 else if (part.StartsWith("Tail")) { sb.stiffness = 0.12f; sb.drag = 0.15f; sb.gravity = 0.15f; }
                 else if (part.StartsWith("Ear")) { sb.stiffness = 0.5f; sb.drag = 0.4f; sb.gravity = 0f; }
                 else if (part.StartsWith("Ribbon")) { sb.stiffness = 0.15f; sb.drag = 0.2f; sb.gravity = 0.5f; }
@@ -767,6 +774,26 @@ namespace LifeSimProto
                 next = Vector3.Lerp(next, target, 1f - Mathf.Pow(1f - s.stiffness, step));
                 Vector3 dir = next - s.bone.position;
                 if (dir.sqrMagnitude < 1e-8f) dir = restDir;
+                dir.Normalize();
+                if (s.kind == 1) // スカート：体の中心（脚）へ向かう向きには maxIn 度まで
+                {
+                    Vector3 radial = Vector3.ProjectOnPlane(s.bone.position - hips.position, transform.up);
+                    if (radial.sqrMagnitude > 1e-6f)
+                    {
+                        radial.Normalize();
+                        float lim = Mathf.Sin(s.maxIn * Mathf.Deg2Rad);
+                        float inward = -Vector3.Dot(dir - restDir, radial);
+                        if (inward > lim) dir = (dir + radial * (inward - lim)).normalized;
+                    }
+                }
+                else if (s.kind == 2) // 胸：左右へは maxSide 度まで
+                {
+                    Vector3 side = transform.right;
+                    float lim = Mathf.Sin(s.maxSide * Mathf.Deg2Rad);
+                    float lat = Vector3.Dot(dir - restDir, side);
+                    if (Mathf.Abs(lat) > lim) dir = (dir - side * (lat - Mathf.Sign(lat) * lim)).normalized;
+                }
+                dir = Vector3.RotateTowards(restDir, dir, s.maxAngle * Mathf.Deg2Rad, 0f); // 揺れすぎて体や服に刺さらないように
                 next = s.bone.position + dir.normalized * s.length;
                 s.tip = next;
                 s.bone.rotation = Quaternion.FromToRotation(restDir, next - s.bone.position) * s.bone.rotation;
@@ -813,6 +840,7 @@ namespace LifeSimProto
                     shR = new Vector3(0f, -1f, sR * A - 0.7f * walk * Mathf.Max(0f, cR));
                     uaL.z = -sL * 0.35f * walk; faL.z = 0.1f + 0.2f * walk;
                     uaR.z = -sR * 0.35f * walk; faR.z = 0.1f + 0.2f * walk;
+                    hips.position -= up * (0.012f * k * walk * Mathf.Abs(sL)); // 足を着くたびに腰が少し下がる（胸・スカート・髪が揺れるきっかけ）
                     hips.position += up * (Mathf.Abs(Mathf.Cos(phase)) * 0.02f * walk);
                     if (talking && walk < 0.2f) { faR = new Vector3(0.25f, -0.15f + 0.25f * Mathf.Sin(talkT * 4f), 1f); uaR = new Vector3(0.2f, -1f, 0.25f); }
                     break;
