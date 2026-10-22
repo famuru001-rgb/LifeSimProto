@@ -290,6 +290,7 @@ namespace LifeSimProto
                         world.Log("★ 料理対決：優勝は " + w.displayName + (w.IsTarget ? "（見たことのない異世界の料理に、みんなびっくり）" : ""));
                         if (w.IsTarget) foreach (var c in members) if (c != w) world.rel.Add(c.id, w.id, 2f, world.simTime);
                         memo = "料理対決で" + w.displayName + "が優勝";
+                        if (w.IsTarget || w.letter == "I") Story.Flags.Add("cookwin"); // リアの物語 第3話の鍵
                     }
                     break;
                 }
@@ -333,6 +334,7 @@ namespace LifeSimProto
                     if (Random.value < p)
                     {
                         riaCooked = true;
+                        Story.Flags.Add("riacooked"); // リアの物語 第1話のきっかけ
                         ria.PositiveEvent(1f);
                         ria.ShowBubble("できた…！ はじめて成功した！", 2.5f);
                         world.Log("★ リアの料理が初めて成功した！" + (cheer ? "（篤の応援が効いた）" : ""));
@@ -353,6 +355,7 @@ namespace LifeSimProto
                         g7.PositiveEvent(1f);
                         world.dormReputation += 3;
                         world.Log("★ ロッテの魔道具コンテスト：入賞！" + (cheer ? "（篤の応援が効いた）" : ""));
+                        Story.Flags.Add("toolswin"); // ロッテの物語 第3話の鍵
                         memo = "ロッテが魔道具コンテストで入賞";
                     }
                     else { g7.NegativeEvent(0.5f); world.Log("ロッテの魔道具コンテスト：今回は入賞ならず。次の改良案を考えているらしい"); }

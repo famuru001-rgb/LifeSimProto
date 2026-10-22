@@ -45,6 +45,7 @@ namespace LifeSimProto.EditorTools
                 if (cmd.Length == 0) continue;
                 // 試験用：skipto（日 時）＝ゲームの時刻を進める／speed（倍）＝速さ／gamelog＝寮の記録を game_log.txt に書く／openall＝新しい場所を全部開く／placeshots＝場所の写真
                 var w = EditorApplication.isPlaying ? LifeSimProto.LoungeWorld.Instance : null;
+                if (ClaudeBridgeExtra.Handle(cmd, w, log)) continue; // 2026-10-22 追加の命令（ClaudeBridgeExtra.cs）
                 if (cmd.StartsWith("skipto ") || cmd.StartsWith("speed ") || cmd == "gamelog" || cmd == "openall" || cmd == "placeshots" || cmd == "status" || cmd == "testprivate" || cmd == "testseek" || cmd == "testnight" || cmd == "testescort" || cmd.StartsWith("testitem ") || cmd == "where" || cmd.StartsWith("testself ") || cmd.StartsWith("setdesire "))
                 {
                     if (w == null) { log.AppendLine(cmd + ": not playing"); continue; }

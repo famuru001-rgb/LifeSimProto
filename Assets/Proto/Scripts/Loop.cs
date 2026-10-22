@@ -67,18 +67,28 @@ namespace LifeSimProto
             Album.Add(w, "…気がつくと、また春の朝だった（" + Count + "周目が終わった）");
             Count++;
             NightTogether.Clear();
+            Story.OnRewind();         // 物語の気配・その周の行事の結果は消える（進みと針は残る）
+            RoomDecor.Placed.Clear(); // 家具は持ち物と同じく戻る
             PickRewind();
+            ReloadScene();
+        }
+
+        /// <summary>寮を最初から作り直す（ループ・セーブの読み込み）。</summary>
+        public static void ReloadScene()
+        {
 #if UNITY_EDITOR
             UnityEditor.SceneManagement.EditorSceneManager.LoadSceneInPlayMode(SceneManager.GetActiveScene().path, new LoadSceneParameters(LoadSceneMode.Single));
 #else
             SceneManager.LoadScene(SceneManager.GetActiveScene().name);
 #endif
         }
+
+        /// <summary>周の数から、戻る時刻を決め直す（セーブを読み込んだとき）。</summary>
+        public static void RefreshRewind() { PickRewind(); }
     }
 
     /// <summary>
-    /// 場所の開き方の目安（場所はまだ作っていないので、条件を満たすと「開いた」と記録だけする）。
-    /// ふつうの場所：篤の能力値＋関係の深いキャラと友達（あとで「キャラの物語」に置きかえる）。
+    /// 場所の開き方：篤の能力値＋縁のあるキャラの物語の第1話を見た（2026-10-22 から。前は「友達」）。
     /// </summary>
     public static class PlaceGates
     {
@@ -90,7 +100,7 @@ namespace LifeSimProto
             new Gate { place = "温室", abilityIndex = Abilities.Mind, ability = "C", friends = new[] { "B" } },
             new Gate { place = "図書室", abilityIndex = Abilities.Mind, ability = "B", friends = new[] { "A", "I" } },
             new Gate { place = "工房", abilityIndex = Abilities.Dex, ability = "C", friends = new[] { "G", "J" } },
-            new Gate { place = "屋上の天文台", abilityIndex = Abilities.Magic, ability = "D", friends = new[] { "D", "H" } },
+            new Gate { place = "屋上の天文台", abilityIndex = Abilities.Magic, ability = "D", friends = new[] { "D", "H", "K" } },
             new Gate { place = "台所", abilityIndex = Abilities.Dex, ability = "D", friends = new[] { "I" } },
         };
 
@@ -98,7 +108,7 @@ namespace LifeSimProto
         {
             var n = new System.Collections.Generic.List<string>();
             foreach (var l in g.friends) { var p = CharProfiles.All.Find(x => x.letter == l); n.Add(p != null ? p.name : l); }
-            return "篤の" + Abilities.Names[g.abilityIndex] + " " + g.ability + "以上・" + string.Join("か", n.ToArray()) + "と友達";
+            return "篤の" + Abilities.Names[g.abilityIndex] + " " + g.ability + "以上・" + string.Join("か", n.ToArray()) + "の物語の第1話";
         }
 
         /// <summary>条件を満たした場所を開く（1日1回くらい呼ぶ）。</summary>
@@ -111,7 +121,7 @@ namespace LifeSimProto
                 if (Loop.OpenedPlaces.Contains(g.place)) continue;
                 if (f.Ab(g.abilityIndex) < Abilities.RankMin(g.ability)) continue;
                 bool friend = false;
-                foreach (var c in w.characters) if (System.Array.IndexOf(g.friends, c.letter) >= 0 && w.rel.Get(c.id, f.id) >= 40f) friend = true;
+                foreach (var l in g.friends) if (Story.DoneOf(l) >= 1) friend = true;
                 if (!friend) continue;
                 Loop.OpenedPlaces.Add(g.place);
                 w.Log("★ 「" + g.place + "」が開いた（場所はこれから作る。ループしても開いたまま）");

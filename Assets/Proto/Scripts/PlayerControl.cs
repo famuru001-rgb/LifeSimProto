@@ -17,11 +17,14 @@ namespace LifeSimProto
         // お守り（その人を意識しやすくなる。記号 A〜J）
         CharmA, CharmB, CharmC, CharmD, CharmE, CharmF, CharmG, CharmH, CharmI, CharmJ, CharmK,
         // 寮生の私物（寮生が自分で買って使う。篤は買えない・渡せない）
-        PassionAroma, NightCandle, LongingOil
+        PassionAroma, NightCandle, LongingOil,
+        // 家具（寮生の部屋に置く。RoomDecor.cs）※ 番号がセーブに残るので、足すときは最後に足す
+        FurnPlant, FurnMoonLamp, FurnLamp, FurnTeaSet, FurnMusicBox, FurnCookStand, FurnPlush, FurnCushion,
+        FurnTapestry, FurnToolRack, FurnMirror, FurnBookshelf, FurnTreasure, FurnStove, FurnRug
     }
 
     /// <summary>購買部の棚（表示の分け方）。</summary>
-    public enum ItemShelf { Basic, Needs, Gift, Accessory, Growth, Charm, Personal }
+    public enum ItemShelf { Basic, Needs, Gift, Accessory, Growth, Charm, Personal, Furniture }
     public enum RequestKind { Meet, Study, Rest, Teach }
 
     public class ItemDef
@@ -38,6 +41,7 @@ namespace LifeSimProto
         public ItemShelf shelf;  // 購買部の棚
         public bool npcOnly;     // 寮生の私物：寮生が自分で買って使うだけ（篤は買えない・渡せない・使えない）
         public float desireBoostMin, desireBoostMax; // 使ったときに性欲がすぐ増える量（私物。30〜80くらい）
+        public bool furniture;   // 家具：寮生に贈ると部屋に置かれる（RoomDecor.cs）
         public NeedMod Mod { get { return string.IsNullOrEmpty(modId) ? null : NeedBook.Item(modId); } }
     }
 
@@ -111,7 +115,28 @@ namespace LifeSimProto
                 new ItemDef { kind = ItemKind.PassionAroma, name = "情熱のアロマ", price = 40, desc = "私物：使うと性欲が30〜60増え、半日、性欲が高まりやすい", npcOnly = true, desireBoostMin = 30f, desireBoostMax = 60f, modId = "own:情熱のアロマ", modMinutes = 720f, shelf = ItemShelf.Personal },
                 new ItemDef { kind = ItemKind.NightCandle, name = "夜想のキャンドル", price = 40, desc = "私物：使うと性欲が40〜70増え、1日、性欲のたまりがたまりやすい・眠気がたまりにくい", npcOnly = true, desireBoostMin = 40f, desireBoostMax = 70f, modId = "own:夜想のキャンドル", modMinutes = 1440f, shelf = ItemShelf.Personal },
                 new ItemDef { kind = ItemKind.LongingOil, name = "恋慕の香油", price = 50, desc = "私物：使うと性欲が50〜80増え、1日、恋心と性欲が高まりやすい", npcOnly = true, desireBoostMin = 50f, desireBoostMax = 80f, modId = "own:恋慕の香油", modMinutes = 1440f, shelf = ItemShelf.Personal },
+                // 家具（寮生に贈ると部屋に置かれる。同じ置き場の物は入れかえ。好きな物に合うと、とても喜ぶ）
+                Furn(ItemKind.FurnPlant, "鉢植えの花", 120, "窓辺：さみしさと退屈がたまりにくい（植物が好きな子は大喜び）"),
+                Furn(ItemKind.FurnMoonLamp, "月の常夜灯", 140, "窓辺：よく眠れる（月や夜の散歩が好きな子は大喜び）"),
+                Furn(ItemKind.FurnLamp, "魔法のランプ", 150, "机の上：勉強がはかどる（魔道具や光る物が好きな子は大喜び）"),
+                Furn(ItemKind.FurnTeaSet, "ティーセット", 130, "机の上：退屈しにくい（お茶会・ハーブティー・お菓子が好きな子は大喜び）"),
+                Furn(ItemKind.FurnMusicBox, "オルゴール", 120, "机の上：よく眠れて、さみしさがたまりにくい（甘いもの・みんなが好きな子は大喜び）"),
+                Furn(ItemKind.FurnCookStand, "料理の本立て", 110, "机の上：趣味で満たされやすい（料理が好きな子は大喜び）"),
+                Furn(ItemKind.FurnPlush, "ぬいぐるみ", 100, "ベッド：さみしさがたまりにくい（ふわふわ・みんなが好きな子は大喜び）"),
+                Furn(ItemKind.FurnCushion, "ふわふわのクッション", 100, "ベッド：疲れがよく取れる（ふわふわ・なでる・編み物が好きな子は大喜び）"),
+                Furn(ItemKind.FurnTapestry, "星図のタペストリー", 160, "壁：退屈しにくい（星・占い・月が好きな子は大喜び）"),
+                Furn(ItemKind.FurnToolRack, "工具の壁掛け", 140, "壁：趣味がはかどる（魔道具・工具・実験が好きな子は大喜び）"),
+                Furn(ItemKind.FurnMirror, "姿見の鏡", 150, "入口の角：気分が上がりやすく、退屈しにくい（注目・高い所が好きな子は大喜び）"),
+                Furn(ItemKind.FurnBookshelf, "小さな本棚", 160, "入口の角：勉強と趣味がはかどる（本が好きな子は大喜び）"),
+                Furn(ItemKind.FurnTreasure, "宝物の飾り棚", 160, "入口の角：趣味で満たされやすい（光る物・木の実・工具が好きな子は大喜び）"),
+                Furn(ItemKind.FurnStove, "小さな暖炉ストーブ", 180, "入口の角：疲れにくく、さみしさがたまりにくい（暖炉・ホットミルクが好きな子は大喜び）"),
+                Furn(ItemKind.FurnRug, "円いラグ", 120, "床：疲れにくい（編み物・走る・肉が好きな子は大喜び）"),
             };
+        }
+
+        static ItemDef Furn(ItemKind k, string name, int price, string desc)
+        {
+            return new ItemDef { kind = k, name = name, price = price, desc = "家具・" + desc, furniture = true, modId = "furn:" + name, shelf = ItemShelf.Furniture };
         }
     }
 

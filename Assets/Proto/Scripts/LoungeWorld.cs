@@ -174,16 +174,26 @@ namespace LifeSimProto
         {
             Application.runInBackground = true; // ほかのウィンドウを触っている間も、寮の時間は進む
             gameMinutes = startHour * 60.0;
+            if (SaveSystem.Pending != null) gameMinutes = SaveSystem.Pending.gameMinutes; // セーブの時刻から始める
             Time.timeScale = 1f;
             Build();
             SpawnCharacters();
             SetupCamera();
             player = gameObject.AddComponent<PlayerControl>();
+            // セーブを読み込んだところなら、その中身にする（SaveSystem.cs）。そうでなければ周のはじめの持ち越し
+            bool loaded = SaveSystem.ApplyPending(this);
+            if (!loaded) Story.ApplyLoopStart(this);
+            RebuildFurniture();
             gameObject.AddComponent<EventDirector>();
             gameObject.AddComponent<YearEvents>();
+            gameObject.AddComponent<ProgressDirector>();
             gameObject.AddComponent<SimHud>();
-            Log("寮の試作を開始しました（" + Day + "日目 " + ScheduleMaker.Clock(Now) + "）");
-            if (Loop.Count > 1) Log("★ " + Loop.Count + "周目の春の朝。篤だけが、前の1年を覚えている");
+            if (loaded) Log("セーブを読み込みました（" + Loop.Count + "周目 " + Day + "日目 " + ScheduleMaker.Clock(Now) + "）");
+            else
+            {
+                Log("寮の試作を開始しました（" + Day + "日目 " + ScheduleMaker.Clock(Now) + "）");
+                if (Loop.Count > 1) Log("★ " + Loop.Count + "周目の春の朝。篤だけが、前の1年を覚えている");
+            }
         }
 
         void Update()
@@ -371,6 +381,7 @@ namespace LifeSimProto
                 {
                     float d = result == TalkResult.Fun ? 6f : (result == TalkResult.Normal ? 2f : -3f);
                     ChangeLove(other, d);
+                    Story.OnTalk(this, other); // 物語の気配が出ていれば、第○話が始まる
                     // やきもち：Fが楽しそうに話しているのを、Fを好きな子が近くで見ている（仲は悪くならない）
                     if (result == TalkResult.Fun)
                     {

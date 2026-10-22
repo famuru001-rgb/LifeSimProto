@@ -47,6 +47,8 @@ namespace LifeSimProto
         }
 
         public float Get(int i, int j) { return affinity[i, j]; }
+        /// <summary>好感度をそのまま入れる（セーブの読み込み用）。</summary>
+        public void SetRaw(int i, int j, float v) { affinity[i, j] = affinity[j, i] = Mathf.Clamp(v, 0f, 100f); }
         public float Compat(int i, int j) { return compat[i, j]; }
         public float LastChange(int i, int j) { return flashTime[i, j]; }
 

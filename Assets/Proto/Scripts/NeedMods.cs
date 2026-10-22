@@ -134,9 +134,25 @@ namespace LifeSimProto
             I("own:夜想のキャンドル", "夜想のキャンドル", ModSource.Item).Build(Desire, 1.3f).Rate(Sleepy, 0.9f).Desc("性欲のたまりがたまりやすい・眠気がたまりにくい");
             I("own:恋慕の香油", "恋慕の香油", ModSource.Item).Rate(Love, 1.2f).Rate(Desire, 1.2f).Desc("恋心と性欲が高まりやすい");
 
-            // ---- 衣装・家具（これから足す）----
+            // ---- 家具（寮生の部屋に置いてあるあいだずっと効く。RoomDecor.cs・仮の値）----
+            I("furn:鉢植えの花", "鉢植えの花", ModSource.Furniture).Rate(Lonely, 0.9f).Rate(Bored, 0.92f).Desc("さみしさと退屈がたまりにくい");
+            I("furn:月の常夜灯", "月の常夜灯", ModSource.Furniture).Relief(Sleepy, 1.2f).Desc("よく眠れる");
+            I("furn:魔法のランプ", "魔法のランプ", ModSource.Furniture).Relief(Study, 1.2f).Desc("勉強がはかどる");
+            I("furn:ティーセット", "ティーセット", ModSource.Furniture).Rate(Bored, 0.88f).Desc("退屈しにくい");
+            I("furn:オルゴール", "オルゴール", ModSource.Furniture).Relief(Sleepy, 1.1f).Rate(Lonely, 0.93f).Desc("よく眠れて、さみしさがたまりにくい");
+            I("furn:料理の本立て", "料理の本立て", ModSource.Furniture).Relief(Hobby, 1.2f).Desc("趣味で満たされやすい");
+            I("furn:ぬいぐるみ", "ぬいぐるみ", ModSource.Furniture).Rate(Lonely, 0.85f).Desc("さみしさがたまりにくい");
+            I("furn:ふわふわのクッション", "ふわふわのクッション", ModSource.Furniture).Relief(Tired, 1.2f).Desc("疲れがよく取れる");
+            I("furn:星図のタペストリー", "星図のタペストリー", ModSource.Furniture).Rate(Bored, 0.88f).Desc("退屈しにくい");
+            I("furn:工具の壁掛け", "工具の壁掛け", ModSource.Furniture).Relief(Hobby, 1.2f).Desc("趣味がはかどる");
+            I("furn:姿見の鏡", "姿見の鏡", ModSource.Furniture).Rate(Bored, 0.92f).Rate(Lonely, 0.95f).Desc("気分が上がりやすく、退屈しにくい");
+            I("furn:小さな本棚", "小さな本棚", ModSource.Furniture).Relief(Study, 1.1f).Relief(Hobby, 1.1f).Desc("勉強と趣味がはかどる");
+            I("furn:宝物の飾り棚", "宝物の飾り棚", ModSource.Furniture).Relief(Hobby, 1.2f).Rate(Bored, 0.95f).Desc("趣味で満たされやすい");
+            I("furn:小さな暖炉ストーブ", "小さな暖炉ストーブ", ModSource.Furniture).Rate(Tired, 0.92f).Rate(Lonely, 0.93f).Desc("疲れにくく、さみしさがたまりにくい");
+            I("furn:円いラグ", "円いラグ", ModSource.Furniture).Rate(Tired, 0.9f).Desc("疲れにくい");
+
+            // ---- 衣装（これから足す）----
             // 例）I("outfit:浴衣", "浴衣", ModSource.Outfit).Rate(Tired, 0.9f);
-            //     I("furniture:暖炉の椅子", "暖炉の前の椅子", ModSource.Furniture).Relief(Tired, 1.3f);
             // ※ 性欲や発情を上げる物は「寮生の私物」だけ（本人が自分で買って使う。篤からは渡せない）
         }
 

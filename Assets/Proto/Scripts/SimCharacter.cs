@@ -10,7 +10,7 @@ namespace LifeSimProto
     /// パラメータ：学力（課題の進み方・試験の成績）、魔力（たまると魔力過多・暴走）
     /// Fはプレイヤーが操作できる（指示がないときは自分で動く）。
     /// </summary>
-    public class SimCharacter : MonoBehaviour
+    public partial class SimCharacter : MonoBehaviour
     {
         public enum State { Idle, Walking, Sitting, Activity, Approaching, Waiting, Talking, Eating, Bathing, Sleeping, Away, Private }
         public enum HobbyKind { Reading, Magic, Tea, Walk }
@@ -2493,6 +2493,8 @@ namespace LifeSimProto
             bool gift = giver != null && giver != this;
             // 寮生の私物は、寮生が自分で使うだけ（渡せない）
             if (d != null && d.npcOnly && (gift || IsTarget)) { world.Log("「" + d.name + "」は寮生が自分で買って使う物（渡せない）"); return; }
+            // 家具：部屋に置かれる（RoomDecor.cs）
+            if (d != null && d.furniture) { world.GiveFurniture(this, giver, d); return; }
             if (d != null && d.desireBoostMax > 0f) desire = Mathf.Min(100f, desire + Random.Range(d.desireBoostMin, d.desireBoostMax)); // 私物：すぐ増える分
             switch (k)
             {
@@ -3334,6 +3336,7 @@ namespace LifeSimProto
                 names.Add(arrived[i].displayName);
             }
             world.Log("♥ " + string.Join("・", names.ToArray()) + "が" + spot.name + "でエッチしている");
+            HLog.Record(world, arrived, spot.name, this); // エッチの記録（誘った人＝この子）
             // 夜（21時〜朝）なら「夜をいっしょに過ごした」と記録する（その周だけ。物語の針の条件）
             float mm = world.MinuteOfDay;
             if (mm >= 21f * 60f || LoungeWorld.IsNight(mm))
