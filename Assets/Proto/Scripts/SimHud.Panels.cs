@@ -374,17 +374,45 @@ namespace LifeSimProto
             {
                 var e = HLog.Entries[i];
                 if (System.Array.IndexOf(e.letters, c.letter) < 0) continue;
-                HLogRow(e, 14, w - 10, ref y);
+                HLogRow(e, 14, w - 10, ref y, c.letter);
                 shown++;
             }
             if (shown == 0) { GUI.Label(new Rect(14, y, w, 20), "まだない", tiny); y += 20; }
         }
 
-        void HLogRow(HLog.Entry e, float x, float w, ref float y)
+        HLog.Entry openH;      // 押して開いている記録
+        GUIStyle hRow;
+
+        /// <summary>記録の1行。押すと「どんなふうに過ごしたか」の1文が開く（focus はその子の文だけ出す。null なら全員の文）。</summary>
+        void HLogRow(HLog.Entry e, float x, float w, ref float y, string focus = null)
         {
+            if (hRow == null)
+            {
+                hRow = new GUIStyle(tiny) { alignment = TextAnchor.MiddleLeft };
+                hRow.hover.textColor = HiLite;
+                hRow.hover.background = barBg;
+            }
+            bool open = openH == e;
             string inv = string.IsNullOrEmpty(e.inviter) ? "" : "（" + HLog.NameOf(e.inviter) + "から）";
-            GUI.Label(new Rect(x, y, w, 20), e.loop + "周 " + e.day + "日目 " + ScheduleMaker.Clock(e.minute) + (e.night ? "（夜）" : "") + "　" + e.place + "　" + HLog.Names(e) + inv, tiny);
+            string text = (open ? "▼ " : "▶ ") + e.loop + "周 " + e.day + "日目 " + ScheduleMaker.Clock(e.minute) + (e.night ? "（夜）" : "") + "　" + e.place + "　" + HLog.Names(e) + inv;
+            if (GUI.Button(new Rect(x, y, w, 20), text, hRow)) openH = open ? null : e;
             y += 20;
+            if (!open) return;
+            bool any = false;
+            Color old = GUI.color;
+            GUI.color = new Color(1f, 0.92f, 0.8f);
+            for (int i = 0; i < e.letters.Length; i++)
+            {
+                if (e.letters[i] == "F" || (focus != null && focus != "F" && e.letters[i] != focus)) continue;
+                string note = e.notes != null && i < e.notes.Length ? e.notes[i] : "";
+                if (string.IsNullOrEmpty(note)) continue;
+                any = true;
+                GUI.Label(new Rect(x + 22, y, w - 22, 22), "―― " + note, small);
+                y += 22;
+            }
+            if (!any) { GUI.Label(new Rect(x + 22, y, w - 22, 20), "（この記録には文がない）", tiny); y += 20; }
+            GUI.color = old;
+            y += 2;
         }
 
         // ---- 物語 ----
@@ -612,7 +640,7 @@ namespace LifeSimProto
         }
 
         // ================= 試験用（ClaudeBridge の ui 命令） =================
-        /// <summary>試験用：画面を開く。what：detail（letter・見出しの番号）／memory（見出しの番号）／save／shop／close。</summary>
+        /// <summary>試験用：画面を開く。what：detail（letter・見出しの番号）／memory（見出しの番号）／save／shop／openh（いちばん新しい記録の文を開く）／close。</summary>
         public void DebugOpen(string what, string letter, int tab)
         {
             switch (what)
@@ -627,6 +655,7 @@ namespace LifeSimProto
                     memoryOpen = true; memoryTab = Mathf.Clamp(tab, 0, MemoryTabs.Length - 1); memoryScroll = Vector2.zero; hLoopView = Loop.Count;
                     break;
                 case "save": saveOpen = true; loadConfirm = -1; break;
+                case "openh": openH = HLog.Entries.Count > 0 ? HLog.Entries[HLog.Entries.Count - 1] : null; break; // いちばん新しい記録を開く
                 case "shop": shopOpen = true; shopShelf = (ItemShelf)Mathf.Clamp(tab, 0, ShelfNames.Length - 1); break;
                 default: memoryOpen = false; saveOpen = false; shopOpen = false; examOpen = false; Select(null); break;
             }

@@ -18,6 +18,7 @@ namespace LifeSimProto
             public string[] letters;       // いっしょにいた人（記号）
             public string inviter;         // 誘った人（記号）
             public bool night;             // 夜（21時〜朝）だった
+            public string[] notes;         // 1人ずつの「どんなふうに過ごしたか」の1文（letters と同じ順。篤は空）。HNotes.cs
         }
 
         public static readonly List<Entry> Entries = new List<Entry>();
@@ -41,15 +42,20 @@ namespace LifeSimProto
             };
             float m = w.MinuteOfDay;
             e.night = m >= 21f * 60f || LoungeWorld.IsNight(m);
+            e.notes = HNotes.Make(w, who, place, inviter, e.night); // 記録に加える前に作る（回数を数えるため）
             var ls = new List<string>();
-            foreach (var c in who)
+            var ns = new List<string>();
+            for (int i = 0; i < who.Count; i++)
             {
+                var c = who[i];
                 if (c == null || string.IsNullOrEmpty(c.letter)) continue;
                 ls.Add(c.letter);
+                ns.Add(e.notes != null && i < e.notes.Length ? e.notes[i] : "");
                 int n;
                 Total[c.letter] = (Total.TryGetValue(c.letter, out n) ? n : 0) + 1;
             }
             e.letters = ls.ToArray();
+            e.notes = ns.ToArray();
             Entries.Add(e);
             if (Entries.Count > MaxEntries) Entries.RemoveAt(0);
         }
