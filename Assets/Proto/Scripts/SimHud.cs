@@ -35,11 +35,17 @@ namespace LifeSimProto
         Rect ChoicePanel { get { return new Rect(VW / 2f - 300f, 380f, 600f, 170f); } }
         Rect ExamPanel { get { return new Rect(VW / 2f - 470f, 120f, 940f, 96f + Academics.Count * 30f + 40f); } }
         Rect InfoLine { get { return new Rect(12, 66, 1400, 32); } }
-        Rect TablePanel { get { return new Rect(VW - 492, 108, 480, 400); } }
-        Rect LogPanel { get { return new Rect(VW - 1260, VirtualHeight - 272, 760, 260); } }
-        Rect HelpPanel { get { return new Rect(VW - 492, VirtualHeight - 262, 480, 250); } }
-        Rect DetailPanel { get { return new Rect(12, 108, 580, 960); } }
-        Rect RomancePanel { get { return new Rect(VW - 492, 516, 480, 292); } }
+        // 左右・下の欄（しまうと画面の端へ滑る。SimHud.Slide.cs）。…Base はしまう前の位置
+        Rect TablePanelBase { get { return new Rect(VW - 492, 108, 480, 400); } }
+        Rect LogPanelBase { get { return new Rect(VW - 1260, VirtualHeight - 272, 760, 260); } }
+        Rect HelpPanelBase { get { return new Rect(VW - 492, VirtualHeight - 262, 480, 250); } }
+        Rect DetailPanelBase { get { return new Rect(12, 108, 580, 960); } }
+        Rect RomancePanelBase { get { return new Rect(VW - 492, 516, 480, 292); } }
+        Rect TablePanel { get { return Slid(TablePanelBase, slideTable); } }
+        Rect LogPanel { get { return Slid(LogPanelBase, slideLog); } }
+        Rect HelpPanel { get { return Slid(HelpPanelBase, slideHelp); } }
+        Rect DetailPanel { get { return Slid(DetailPanelBase, slideDetail); } }
+        Rect RomancePanel { get { return Slid(RomancePanelBase, slideRomance); } }
         Rect ShopPanel { get { return new Rect(VW / 2f - 430f, 110f, 860f, 110f + ShopRowsMax * 44f); } }
         ItemShelf shopShelf = ItemShelf.Basic;
         static readonly string[] ShelfNames = { "食べ物・薬", "欲求の品", "プレゼント", "装飾品", "能力の装飾", "お守り", "寮生の私物", "家具" };
@@ -63,6 +69,7 @@ namespace LifeSimProto
         {
             world = GetComponent<LoungeWorld>();
             Instance = this;
+            LoadSlides();
         }
 
         void SetSpeed(float s)
@@ -84,6 +91,7 @@ namespace LifeSimProto
 
         bool OverHud(Vector2 v)
         {
+            if (OverSlideTags(v)) return true;
             if (TopBar.Contains(v) || TablePanel.Contains(v) || LogPanel.Contains(v) || HelpPanel.Contains(v) || RomancePanel.Contains(v)) return true;
             if (selected != null && DetailPanel.Contains(v)) return true;
             if (selected != null && Portrait(selected, "stand") != null && StandRect.Contains(v)) return true;
@@ -110,6 +118,7 @@ namespace LifeSimProto
             if (world == null || world.mainCamera == null) return;
             if (rig == null) rig = world.mainCamera.GetComponent<CameraRig>();
             if (selected != null && !selected.Present) Select(null);
+            UpdateSlides();
 
             if (world != null) foreach (var ch in world.characters) NeedRates(ch, NeedValues(ch)); // 欲求の変化を測っておく
             var kb = Keyboard.current;
@@ -322,6 +331,7 @@ namespace LifeSimProto
                 var st = Portrait(selected, "stand");
                 if (st != null) GUI.DrawTexture(StandRect, st, ScaleMode.ScaleToFit, true);
             }
+            DrawSlideControls(); // 左右・下の欄の「しまう」ボタンと札（真ん中に開く画面より下に描く）
             if (shopOpen) DrawShop();
             if (examOpen) DrawExam();
             if (memoryOpen) DrawMemory();
@@ -622,7 +632,7 @@ namespace LifeSimProto
             // 見出し（右上に並べる）
             var tabs = GameLog.Tabs;
             float tw = 104f;
-            float tx = r.xMax - 14 - tabs.Length * tw;
+            float tx = r.xMax - 52 - tabs.Length * tw; // 右上は「しまう」ボタン
             for (int i = 0; i < tabs.Length; i++)
                 if (GUI.Button(new Rect(tx + i * tw, r.y + 8, tw - 4, 30), tabs[i].name, logTab == i ? buttonOn : smallButton) && logTab != i)
                 { logTab = i; logHeroine = null; logAtBottom = true; }

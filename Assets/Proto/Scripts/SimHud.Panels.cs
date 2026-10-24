@@ -44,7 +44,7 @@ namespace LifeSimProto
             float tx = r.x + 14;
             var face = Portrait(c, "face");
             if (face != null) { GUI.DrawTexture(new Rect(r.x + 12, y, 52, 52), face, ScaleMode.ScaleToFit, true); tx = r.x + 72; }
-            GUI.Label(new Rect(tx, y, r.xMax - tx - 14, 30), c.displayName + "（" + c.note + "）" + (c.IsTarget ? "　あなたが操作" : ""), title);
+            GUI.Label(new Rect(tx, y, r.xMax - tx - 50, 30), c.displayName + "（" + c.note + "）" + (c.IsTarget ? "　あなたが操作" : ""), title);
             GUI.Label(new Rect(tx, y + 30, r.xMax - tx - 14, 24), "今：" + c.actionText, small);
             y += 58;
             if (!c.IsTarget)
