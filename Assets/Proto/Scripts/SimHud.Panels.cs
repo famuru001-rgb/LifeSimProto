@@ -35,47 +35,71 @@ namespace LifeSimProto
         static readonly Color HiLite = new Color(1f, 0.85f, 0.4f);
 
         // ================= キャラの情報 =================
+        // 左の欄は2つに分ける（famuru 決定 2026-10-24）：上の約3分の1＝基本と行動、下の約3分の2＝見出しと中身。どちらもホイールで動かせる
+        Vector2 detailTopScroll;
+        float detailTopH = 200f;
+
         void DrawDetail()
         {
             Rect r = DetailPanel;
             var c = selected;
-            GUI.Box(r, GUIContent.none, panel);
-            float y = r.y + 8;
-            float tx = r.x + 14;
+            float topH = Mathf.Round((r.height - 8f) / 3f);
+            Rect top = new Rect(r.x, r.y, r.width, topH);
+            Rect bottom = new Rect(r.x, top.yMax + 8f, r.width, r.height - topH - 8f);
+
+            // 文字の上下が欠けないように、この欄の中では文字を枠からはみ出して描けるようにする（横は欄の端で切れる）
+            var oldSmall = small.clipping; var oldTiny = tiny.clipping;
+            small.clipping = TextClipping.Overflow; tiny.clipping = TextClipping.Overflow;
+
+            // ---- 上：基本と行動 ----
+            GUI.Box(top, GUIContent.none, panel);
+            float y = top.y + 8;
+            float tx = top.x + 14;
             var face = Portrait(c, "face");
-            if (face != null) { GUI.DrawTexture(new Rect(r.x + 12, y, 52, 52), face, ScaleMode.ScaleToFit, true); tx = r.x + 72; }
-            GUI.Label(new Rect(tx, y, r.xMax - tx - 50, 30), c.displayName + "（" + c.note + "）" + (c.IsTarget ? "　あなたが操作" : ""), title);
-            GUI.Label(new Rect(tx, y + 30, r.xMax - tx - 14, 24), "今：" + c.actionText, small);
-            y += 58;
+            if (face != null) { GUI.DrawTexture(new Rect(top.x + 12, y, 52, 52), face, ScaleMode.ScaleToFit, true); tx = top.x + 72; }
+            GUI.Label(new Rect(tx, y, top.xMax - tx - 50, 30), c.displayName + "（" + c.note + "）" + (c.IsTarget ? "　あなたが操作" : ""), title);
+            GUI.Label(new Rect(tx, y + 30, top.xMax - tx - 14, 24), "今：" + c.actionText, small);
+            y += 60;
+
+            Rect tview = new Rect(top.x + 4, y, top.width - 8, top.yMax - 6 - y);
+            Rect tcontent = new Rect(0, 0, tview.width - 18, Mathf.Max(tview.height, detailTopH));
+            detailTopScroll = GUI.BeginScrollView(tview, detailTopScroll, tcontent);
+            // 行動のボタンは欄の左から14の位置を基準に並んでいるので、スクロールの中では左へ10ずらした枠を渡す
+            Rect rr = new Rect(-10f, 0f, tcontent.width + 20f, tcontent.height);
+            float ty = 2f;
             if (!c.IsTarget)
             {
                 string roomName = c.room != null ? "2階・" + c.room.name + "の部屋" : "なし";
                 string loveText = "篤への気持ち：" + Romance.StageName(world.romance.Stage(c.id)) + "（" + Mathf.RoundToInt(world.romance.love[c.id]) + "）";
                 var f = F;
                 string relF = f != null ? "　篤との仲：" + Relationships.StageName(world.rel.Stage(c.id, f.id)) + "（" + Mathf.RoundToInt(world.rel.Get(c.id, f.id)) + "）" : "";
-                GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), loveText + relF + "　部屋：" + roomName, tiny); y += 22;
+                GUI.Label(new Rect(rr.x + 14, ty, rr.width - 28, 22), loveText + relF, tiny); ty += 22;
+                GUI.Label(new Rect(rr.x + 14, ty, rr.width - 28, 22), "部屋：" + roomName, tiny); ty += 24;
                 if (Story.Pending.Contains(c.letter))
                 {
                     int ep = Story.DoneOf(c.letter);
                     var d = StoryText.Get(c.letter);
                     Color old = GUI.color; GUI.color = HiLite;
-                    GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "★ 物語の気配：話しかけると 第" + (ep + 1) + "話「" + (d != null ? d.titles[ep] : "") + "」が始まる", small);
+                    GUI.Label(new Rect(rr.x + 14, ty, rr.width - 28, 22), "★ 物語の気配：話しかけると 第" + (ep + 1) + "話「" + (d != null ? d.titles[ep] : "") + "」が始まる", small);
                     GUI.color = old;
-                    y += 24;
+                    ty += 26;
                 }
+                ty += 4;
             }
-            y += 4;
-            if (c.IsTarget) DrawFActions(r, ref y);
-            else DrawGirlActions(r, c, ref y);
-            y += 4;
+            if (c.IsTarget) DrawFActions(rr, ref ty);
+            else DrawGirlActions(rr, c, ref ty);
+            detailTopH = ty + 6f;
+            GUI.EndScrollView();
 
-            // 見出し
-            float tw = (r.width - 28f) / DetailTabs.Length;
+            // ---- 下：見出しと中身 ----
+            GUI.Box(bottom, GUIContent.none, panel);
+            y = bottom.y + 8;
+            float tw = (bottom.width - 28f) / DetailTabs.Length;
             for (int i = 0; i < DetailTabs.Length; i++)
-                if (GUI.Button(new Rect(r.x + 14 + i * tw, y, tw - 4, 30), DetailTabs[i], detailTab == i ? buttonOn : smallButton)) { detailTab = i; detailScroll = Vector2.zero; }
+                if (GUI.Button(new Rect(bottom.x + 14 + i * tw, y, tw - 4, 30), DetailTabs[i], detailTab == i ? buttonOn : smallButton)) { detailTab = i; detailScroll = Vector2.zero; }
             y += 36;
 
-            Rect view = new Rect(r.x + 10, y, r.width - 20, r.yMax - y - 8);
+            Rect view = new Rect(bottom.x + 10, y, bottom.width - 20, bottom.yMax - y - 8);
             Rect content = new Rect(0, 0, view.width - 20, Mathf.Max(view.height, detailContentH));
             detailScroll = GUI.BeginScrollView(view, detailScroll, content);
             float cy = 2f, w = content.width - 8f;
@@ -90,6 +114,8 @@ namespace LifeSimProto
             }
             detailContentH = cy + 10f;
             GUI.EndScrollView();
+
+            small.clipping = oldSmall; tiny.clipping = oldTiny;
         }
 
         void DrawFActions(Rect r, ref float y)
@@ -108,9 +134,9 @@ namespace LifeSimProto
                 if (!FMagic.Has(sp.subject) || sp.subject == 6 || sp.subject == 7) continue;
                 anyMagic = true;
                 GUI.enabled = !FMagic.UsedToday(sp.subject, world.Day);
-                if (GUI.Button(new Rect(mx, y, 180, 32), "魔法：" + sp.name, smallButton)) FMagic.Use(world, f, sp.subject, null);
+                if (GUI.Button(new Rect(mx, y, 176, 32), "魔法：" + sp.name, smallButton)) FMagic.Use(world, f, sp.subject, null);
                 GUI.enabled = true;
-                mx += 188;
+                mx += 182;
             }
             if (anyMagic) y += 38;
         }
@@ -136,9 +162,9 @@ namespace LifeSimProto
                 if (!FMagic.Has(sj)) continue;
                 var sp = System.Array.Find(FMagic.All, q => q.subject == sj);
                 GUI.enabled = near && !FMagic.UsedToday(sj, world.Day) && (sj != 6 || c.GetStage(StatusLine.Cold) > 0);
-                if (GUI.Button(new Rect(mx, y, 120, 32), sp.name, smallButton)) FMagic.Use(world, f, sj, c);
+                if (GUI.Button(new Rect(mx, y, 116, 32), sp.name, smallButton)) FMagic.Use(world, f, sj, c);
                 GUI.enabled = true;
-                mx += 126;
+                mx += 122;
             }
             y += 36;
             var pc = Player;
@@ -649,7 +675,7 @@ namespace LifeSimProto
                     var c = world.characters.Find(x => x.letter == letter);
                     if (c != null) Select(c);
                     detailTab = Mathf.Clamp(tab, 0, DetailTabs.Length - 1);
-                    detailScroll = Vector2.zero;
+                    detailScroll = Vector2.zero; detailTopScroll = Vector2.zero;
                     break;
                 case "memory":
                     memoryOpen = true; memoryTab = Mathf.Clamp(tab, 0, MemoryTabs.Length - 1); memoryScroll = Vector2.zero; hLoopView = Loop.Count;

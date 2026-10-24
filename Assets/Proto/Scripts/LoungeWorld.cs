@@ -442,14 +442,7 @@ namespace LifeSimProto
             face.GetComponent<Renderer>().sharedMaterial = ProtoArt.Mat(new Color(0.95f, 0.85f, 0.75f));
             Destroy(face.GetComponent<Collider>());
 
-            var ring = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            ring.name = "SelectRing";
-            ring.transform.SetParent(go.transform, false);
-            ring.transform.localPosition = new Vector3(0f, 0.02f, 0f);
-            ring.transform.localScale = new Vector3(0.9f, 0.01f, 0.9f);
-            ring.GetComponent<Renderer>().sharedMaterial = ringMat;
-            Destroy(ring.GetComponent<Collider>());
-            ring.SetActive(false);
+            // 選んだキャラの足元の黄色い印は出さない（famuru 決定 2026-10-24）
 
             // 仮モデル（Blenderで作った人型）があれば使い、仮の人形は見えなくする（クリック用の当たり判定は残す）
             var look = CharLook.Get(letter, male, color);
@@ -482,7 +475,7 @@ namespace LifeSimProto
                 c.room.futon.label = name + "の部屋の布団";
                 worldLabels.Add(new KeyValuePair<Vector3, string>(c.room.labelPos, name + "の部屋"));
             }
-            c.Init(this, body.transform, ring);
+            c.Init(this, body.transform, null);
             characters.Add(c);
         }
 

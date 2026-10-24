@@ -242,6 +242,7 @@ namespace LifeSimProto
 
         void Select(SimCharacter c)
         {
+            if (c != selected) detailTopScroll = Vector2.zero; // 別のキャラを選んだら、左の欄の上（基本と行動）はいちばん上から
             if (selected != null) selected.selected = false;
             selected = c;
             if (selected != null) selected.selected = true;
