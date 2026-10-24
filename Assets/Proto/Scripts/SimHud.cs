@@ -96,6 +96,15 @@ namespace LifeSimProto
             return false;
         }
 
+        /// <summary>マウスが画面の欄の上にあるか（カメラのホイール操作を止めるのに使う）。</summary>
+        public bool PointerOverHud()
+        {
+            var mouse = Mouse.current;
+            if (mouse == null) return false;
+            Vector2 mp = mouse.position.ReadValue();
+            return !Story.IsActive && OverHud(new Vector2(mp.x / Scale, (Screen.height - mp.y) / Scale));
+        }
+
         void Update()
         {
             if (world == null || world.mainCamera == null) return;
@@ -597,19 +606,72 @@ namespace LifeSimProto
             GUI.Label(new Rect(r.x + 22, r.y, r.width, r.height), text, small);
         }
 
+        // できごとの欄：見出しで種類を分ける（GameLog.cs）。ホイールでさかのぼれる。いちばん下を見ているあいだは新しい行についていく
+        int logTab;
+        string logHeroine;        // 「ヒロイン」の見出しで1人に絞っているとき、その子の記号（null は全員）
+        Vector2 logScroll;
+        bool logAtBottom = true;
+        readonly List<LogEntry> logShown = new List<LogEntry>();
+
         void DrawLog()
         {
             Rect r = LogPanel;
             GUI.Box(r, GUIContent.none, panel);
-            GUI.Label(new Rect(r.x + 14, r.y + 8, 300, 30), "できごと", title);
-            int lines = 9;
-            int start = Mathf.Max(0, world.log.Count - lines);
-            float y = r.y + 42;
-            for (int i = start; i < world.log.Count; i++)
+            GUI.Label(new Rect(r.x + 14, r.y + 8, 140, 30), "できごと", title);
+
+            // 見出し（右上に並べる）
+            var tabs = GameLog.Tabs;
+            float tw = 104f;
+            float tx = r.xMax - 14 - tabs.Length * tw;
+            for (int i = 0; i < tabs.Length; i++)
+                if (GUI.Button(new Rect(tx + i * tw, r.y + 8, tw - 4, 30), tabs[i].name, logTab == i ? buttonOn : smallButton) && logTab != i)
+                { logTab = i; logHeroine = null; logAtBottom = true; }
+            float y = r.y + 44;
+
+            // 「ヒロイン」の見出しでは、1人ずつ絞るボタン
+            if (logTab == GameLog.HeroineTab)
             {
-                GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), world.log[i], small);
-                y += 23;
+                var girls = new List<SimCharacter>();
+                foreach (var c in world.characters) if (c != null && c != F && !string.IsNullOrEmpty(c.letter)) girls.Add(c);
+                float bw = (r.width - 28f) / (girls.Count + 1);
+                if (GUI.Button(new Rect(r.x + 14, y, bw - 3, 26), "全員", logHeroine == null ? buttonOn : smallButton) && logHeroine != null) { logHeroine = null; logAtBottom = true; }
+                for (int i = 0; i < girls.Count; i++)
+                {
+                    var g = girls[i];
+                    string nm = string.IsNullOrEmpty(g.shortName) ? g.displayName : g.shortName;
+                    if (GUI.Button(new Rect(r.x + 14 + (i + 1) * bw, y, bw - 3, 26), nm, logHeroine == g.letter ? buttonOn : smallButton) && logHeroine != g.letter)
+                    { logHeroine = g.letter; logAtBottom = true; }
+                }
+                y += 32;
             }
+
+            // 見出しに合う行を集める
+            logShown.Clear();
+            var show = tabs[Mathf.Clamp(logTab, 0, tabs.Length - 1)].show;
+            foreach (var e in world.log)
+                if (show(e) && (logTab != GameLog.HeroineTab || logHeroine == null || e.About(logHeroine))) logShown.Add(e);
+
+            const float lineH = 23f;
+            var view = new Rect(r.x + 8, y, r.width - 16, r.yMax - 8 - y);
+            float contentH = Mathf.Max(view.height, logShown.Count * lineH + 4f);
+            var content = new Rect(0, 0, view.width - 20, contentH);
+            float bottom = contentH - view.height;
+            if (logAtBottom) logScroll.y = bottom; // 新しい行が来たら下までついていく
+            logScroll = GUI.BeginScrollView(view, logScroll, content);
+            if (logShown.Count == 0)
+                GUI.Label(new Rect(6, 2, content.width - 6, 24), "まだ、この種類のできごとはありません", tiny);
+            Color old = small.normal.textColor;
+            float top = logScroll.y - lineH, end = logScroll.y + view.height;
+            for (int i = 0; i < logShown.Count; i++)
+            {
+                float ly = 2f + i * lineH;
+                if (ly < top || ly > end) continue; // 見えている行だけ描く
+                small.normal.textColor = GameLog.ColorOf(logShown[i]);
+                GUI.Label(new Rect(6, ly, content.width - 6, 24), logShown[i].text, small);
+            }
+            small.normal.textColor = old;
+            GUI.EndScrollView();
+            logAtBottom = logScroll.y >= bottom - 2f;
         }
 
         void DrawHelp()

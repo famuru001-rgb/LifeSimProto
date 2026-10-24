@@ -126,7 +126,7 @@ namespace LifeSimProto
         public readonly List<Poi> pois = new List<Poi>();
         public readonly List<Stair> stairs = new List<Stair>();
         public readonly List<KeyValuePair<Vector3, string>> worldLabels = new List<KeyValuePair<Vector3, string>>();
-        public readonly List<string> log = new List<string>();
+        public readonly List<LogEntry> log = new List<LogEntry>(); // できごとの記録（GameLog.cs）
         public float simTime;
         public double gameMinutes;
         public Camera mainCamera;
@@ -343,8 +343,8 @@ namespace LifeSimProto
         // ================= 記録 =================
         public void Log(string message)
         {
-            log.Add("[" + Day + "日目 " + ScheduleMaker.Clock(Now) + "] " + message);
-            if (log.Count > 80) log.RemoveAt(0);
+            log.Add(LogEntry.Make("[" + Day + "日目 " + ScheduleMaker.Clock(Now) + "] ", message, this));
+            if (log.Count > GameLog.MaxLines) log.RemoveAt(0);
         }
 
         public SimCharacter RomanceTarget { get { return romance != null && romance.targetId < characters.Count ? characters[romance.targetId] : null; } }

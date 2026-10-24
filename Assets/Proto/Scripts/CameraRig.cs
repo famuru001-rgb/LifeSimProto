@@ -47,6 +47,7 @@ namespace LifeSimProto
                     follow = null;
                 }
                 float scroll = mouse.scroll.ReadValue().y;
+                if (SimHud.Instance != null && SimHud.Instance.PointerOverHud()) scroll = 0f; // 画面の欄（できごとなど）の上では、ホイールは欄を動かす
                 if (scroll > 0.01f) distance *= 0.88f;
                 else if (scroll < -0.01f) distance *= 1.14f;
                 distance = Mathf.Clamp(distance, MinDist, MaxDist);

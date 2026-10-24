@@ -184,7 +184,7 @@ namespace LifeSimProto.EditorTools
                     }
                     else if (cmd == "gamelog")
                     {
-                        File.WriteAllText(Path.Combine(Path.GetDirectoryName(ResultPath), "game_log.txt"), string.Join("\n", w.log.ToArray()), Encoding.UTF8);
+                        File.WriteAllText(Path.Combine(Path.GetDirectoryName(ResultPath), "game_log.txt"), string.Join("\n", w.log.ConvertAll(x => x.text).ToArray()), Encoding.UTF8);
                         log.AppendLine("gamelog: ok");
                     }
                     continue;
