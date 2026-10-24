@@ -38,12 +38,14 @@ namespace LifeSimProto
         // 左右・下の欄（しまうと画面の端へ滑る。SimHud.Slide.cs）。…Base はしまう前の位置
         Rect TablePanelBase { get { return new Rect(VW - 492, 108, 480, 400); } }
         Rect LogPanelBase { get { return new Rect(VW - 1260, VirtualHeight - 272, 760, 260); } }
-        Rect HelpPanelBase { get { return new Rect(VW - 492, VirtualHeight - 262, 480, 250); } }
+        // 操作の説明：右上の歯車を押したときだけ、歯車の下に出す（famuru 決定 2026-10-24）
+        bool helpOpen;
+        Rect GearRect { get { return new Rect(VW - 12 - 46, 68, 46, 36); } }
+        Rect HelpPopup { get { return new Rect(VW - 12 - 480, GearRect.yMax + 4, 480, 280); } }
         Rect DetailPanelBase { get { return new Rect(12, 108, 580, 960); } }
         Rect RomancePanelBase { get { return new Rect(VW - 492, 516, 480, 292); } }
         Rect TablePanel { get { return Slid(TablePanelBase, slideTable); } }
         Rect LogPanel { get { return Slid(LogPanelBase, slideLog); } }
-        Rect HelpPanel { get { return Slid(HelpPanelBase, slideHelp); } }
         Rect DetailPanel { get { return Slid(DetailPanelBase, slideDetail); } }
         Rect RomancePanel { get { return Slid(RomancePanelBase, slideRomance); } }
         Rect ShopPanel { get { return new Rect(VW / 2f - 430f, 110f, 860f, 110f + ShopRowsMax * 44f); } }
@@ -92,7 +94,8 @@ namespace LifeSimProto
         bool OverHud(Vector2 v)
         {
             if (OverSlideTags(v)) return true;
-            if (TopBar.Contains(v) || TablePanel.Contains(v) || LogPanel.Contains(v) || HelpPanel.Contains(v) || RomancePanel.Contains(v)) return true;
+            if (TopBar.Contains(v) || TablePanel.Contains(v) || LogPanel.Contains(v) || RomancePanel.Contains(v)) return true;
+            if (GearRect.Contains(v) || (helpOpen && HelpPopup.Contains(v))) return true;
             if (selected != null && DetailPanel.Contains(v)) return true;
             if (selected != null && Portrait(selected, "stand") != null && StandRect.Contains(v)) return true;
             if (shopOpen && ShopPanel.Contains(v)) return true;
@@ -145,7 +148,7 @@ namespace LifeSimProto
                     if (kb.digit5Key.wasPressedThisFrame && dbg.Length > 0) SetSpeed(dbg[0]);
                     if (kb.digit6Key.wasPressedThisFrame && dbg.Length > 1) SetSpeed(dbg[1]);
                 }
-                if (kb.escapeKey.wasPressedThisFrame) { if (saveOpen) saveOpen = false; else if (shopOpen) shopOpen = false; else if (examOpen) examOpen = false; else if (memoryOpen) memoryOpen = false; else Select(null); }
+                if (kb.escapeKey.wasPressedThisFrame) { if (helpOpen) helpOpen = false; else if (saveOpen) saveOpen = false; else if (shopOpen) shopOpen = false; else if (examOpen) examOpen = false; else if (memoryOpen) memoryOpen = false; else Select(null); }
                 if (kb.lKey.wasPressedThisFrame) { if (memoryOpen && memoryTab == MemoryTabH) memoryOpen = false; else { memoryOpen = true; memoryTab = MemoryTabH; hLoopView = Loop.Count; } }
                 if (kb.pKey.wasPressedThisFrame) { saveOpen = !saveOpen; loadConfirm = -1; }
                 if (kb.gKey.wasPressedThisFrame) examOpen = !examOpen;
@@ -324,7 +327,6 @@ namespace LifeSimProto
             DrawTable();
             DrawRomance();
             DrawLog();
-            DrawHelp();
             if (selected != null)
             {
                 DrawDetail();
@@ -332,6 +334,8 @@ namespace LifeSimProto
                 if (st != null) GUI.DrawTexture(StandRect, st, ScaleMode.ScaleToFit, true);
             }
             DrawSlideControls(); // 左右・下の欄の「しまう」ボタンと札（真ん中に開く画面より下に描く）
+            DrawGear();
+            if (helpOpen) DrawHelp();
             if (shopOpen) DrawShop();
             if (examOpen) DrawExam();
             if (memoryOpen) DrawMemory();
@@ -684,9 +688,42 @@ namespace LifeSimProto
             logAtBottom = logScroll.y >= bottom - 2f;
         }
 
+        // 歯車の絵（文字の「⚙」は字体によって出ないので、絵を作って描く）
+        Texture2D gearTex;
+        Texture2D GearTexture()
+        {
+            if (gearTex != null) return gearTex;
+            const int N = 64;
+            gearTex = new Texture2D(N, N, TextureFormat.RGBA32, false);
+            float c = (N - 1) / 2f;
+            for (int py = 0; py < N; py++)
+                for (int px = 0; px < N; px++)
+                {
+                    float dx = px - c, dy = py - c;
+                    float rr = Mathf.Sqrt(dx * dx + dy * dy);
+                    float ang = Mathf.Atan2(dy, dx);
+                    float outer = Mathf.Cos(8f * ang) > 0.25f ? 30f : 23f; // 歯が8つ
+                    float a = Mathf.Clamp01(outer - rr + 0.5f) * Mathf.Clamp01(rr - 9f + 0.5f); // 真ん中は穴
+                    gearTex.SetPixel(px, py, new Color(1f, 1f, 1f, a));
+                }
+            gearTex.Apply();
+            return gearTex;
+        }
+
+        void DrawGear()
+        {
+            Rect g = GearRect;
+            if (GUI.Button(g, GUIContent.none, helpOpen ? buttonOn : smallButton)) helpOpen = !helpOpen;
+            Color old = GUI.color;
+            GUI.color = helpOpen ? new Color(1f, 0.85f, 0.3f) : new Color(0.95f, 0.92f, 0.85f);
+            float sz = g.height - 10f;
+            GUI.DrawTexture(new Rect(g.center.x - sz / 2f, g.center.y - sz / 2f, sz, sz), GearTexture(), ScaleMode.ScaleToFit, true);
+            GUI.color = old;
+        }
+
         void DrawHelp()
         {
-            Rect r = HelpPanel;
+            Rect r = HelpPopup;
             GUI.Box(r, GUIContent.none, panel);
             GUI.Label(new Rect(r.x + 14, r.y + 8, 300, 30), "操作", title);
             string[] lines =
@@ -699,6 +736,7 @@ namespace LifeSimProto
                 "ダブルクリック：追いかける（Escで解除）",
                 "スペース：一時停止　1〜4：速さ　Tab：壁",
                 "B：購買部　G：成績　M：思い出　L：記録　P：セーブ",
+                "欄の右上の ◀ ▶ ▼：欄をしまう（画面の端の札で戻す）",
             };
             float y = r.y + 40;
             foreach (var l in lines) { GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), l, small); y += 25; }

@@ -27,10 +27,9 @@ namespace LifeSimProto
         readonly SlidePanel slideDetail = new SlidePanel("detail", "キャラ", SlideSide.Left);
         readonly SlidePanel slideTable = new SlidePanel("table", "関係表", SlideSide.Right);
         readonly SlidePanel slideRomance = new SlidePanel("romance", "気持ち", SlideSide.Right);
-        readonly SlidePanel slideHelp = new SlidePanel("help", "操作", SlideSide.Right);
         readonly SlidePanel slideLog = new SlidePanel("log", "できごと", SlideSide.Bottom);
         SlidePanel[] slideAll;
-        SlidePanel[] SlideAll { get { return slideAll ?? (slideAll = new[] { slideDetail, slideTable, slideRomance, slideHelp, slideLog }); } }
+        SlidePanel[] SlideAll { get { return slideAll ?? (slideAll = new[] { slideDetail, slideTable, slideRomance, slideLog }); } }
 
         // ---- しまった状態を覚える（このパソコンに残る） ----
         static bool LoadHidden(string key)
@@ -116,7 +115,6 @@ namespace LifeSimProto
             if (p == slideDetail) return DetailPanelBase;
             if (p == slideTable) return TablePanelBase;
             if (p == slideRomance) return RomancePanelBase;
-            if (p == slideHelp) return HelpPanelBase;
             return LogPanelBase;
         }
 
@@ -129,11 +127,15 @@ namespace LifeSimProto
                 Rect b = BaseRectOf(p);
                 if (TagVisible(p))
                 {
-                    if (GUI.Button(TagRect(p, b), TagText(p), smallButton)) ToggleSlide(p);
+                    Rect tr = TagRect(p, b);
+                    if (helpOpen && tr.Overlaps(HelpPopup)) continue; // 操作の欄の下に隠れるボタンは押せないようにする
+                    if (GUI.Button(tr, TagText(p), smallButton)) ToggleSlide(p);
                 }
                 else if (!p.hidden)
                 {
-                    if (GUI.Button(HideButtonRect(Slid(b, p)), HideArrow(p), smallButton)) ToggleSlide(p);
+                    Rect hr = HideButtonRect(Slid(b, p));
+                    if (helpOpen && hr.Overlaps(HelpPopup)) continue;
+                    if (GUI.Button(hr, HideArrow(p), smallButton)) ToggleSlide(p);
                 }
             }
         }
