@@ -115,9 +115,10 @@ namespace LifeSimProto
         public float startHour = 6.2f;
 
         public const float NightStartMin = 23f * 60f, NightEndMin = 6.5f * 60f;
-        public const float Floor2Y = 3f; // 2階の床の高さ
-        public const float Floor3Y = 6f; // 3階の床の高さ
-        public const float RoofY = 9f;   // 屋上
+        // 1階分の高さは 4.5m（famuru 2026-10-25「1つの階を1.5倍くらい高く」。前は 3m）。DormBuilder の FloorH と合わせる
+        public const float Floor2Y = 4.5f; // 2階の床の高さ
+        public const float Floor3Y = 9f;   // 3階の床の高さ
+        public const float RoofY = 13.5f;  // 屋上
 
         // ---- 状態 ----
         public readonly GridNav[] navs = new GridNav[4]; // 1階・2階・3階・屋上の歩ける所
@@ -258,7 +259,7 @@ namespace LifeSimProto
 
         // ================= 道さがし =================
         /// <summary>高さから階を決める（0＝1階、1＝2階、2＝3階、3＝屋上）。</summary>
-        public static int FloorOf(float y) { return y > 7.5f ? 3 : (y > 4.5f ? 2 : (y > 1.5f ? 1 : 0)); }
+        public static int FloorOf(float y) { return Mathf.Clamp(Mathf.FloorToInt((y + FloorH * 0.5f) / FloorH), 0, 3); }
         public GridNav Nav(int floor) { return navs[Mathf.Clamp(floor, 0, navs.Length - 1)]; }
         public GridNav NavAt(Vector3 p) { return Nav(FloorOf(p.y)); }
         public Vector3 NearestFree(Vector3 p) { return NavAt(p).NearestFreePoint(p); }

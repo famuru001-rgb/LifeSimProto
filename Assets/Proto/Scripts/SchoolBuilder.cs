@@ -5,7 +5,8 @@ namespace LifeSimProto
 {
     /// <summary>
     /// 学校の本館（2026-10-25。設計\マップ拡大計画.md、間取りの図は famuru 確認ずみの「案A：コの字」）。
-    /// 設計図の向き（sx：西→東 0〜70、sy：北→南 0〜46）で書き、プログラムの座標に直して置く（x = 31.3 − sy、z = −24.5 − sx）。
+    /// 設計図の向き（sx：西→東 0〜70、sy：北→南 0〜46）で書き、プログラムの座標に直して置く（x = 43.3 − 1.5×sy、z = −24.5 − 1.5×sx）。
+    /// 2026-10-25 famuru「学園をもっと大きく」：設計図の数字はそのままで、置くときに全体を1.5倍（東西105m×南北69m）。外廊下の西のはしが寮の渡り廊下に合うように x の基準を 31.3→43.3 にした。
     /// ・南の長い棟（sy 25〜46・3階建て）：東西の大廊下（sy 34〜37）の両側に部屋。東西のはしに階段の部屋
     /// ・西に体育館、東に大講堂（sy 0〜23・2階建ての高さ。2階に見下ろし席）。そのあいだが本館の中庭（北に開く）
     /// ・教室の棟の北側に外廊下（sy 23〜25。1階と2階。寮の前庭と渡り廊下は外廊下の西のはしにつながる）
@@ -13,7 +14,8 @@ namespace LifeSimProto
     /// </summary>
     public partial class LoungeWorld
     {
-        const float SXN = 31.3f, SZ0 = -24.5f;     // 設計図の (0,0) の、プログラムの x と z
+        const float SXN = 43.3f, SZ0 = -24.5f;     // 設計図の (0,0) の、プログラムの x と z
+        const float SK = 1.5f;                      // 設計図の1を何mにするか（全体の大きさ。famuru 2026-10-25「1.5倍」）
         const float SLen = 70f;                     // 東西の長さ
         const float SVer0 = 23f, SVer1 = 25f;       // 外廊下
         const float SCor0 = 34f, SCor1 = 37f;       // 大廊下
@@ -21,14 +23,17 @@ namespace LifeSimProto
         const float SBand0 = 43.6f, SBand1 = 45.6f, SBand = 44.6f; // 階段の帯
 
         /// <summary>本館の真ん中（授業へ出かけるときの行き先：2階の大廊下）。</summary>
-        public static readonly Vector3 SchoolCorridor2F = new Vector3(SXN - 35.5f, Floor2Y, SZ0 - 35f);
+        public static readonly Vector3 SchoolCorridor2F = new Vector3(SXN - SK * 35.5f, Floor2Y, SZ0 - SK * 35f);
 
-        static Vector2 SP(float sx, float sy) { return new Vector2(SXN - sy, SZ0 - sx); }
-        static Vector3 S3(float sx, float sy, float y) { return new Vector3(SXN - sy, y, SZ0 - sx); }
+        static Vector2 SP(float sx, float sy) { return new Vector2(SXN - SK * sy, SZ0 - SK * sx); }
+        static Vector3 S3(float sx, float sy, float y) { return new Vector3(SXN - SK * sy, y, SZ0 - SK * sx); }
         static Rect SR(float sx0, float sy0, float sx1, float sy1)
         {
-            return Rect.MinMaxRect(SXN - Mathf.Max(sy0, sy1), SZ0 - Mathf.Max(sx0, sx1), SXN - Mathf.Min(sy0, sy1), SZ0 - Mathf.Min(sx0, sx1));
+            return Rect.MinMaxRect(SXN - SK * Mathf.Max(sy0, sy1), SZ0 - SK * Mathf.Max(sx0, sx1), SXN - SK * Mathf.Min(sy0, sy1), SZ0 - SK * Mathf.Min(sx0, sx1));
         }
+        /// <summary>壁の穴（設計図の長さで書いた位置）を、m に直す。</summary>
+        static Vector4 SG(Vector4 g) { return new Vector4(g.x * SK, g.y * SK, g.z, g.w); }
+        static Vector4[] SG(Vector4[] gs) { var r = new Vector4[gs.Length]; for (int i = 0; i < gs.Length; i++) r[i] = SG(gs[i]); return r; }
         static Rect SIn(float sx0, float sy0, float sx1, float sy1, float m = 0.25f)
         {
             var r = SR(sx0, sy0, sx1, sy1);
@@ -38,12 +43,12 @@ namespace LifeSimProto
         static Vector3 SDir(float east, float south) { return new Vector3(-south, 0f, -east); }
         WallSeg SWall(float y0, float y1, float sx0, float sy0, float sx1, float sy1, params Vector4[] gaps)
         {
-            return Wall(SP(sx0, sy0), SP(sx1, sy1), y0, y1, WallT, gaps);
+            return Wall(SP(sx0, sy0), SP(sx1, sy1), y0, y1, WallT, SG(gaps));
         }
         /// <summary>扉の通り道。horizontal：設計図で東西にのびる壁（sy が一定）。</summary>
         static Rect SDoorNav(float sx, float sy, bool horizontal, float w = 1.2f)
         {
-            return DoorNav(SXN - sy, SZ0 - sx, !horizontal, w);
+            return DoorNav(SXN - SK * sy, SZ0 - SK * sx, !horizontal, w);
         }
 
         enum SKind { Room, Vacant, Pass, Stair, Hall }
@@ -89,7 +94,7 @@ namespace LifeSimProto
             BuildSchoolHall(52f, 70f, "大講堂", "東");
             BuildSchoolCourtyard();
             // 正門への道（南）
-            Box("School_FrontPath", new Vector3(SXN - 50f, -0.02f, SZ0 - 35f), new Vector3(8f, 0.04f, 4f), flagstone);
+            Box("School_FrontPath", S3(35f, 50f, -0.02f), new Vector3(8f * SK, 0.04f, 4f * SK), flagstone);
             Label(S3(35f, 49f, 1.6f), "正門へ");
         }
 
@@ -175,7 +180,7 @@ namespace LifeSimProto
             switch (r.kind)
             {
                 case SKind.Vacant:
-                    ClosedDoor(S3(r.Mid, southSide ? SCor1 : SCor0, y), false, 1.2f);
+                    ClosedDoor(S3(r.Mid, southSide ? SCor1 : SCor0, y), false, 1.2f * SK);
                     Label(S3(r.Mid, cy, y + 2.0f), r.name);
                     AddArea(fn + r.name, SR(r.x0, sy0, r.x1, sy1), f);
                     break;
@@ -199,14 +204,14 @@ namespace LifeSimProto
         /// <summary>まっすぐな階段（設計図の東西の向き）。sxFrom（下）→ sxTo（上）、高さ y0 → y1。</summary>
         void SchoolFlight(string name, float sxFrom, float sxTo, float y0, float y1)
         {
-            int steps = 15;
+            int steps = 24;
             float run = (sxTo - sxFrom) / steps, rise = (y1 - y0) / steps;
-            float w = SBand1 - SBand0;
+            float w = (SBand1 - SBand0) * SK;
             for (int i = 0; i < steps; i++)
             {
                 float top = (i + 1) * rise;
                 var p = S3(sxFrom + (i + 0.5f) * run, SBand, y0 + top / 2f);
-                Box(name + "_Step", p, new Vector3(w - 0.05f, top, Mathf.Abs(run)), i % 2 == 0 ? woodDark : woodMid);
+                Box(name + "_Step", p, new Vector3(w - 0.05f, top, Mathf.Abs(run) * SK), i % 2 == 0 ? woodDark : woodMid);
             }
         }
 
@@ -242,9 +247,9 @@ namespace LifeSimProto
         // ================= 外廊下（教室の棟の北側。1階と2階。屋根あり・壁なし） =================
         void BuildSchoolVeranda()
         {
-            Box("Veranda_Path", S3(SLen / 2f, (SVer0 + SVer1) / 2f, -0.02f), new Vector3(SVer1 - SVer0, 0.04f, SLen), flagstone);
+            Box("Veranda_Path", S3(SLen / 2f, (SVer0 + SVer1) / 2f, -0.02f), new Vector3((SVer1 - SVer0) * SK, 0.04f, SLen * SK), flagstone);
             Slab("Veranda_Floor2", 1, SR(0, SVer0, SLen, SVer1), woodFloor);
-            Box("Veranda_Roof", S3(SLen / 2f, (SVer0 + SVer1) / 2f, FloorY(2) + 0.05f), new Vector3(SVer1 - SVer0 + 0.3f, 0.1f, SLen), mortarDark);
+            Box("Veranda_Roof", S3(SLen / 2f, (SVer0 + SVer1) / 2f, FloorY(2) + 0.05f), new Vector3((SVer1 - SVer0) * SK + 0.3f, 0.1f, SLen * SK), mortarDark);
             // 柱（中庭の側）と2階の手すり
             for (float sx = 18f; sx <= 52.01f; sx += 4.25f)
             {
@@ -271,30 +276,30 @@ namespace LifeSimProto
             var wNorth = Wall(SP(sx0, 0), SP(sx1, 0), 0f, H, WallT);
             var wOuter = west ? Wall(SP(sx0, 0), SP(sx0, SVer0), 0f, H, WallT) : Wall(SP(sx1, 0), SP(sx1, SVer0), 0f, H, WallT);
             // 中庭の側の壁：真ん中に扉
-            if (west) Wall(SP(sx1, 0), SP(sx1, SVer0), 0f, H, WallT, new Vector4(11.5f - 1f, 11.5f + 1f, 0f, 2.6f));
-            else Wall(SP(sx0, 0), SP(sx0, SVer0), 0f, H, WallT, new Vector4(11.5f - 1f, 11.5f + 1f, 0f, 2.6f));
+            if (west) Wall(SP(sx1, 0), SP(sx1, SVer0), 0f, H, WallT, SG(new Vector4(11.5f - 1f, 11.5f + 1f, 0f, 2.6f)));
+            else Wall(SP(sx0, 0), SP(sx0, SVer0), 0f, H, WallT, SG(new Vector4(11.5f - 1f, 11.5f + 1f, 0f, 2.6f)));
             // 外廊下の側の壁：1階と2階の真ん中に入口（穴が上下に重なるので、1階分ずつ作る）
-            Wall(SP(sx0, SVer0), SP(sx1, SVer0), 0f, FloorH, WallT, new Vector4(mid - sx0 - 1.2f, mid - sx0 + 1.2f, 0f, 2.6f));
-            Wall(SP(sx0, SVer0), SP(sx1, SVer0), FloorH, H, WallT, new Vector4(mid - sx0 - 0.8f, mid - sx0 + 0.8f, FloorY(1), FloorY(1) + 2.3f));
+            Wall(SP(sx0, SVer0), SP(sx1, SVer0), 0f, FloorH, WallT, SG(new Vector4(mid - sx0 - 1.2f, mid - sx0 + 1.2f, 0f, 2.6f)));
+            Wall(SP(sx0, SVer0), SP(sx1, SVer0), FloorH, H, WallT, SG(new Vector4(mid - sx0 - 0.8f, mid - sx0 + 0.8f, FloorY(1), FloorY(1) + 2.3f)));
             for (int i = 0; i < 3; i++)
             {
                 Window(wNorth, S3(sx0 + 4f + i * 5f, 0, 0f), SDir(0, 1), 2.6f, 1.4f, 2.4f);
                 Window(wOuter, S3(west ? sx0 : sx1, 5f + i * 6.5f, 0f), SDir(west ? 1 : -1, 0), 2.6f, 1.4f, 2.4f);
             }
-            Box(name + "_Roof", S3(mid, SVer0 / 2f, H + 0.05f), new Vector3(SVer0 + 0.3f, 0.12f, sx1 - sx0 + 0.3f), mortarDark);
+            Box(name + "_Roof", S3(mid, SVer0 / 2f, H + 0.05f), new Vector3(SVer0 * SK + 0.3f, 0.12f, (sx1 - sx0) * SK + 0.3f), mortarDark);
             // 2階の見下ろし席（外廊下の側）
             Slab(name + "_Balcony", 1, SR(sx0 + 0.3f, 20.5f, sx1 - 0.3f, SVer0), woodDark);
             Rail(1, SP(sx0 + 0.3f, 20.5f), SP(sx1 - 0.3f, 20.5f));
             if (name == "体育館")
             {
                 // 床の線（剣術の試合場）
-                Box("Gym_Line", S3(mid, 9f, 0.006f), new Vector3(10f, 0.01f, 0.08f), fabricWhite);
-                Box("Gym_Line", S3(mid, 9f, 0.006f), new Vector3(0.08f, 0.01f, 10f), fabricWhite);
+                Box("Gym_Line", S3(mid, 9f, 0.006f), new Vector3(10f * SK, 0.01f, 0.08f), fabricWhite);
+                Box("Gym_Line", S3(mid, 9f, 0.006f), new Vector3(0.08f, 0.01f, 10f * SK), fabricWhite);
             }
             else
             {
                 // 壇（北の奥）
-                Box("Hall_Stage", S3(mid, 2.2f, 0.3f), new Vector3(3.6f, 0.6f, sx1 - sx0 - 4f), woodMid);
+                Box("Hall_Stage", S3(mid, 2.2f, 0.3f), new Vector3(3.6f * SK, 0.6f, (sx1 - sx0 - 4f) * SK), woodMid);
                 blockers[0].Add(SR(sx0 + 2f, 0.4f, sx1 - 2f, 4.0f));
             }
             for (int i = 0; i < 2; i++) Lamp(S3(mid + (i == 0 ? -4f : 4f), 10f, H - 0.8f), 4f, 13f);
@@ -312,11 +317,11 @@ namespace LifeSimProto
             SPath(new Vector2(fx, fy), new Vector2(44.3f, 5.2f), 1.2f);
             // 噴水
             var c = S3(fx, fy, 0f);
-            Cyl("Fountain_Rim", c + Vector3.up * 0.25f, new Vector3(4.8f, 0.25f, 4.8f), Quaternion.identity, mortarDark);
-            Cyl("Fountain_Water", c + Vector3.up * 0.48f, new Vector3(4.3f, 0.02f, 4.3f), Quaternion.identity, waterMat);
+            Cyl("Fountain_Rim", c + Vector3.up * 0.25f, new Vector3(7.2f, 0.25f, 7.2f), Quaternion.identity, mortarDark);
+            Cyl("Fountain_Water", c + Vector3.up * 0.48f, new Vector3(6.5f, 0.02f, 6.5f), Quaternion.identity, waterMat);
             Cyl("Fountain_Pillar", c + Vector3.up * 0.9f, new Vector3(0.5f, 0.9f, 0.5f), Quaternion.identity, mortarDark);
             Cyl("Fountain_Bowl", c + Vector3.up * 1.8f, new Vector3(1.6f, 0.12f, 1.6f), Quaternion.identity, mortarDark);
-            blockers[0].Add(new Rect(c.x - 2.5f, c.z - 2.5f, 5f, 5f));
+            blockers[0].Add(new Rect(c.x - 3.7f, c.z - 3.7f, 7.4f, 7.4f));
             // 噴水や休憩所でくつろぐ場所は、授業のしくみを作るときに足す（今は寮から遠くへ行きすぎないように）
             // 丸い休憩所（壁なし。柱6本と丸い屋根、まわりにベンチ）
             var g = S3(46f, 3.6f, 0f);
@@ -346,7 +351,7 @@ namespace LifeSimProto
             Vector3 pa = S3(a.x, a.y, 0f), pb = S3(b.x, b.y, 0f);
             Vector3 d = pb - pa;
             float yaw = Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg;
-            Box("School_YardPath", (pa + pb) / 2f + Vector3.up * -0.004f, new Vector3(w, 0.04f, d.magnitude), flagstone, null, yaw);
+            Box("School_YardPath", (pa + pb) / 2f + Vector3.up * -0.004f, new Vector3(w * SK, 0.04f, d.magnitude), flagstone, null, yaw);
         }
 
         // ================= 歩ける所 =================

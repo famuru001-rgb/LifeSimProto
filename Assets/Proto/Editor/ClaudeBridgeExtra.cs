@@ -63,6 +63,7 @@ namespace LifeSimProto.EditorTools
                 case "ui":
                 case "shot":
                 case "cam":
+                case "campos":
                     break;
                 default:
                     return false;
@@ -165,6 +166,21 @@ namespace LifeSimProto.EditorTools
                         rig.pitch = a.Length > 3 ? float.Parse(a[3], System.Globalization.CultureInfo.InvariantCulture) : 60f;
                         w.wallMode = WallMode.Low;
                         log.AppendLine("cam: " + c.room.name);
+                        break;
+                    }
+                    case "campos":
+                    {
+                        // 試験用：campos x y z 距離 見下ろす角度 向き（カメラを好きな所へ。壁は低く）
+                        var rig = w.mainCamera != null ? w.mainCamera.GetComponent<CameraRig>() : null;
+                        if (rig == null || a.Length < 4) { log.AppendLine("campos: ng"); break; }
+                        var ci = System.Globalization.CultureInfo.InvariantCulture;
+                        rig.follow = null;
+                        rig.pivot = new Vector3(float.Parse(a[1], ci), float.Parse(a[2], ci), float.Parse(a[3], ci));
+                        if (a.Length > 4) rig.distance = float.Parse(a[4], ci);
+                        if (a.Length > 5) rig.pitch = float.Parse(a[5], ci);
+                        if (a.Length > 6) rig.yaw = float.Parse(a[6], ci);
+                        w.wallMode = WallMode.Low;
+                        log.AppendLine("campos: ok");
                         break;
                     }
                     case "shot":
