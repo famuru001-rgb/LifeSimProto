@@ -6,8 +6,8 @@ namespace LifeSimProto
 {
     /// <summary>
     /// 画面の表示（時計・速さ・名前と状態・吹き出し・関係表・記録・購買部）と、クリックでの操作。
-    /// プレイヤーはFを操作する：Fを選んで床をクリックで移動、キャラをクリックで話しかける。
-    /// ほかのキャラを選んで相手をクリックすると、Fが「〇〇に会いに行って」とお願いしに行く。
+    /// プレイヤーはFを操作する：Fを選んで床をクリックで移動。キャラを左クリックで選ぶ（そのキャラの画面）、右クリックで選択肢（SimHud.Menu.cs：
+    /// 話しかける・プレゼント・エッチに誘う、ヒロインを選んでいるときは「〇〇に会いに行って」とお願い）。
     /// 試作なので Unity の簡易表示（OnGUI）で作っている。
     /// </summary>
     public partial class SimHud : MonoBehaviour
@@ -107,6 +107,7 @@ namespace LifeSimProto
             if (Loop.AskChoice && ChoicePanel.Contains(v)) return true;
             if (saveOpen && SavePanel.Contains(v)) return true;
             if (Story.IsActive) return true; // 物語の場面のあいだは、寮の中をクリックしない
+            if (MenuOpen && MenuRect.Contains(v)) return true; // 右クリックの選択肢
             return false;
         }
 
@@ -151,7 +152,7 @@ namespace LifeSimProto
                     if (kb.digit5Key.wasPressedThisFrame && dbg.Length > 0) SetSpeed(dbg[0]);
                     if (kb.digit6Key.wasPressedThisFrame && dbg.Length > 1) SetSpeed(dbg[1]);
                 }
-                if (kb.escapeKey.wasPressedThisFrame) { if (helpOpen) helpOpen = false; else if (saveOpen) saveOpen = false; else if (shopOpen) shopOpen = false; else if (examOpen) examOpen = false; else if (memoryOpen) memoryOpen = false; else Select(null); }
+                if (kb.escapeKey.wasPressedThisFrame) { if (MenuOpen) CloseMenu(); else if (helpOpen) helpOpen = false; else if (saveOpen) saveOpen = false; else if (shopOpen) shopOpen = false; else if (examOpen) examOpen = false; else if (memoryOpen) memoryOpen = false; else Select(null); }
                 if (kb.lKey.wasPressedThisFrame) { if (memoryOpen && memoryTab == MemoryTabH) memoryOpen = false; else { memoryOpen = true; memoryTab = MemoryTabH; hLoopView = Loop.Count; } }
                 if (kb.pKey.wasPressedThisFrame) { saveOpen = !saveOpen; loadConfirm = -1; }
                 if (kb.gKey.wasPressedThisFrame) examOpen = !examOpen;
@@ -162,10 +163,12 @@ namespace LifeSimProto
             }
 
             var mouse = Mouse.current;
+            UpdateRightClick(mouse); // 右クリック：選択肢（SimHud.Menu.cs）
             if (mouse == null || !mouse.leftButton.wasPressedThisFrame) return;
             Vector2 mp = mouse.position.ReadValue();
             Vector2 v = new Vector2(mp.x / Scale, (Screen.height - mp.y) / Scale);
             if (OverHud(v)) return;
+            if (MenuOpen) { CloseMenu(); return; } // 選択肢の外をクリックしたら閉じるだけ
 
             SimCharacter hit = null;
             Ray ray = world.mainCamera.ScreenPointToRay(new Vector3(mp.x, mp.y, 0f));
@@ -175,45 +178,19 @@ namespace LifeSimProto
             float now = Time.unscaledTime;
             if (hit == null)
             {
-                // Fを選んでいるときは、床のクリックで移動
+                // 篤を選んでいるときは、床のクリックで移動
                 Vector3 p;
                 if (selected != null && selected.IsTarget && FloorPoint(ray, out p)) { selected.OrderMove(p); return; }
                 Select(null);
                 return;
             }
 
+            // 左クリックはキャラを選ぶだけ（そのキャラの画面が出る）。話しかける・お願いは右クリックの選択肢（famuru 2026-10-25）
             bool dbl = hit == lastClicked && now - lastClickTime < 0.35f;
             lastClicked = hit;
             lastClickTime = now;
-            if (dbl)
-            {
-                if (rig != null) rig.follow = hit.transform;
-                Select(hit);
-                return;
-            }
-            if (selected == null || selected == hit)
-            {
-                Select(hit);
-                return;
-            }
-            if (selected.IsTarget)
-            {
-                // F → だれかに話しかける
-                world.Log("篤への指示：「" + hit.displayName + "と話す」");
-                selected.OrderTalk(hit);
-                return;
-            }
-            if (hit.IsTarget)
-            {
-                world.Log("篤への指示：「" + selected.displayName + "と話す」");
-                hit.OrderTalk(selected);
-                Select(null);
-                return;
-            }
-            // ほかのキャラ → 相手：Fが「〇〇に会いに行って」とお願いしに行く
-            world.Log("篤への指示：" + selected.displayName + "に「" + hit.displayName + "に会いに行って」とお願いする");
-            selected.Order(hit);
-            Select(null);
+            if (dbl && rig != null) rig.follow = hit.transform;
+            Select(hit);
         }
 
         /// <summary>画面のクリック位置から、歩ける床の点を求める（2階を優先）。</summary>
@@ -232,7 +209,7 @@ namespace LifeSimProto
                 Vector3 q = ray.origin + ray.direction * t;
                 if (nav.IsFree(q)) { p = q; return true; }
                 bool inDorm = q.x > -17f && q.x < 17f && q.z > -24f && q.z < 18f;
-                bool inSchool = q.x > -15f && q.x < 31.5f && q.z > -95f && q.z < -24f; // 学校の本館（SchoolBuilder.cs）
+                bool inSchool = q.x > -27f && q.x < 44f && q.z > -130f && q.z < -24f; // 学校の本館（SchoolBuilder.cs。1.5倍）
                 if (f == 0 && (inDorm || inSchool)) { p = nav.NearestFreePoint(q); return true; }
             }
             return false;
@@ -341,6 +318,7 @@ namespace LifeSimProto
             if (memoryOpen) DrawMemory();
             if (Loop.AskChoice) DrawChoice();
             if (saveOpen) DrawSave();
+            DrawMenu(); // 右クリックの選択肢
             if (Story.IsActive) DrawStory();
         }
 
@@ -739,8 +717,8 @@ namespace LifeSimProto
             {
                 "右ドラッグ：視点を回す　ホイール：近づく/離れる",
                 "WASD：移動　Q/E：回す　R/F：上下　中ドラッグ：平行移動",
-                "篤を選ぶ → 床をクリック：移動／キャラをクリック：話す",
-                "キャラを選ぶ → 相手をクリック：篤がお願いしに行く",
+                "キャラをクリック：選ぶ　篤を選んで床をクリック：移動",
+                "キャラを右クリック：話しかける・渡す・エッチに誘う・お願い",
                 "キャラを選ぶと、お願い・渡す のボタン",
                 "ダブルクリック：追いかける（Escで解除）",
                 "スペース：一時停止　1〜4：速さ　Tab：壁",

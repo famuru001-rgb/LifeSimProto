@@ -64,6 +64,9 @@ namespace LifeSimProto.EditorTools
                 case "shot":
                 case "cam":
                 case "campos":
+                case "finvite":
+                case "ftalk":
+                case "fmove":
                     break;
                 default:
                     return false;
@@ -181,6 +184,24 @@ namespace LifeSimProto.EditorTools
                         if (a.Length > 6) rig.yaw = float.Parse(a[6], ci);
                         w.wallMode = WallMode.Low;
                         log.AppendLine("campos: ok");
+                        break;
+                    }
+                    case "finvite":
+                    case "ftalk":
+                    {
+                        // 試験用：finvite 番号／ftalk 番号（篤がその子をエッチに誘う／話しかける。右クリックの選択肢と同じ）
+                        var f = w.RomanceTarget; var g = w.characters[int.Parse(a[1])];
+                        if (a[0] == "finvite") f.OrderInvite(g); else f.OrderTalk(g);
+                        log.AppendLine(a[0] + ": " + g.displayName + " / 篤の状態 " + f.StateName() + " 性欲" + Mathf.RoundToInt(g.desire));
+                        break;
+                    }
+                    case "fmove":
+                    {
+                        // 試験用：fmove x z（篤を1階のその場所へ。会話中なら切り上げる）
+                        var ci = System.Globalization.CultureInfo.InvariantCulture;
+                        var f = w.RomanceTarget;
+                        f.OrderMove(new Vector3(float.Parse(a[1], ci), 0f, float.Parse(a[2], ci)));
+                        log.AppendLine("fmove: " + f.StateName());
                         break;
                     }
                     case "shot":

@@ -1935,6 +1935,7 @@ namespace LifeSimProto
             }
             if (ok) choice = best;
             else { StartWander(); choice = Choice.None; }
+            if (best != Choice.Social) lastTalkWith = null; // ほかのことをしたら、また同じ相手に話しかけてよい
         }
 
         SimCharacter BestFriendPresent()
@@ -1957,7 +1958,7 @@ namespace LifeSimProto
             Vector3 d = t.transform.position - transform.position;
             bool near = Mathf.Abs(d.y) < 0.5f && Flat(d).magnitude < 2.2f;
             if (near && (state == State.Sitting || state == State.Activity)) return true;
-            if (near && t.AvailableForTalk && lonely > 50f && Random.value < 0.3f) { BeginApproach(t, false, Intent.Talk); return true; }
+            if (near && t.AvailableForTalk && lonely > 50f && !TalkedJustNow(t) && Random.value < 0.3f) { BeginApproach(t, false, Intent.Talk); return true; }
             if (near && (t.state == State.Sitting || t.state == State.Eating))
             {
                 Seat s = BestSeat(x => Vector3.Distance(x.position, t.transform.position) < 2.5f);
@@ -2205,6 +2206,7 @@ namespace LifeSimProto
             {
                 var o = others[i];
                 if (o == this || !o.AvailableForTalk) continue;
+                if (TalkedJustNow(o) && !o.sickRest) continue; // さっき話したばかりの相手には、ほかのことをするか時間がたつまで行かない
                 float a = world.rel.Get(id, o.id);
                 if (o.sickRest && a < 40f) continue;
                 float w = anyone ? 1f : Mathf.Pow((a + 10f) / 110f, 1f + shy * 3f);
@@ -2213,8 +2215,10 @@ namespace LifeSimProto
                 if (IsTarget && o.LoveStage >= 2) w *= 1.5f;
                 if (FocusOn(o)) w *= 2.5f; // お守り：その人に会いに行きやすい
                 if (o.sickRest) w *= 3f;
+                bool queued = false; // もうだれかが向かっている・待っている相手には行かない（待ちの行列を作らない）
                 foreach (var c in others)
-                    if (c != this && c.state == State.Approaching && c.target == o) { w *= 0.25f; break; }
+                    if (c != this && (c.state == State.Approaching || c.state == State.Waiting) && c.target == o) { queued = true; break; }
+                if (queued) continue;
                 weights[i] = w;
                 total += w;
             }
@@ -2438,7 +2442,7 @@ namespace LifeSimProto
         public void OrderMove(Vector3 p)
         {
             if (!CanTakeOrder()) { world.Log(displayName + "は今は動けない（" + BusyReason() + "）"); return; }
-            if (state == State.Talking) return;
+            if (!BreakTalkForOrder()) return; // 話している途中なら切り上げて動く（famuru 2026-10-25）
             LeaveCurrentSpot();
             hasOrder = true;
             goal = Goal.MoveTo;
@@ -2448,6 +2452,44 @@ namespace LifeSimProto
         }
 
         public void OrderTalk(SimCharacter g) { OrderApproach(g, Intent.Talk); }
+
+        /// <summary>篤がエッチに誘いに行く（famuru 2026-10-25。右クリックの選択肢）。受けるかは CanJoinPrivate、断られたらふつうに話す。</summary>
+        public void OrderInvite(SimCharacter g) { OrderApproach(g, Intent.Private); }
+
+        /// <summary>
+        /// 指示が来たとき、会話中なら会話を切り上げる（famuru 2026-10-25「篤が話しているときも会話を中断して他の動作を開始」）。
+        /// エッチの場面へ向かう途中など、切り上げられないときは false。
+        /// </summary>
+        bool BreakTalkForOrder()
+        {
+            if (state != State.Talking) return true;
+            if (privatePending || InHSession || talkPartner == null) return false;
+            var p = talkPartner;
+            StopAllCoroutines();
+            p.StopAllCoroutines();
+            p.ExitTalk();
+            ExitTalk();
+            if (intent == Intent.Give) RefundGift(intent);
+            target = null; hasOrder = false; intent = Intent.Talk;
+            p.target = null; p.hasOrder = false; p.intent = Intent.Talk;
+            NoteTalkEnd(p);
+            p.ShowBubble(p.Say("refuse", "あ、またね"), 1.2f);
+            world.Log(displayName + "は" + p.displayName + "との話を切り上げた");
+            return true;
+        }
+
+        // ---- 同じ相手に続けて話しかけない（famuru 2026-10-25。待ちの行列ができるのを防ぐ） ----
+        SimCharacter lastTalkWith;   // さっき話した相手（ほかのことをすると消える）
+        double lastTalkEnd = -1e9;
+        const double SameTalkGapMinutes = 90; // 同じ相手にもう一度話しかけるまでの時間（ゲームの分）
+
+        void NoteTalkEnd(SimCharacter p)
+        {
+            lastTalkWith = p; lastTalkEnd = world.Now;
+            p.lastTalkWith = this; p.lastTalkEnd = world.Now;
+        }
+
+        bool TalkedJustNow(SimCharacter o) { return o != null && o == lastTalkWith && world.Now - lastTalkEnd < SameTalkGapMinutes; }
 
         public void OrderGive(SimCharacter g, ItemKind item)
         {
@@ -2474,7 +2516,8 @@ namespace LifeSimProto
                 RefundGift(why);
                 return;
             }
-            if (state == State.Talking) { world.Log(displayName + "は会話中。終わってからもう一度"); RefundGift(why); return; }
+            if (talkPartner == g && state == State.Talking && why == Intent.Talk) return; // もう話している
+            if (!BreakTalkForOrder()) { world.Log(displayName + "は今は手が離せない"); RefundGift(why); return; }
             ShowBubble("！", 1.2f);
             BeginApproach(g, true, why);
         }
@@ -2486,7 +2529,7 @@ namespace LifeSimProto
 
         public void OrderWork()
         {
-            if (!CanTakeOrder() || state == State.Talking) { world.Log(displayName + "は今は手伝えない"); return; }
+            if (!CanTakeOrder() || !BreakTalkForOrder()) { world.Log(displayName + "は今は手伝えない"); return; }
             Poi counter = FindPoi(p => p.counter && p.FreeSlot() >= 0);
             if (counter == null) { world.Log("食堂の受け取り口が混んでいる"); return; }
             hasOrder = true;
@@ -2497,7 +2540,7 @@ namespace LifeSimProto
 
         public void OrderPartTime()
         {
-            if (!CanTakeOrder() || state == State.Talking) { world.Log(displayName + "は今は出かけられない"); return; }
+            if (!CanTakeOrder() || !BreakTalkForOrder()) { world.Log(displayName + "は今は出かけられない"); return; }
             float m = world.MinuteOfDay;
             if (m < 480f || m > 1140f) { world.Log("アルバイトは 8:00〜19:00 の間だけ"); return; }
             hasOrder = true;
@@ -2773,15 +2816,25 @@ namespace LifeSimProto
 
         void BeginInteraction()
         {
-            if (intent == Intent.Private && target.CanJoinPrivate(this)) StartCoroutine(PrivateRoutine(target));
-            else { ReleaseEscorts(); StartCoroutine(TalkRoutine(target)); }
+            if (intent == Intent.Private && target.CanJoinPrivate(this)) { StartCoroutine(PrivateRoutine(target)); return; }
+            if (intent == Intent.Private && IsTarget && hasOrder)
+            {
+                // 篤が誘ったが、今は気分ではない：断って、ふつうに話す
+                target.ShowBubble(target.Say("refuse", "今はちょっと…"), 1.8f);
+                world.Log(target.displayName + "は、今はそういう気分ではないみたい（篤の誘い）");
+                intent = Intent.Talk;
+            }
+            ReleaseEscorts();
+            StartCoroutine(TalkRoutine(target));
         }
 
         bool CanJoinPrivate(SimCharacter by)
         {
             bool pair = (IsTarget && !by.IsTarget) || (!IsTarget && by.IsTarget); // 篤と寮生（関係に関係なく）
             // 誘われた側も望んでいるときだけ（性欲40以上。famuru 決定 2026-10-21）
-            return pair && !sickRest && desire >= 40f;
+            // 篤が誘ったときは、恋人なら性欲が低くても受ける（2026-10-25）
+            bool loverInvite = !IsTarget && by.IsTarget && by.hasOrder && IsLover;
+            return pair && !sickRest && (desire >= 40f || loverInvite);
         }
 
         void UpdateWaiting(float dt)
@@ -3267,6 +3320,7 @@ namespace LifeSimProto
 
         void EndTalk(SimCharacter partner)
         {
+            NoteTalkEnd(partner);
             partner.ExitTalk();
             ExitTalk();
             target = null;
