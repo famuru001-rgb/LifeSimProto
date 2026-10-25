@@ -10,7 +10,7 @@ namespace LifeSimProto
     /// 2026-10-25 寮の作り直しで場所を移した：台所は1階の奥（食堂の北）、図書室は3階の奥（南）、天文台は寮の屋上、
     /// 中庭（温室・工房の小屋）は寮の奥（食堂の裏口から出る）。
     /// 開く前は見えるが入れない（扉に鍵・鎖）。開く条件は Loop.cs の PlaceGates。開いた場所はループしても開いたまま。
-    /// 開いた場所では、実技の授業（中庭：飛行術・体術、工房：錬成、温室：薬草学）が見える。
+    /// 開いた場所では、実技の授業（中庭：飛行術・剣術、工房：錬成、温室：薬草学）が見える。
     /// </summary>
     public partial class LoungeWorld
     {
@@ -49,9 +49,9 @@ namespace LifeSimProto
         {
             switch (subject)
             {
-                case 7: case 8: return Courtyard;
-                case 9: return Workshop;
-                case 1: return Greenhouse;
+                case Academics.Flight: case Academics.Sword: return Courtyard; // 剣術はのちに本館の体育館へ
+                case Academics.Alchemy: return Workshop;
+                case Academics.Herb: return Greenhouse;
                 default: return null;
             }
         }
@@ -379,8 +379,8 @@ namespace LifeSimProto
             Chair("温室のテーブル", Greenhouse, new Vector3(-4.4f, 0f, 18.6f), -90f);
             Lamp(new Vector3(-7.5f, 2.6f, 19.8f), 1.8f, 6f);
             pois.Add(MakePoi("温室で薬草の世話をしている", new Vector3(-8.2f, 0.9f, 22.1f), new Vector3(-9.0f, 0f, 21.35f), new Vector3(-7.5f, 0f, 21.35f), new Vector3(-9.85f, 0f, 20.6f)));
-            pois[pois.Count - 1].subject = 1;
-            pois.Add(ClassPoi("薬草学の授業を受けている", 1, new Vector3(-10.6f, 1f, 19.6f), -9.9f, 17.9f, 0.8f, 1.2f, 4, 2));
+            pois[pois.Count - 1].subject = Academics.Herb;
+            pois.Add(ClassPoi("薬草学の授業を受けている", Academics.Herb, new Vector3(-10.6f, 1f, 19.6f), -9.9f, 17.9f, 0.8f, 1.2f, 4, 2));
             Label(new Vector3(-7.5f, 2.6f, 17.2f), "温室");
             AddArea(Greenhouse, Rect.MinMaxRect(x0, z0, x1, z1), 0);
             PlaceDoorAt(Greenhouse, 0, new Vector3(-7.5f, 0f, z0), true, 1.0f, 2.3f, Rect.MinMaxRect(-7.9f, 16.6f, -7.1f, 17.5f), iron);
@@ -439,10 +439,10 @@ namespace LifeSimProto
             tinker.hobby = (int)SimCharacter.HobbyKind.Magic;
             pois.Add(tinker);
             var brew = MakePoi("錬成の釜をかき混ぜている", new Vector3(10.2f, 0.7f, 21.0f), new Vector3(9.4f, 0f, 20.6f), new Vector3(9.9f, 0f, 20.05f));
-            brew.subject = 9;
+            brew.subject = Academics.Alchemy;
             pois.Add(brew);
             pois.Add(MakePoi("宝物の棚を眺めている", new Vector3(11.65f, 1.2f, 18.6f), new Vector3(10.95f, 0f, 18.3f), new Vector3(10.95f, 0f, 19.0f)));
-            pois.Add(ClassPoi("錬成の授業を受けている", 9, new Vector3(10.2f, 0.7f, 21.0f), 6.7f, 17.6f, 0.75f, 0.0f, 2, 1));
+            pois.Add(ClassPoi("錬成の授業を受けている", Academics.Alchemy, new Vector3(10.2f, 0.7f, 21.0f), 6.7f, 17.6f, 0.75f, 0.0f, 2, 1));
             var cls = pois[pois.Count - 1];
             cls.slots = new[] { new Vector3(6.7f, 0f, 17.6f), new Vector3(7.45f, 0f, 17.6f), new Vector3(9.55f, 0f, 17.6f), new Vector3(10.3f, 0f, 17.6f),
                                 new Vector3(11.05f, 0f, 17.6f), new Vector3(6.7f, 0f, 20.9f), new Vector3(7.45f, 0f, 21.4f), new Vector3(9.4f, 0f, 19.2f) };
@@ -553,7 +553,7 @@ namespace LifeSimProto
                 Box("Broom_Head", new Vector3(0.12f, 0.22f, -0.7f + i * 0.35f), new Vector3(0.18f, 0.35f, 0.16f), rugGoldMat, rack);
             }
             blockers[0].Add(new Rect(-12.85f, 15.0f, 0.5f, 2.0f));
-            // 体術：マット・打ち込み台・杭
+            // 剣術：マット・打ち込み台・杭
             Box("Mat1", new Vector3(9.0f, 0.03f, 10.8f), new Vector3(2.6f, 0.06f, 1.8f), fabricRed);
             Box("Mat2", new Vector3(11.2f, 0.03f, 12.4f), new Vector3(1.6f, 0.06f, 1.2f), fabricRed);
             var dummy = new GameObject("TrainingDummy").transform;
@@ -582,15 +582,15 @@ namespace LifeSimProto
             pois.Add(MakePoi("若木を眺めている", new Vector3(0.3f, 1f, 11.9f), new Vector3(0.3f, 0f, 12.9f), new Vector3(5.3f, 0f, 12.9f)));
             pois[pois.Count - 1].outdoor = true;
             var fly = MakePoi("ほうきで飛ぶ練習をしている", new Vector3(-7.3f, 3f, 14.6f), new Vector3(-11.4f, 0f, 13.9f), new Vector3(-5.6f, 0f, 13.6f));
-            fly.subject = 7; fly.outdoor = true;
+            fly.subject = Academics.Flight; fly.outdoor = true;
             pois.Add(fly);
-            var kick = MakePoi("打ち込み台で体術の練習をしている", new Vector3(12.6f, 1.1f, 10.6f), new Vector3(11.8f, 0f, 10.7f), new Vector3(12.6f, 0f, 11.5f));
-            kick.subject = 8; kick.outdoor = true;
+            var kick = MakePoi("打ち込み台で剣術の練習をしている", new Vector3(12.6f, 1.1f, 10.6f), new Vector3(11.8f, 0f, 10.7f), new Vector3(12.6f, 0f, 11.5f));
+            kick.subject = Academics.Sword; kick.outdoor = true;
             pois.Add(kick);
-            var flyClass = ClassPoi("飛行術の授業を受けている", 7, new Vector3(-7.3f, 2.5f, 14f), -11.6f, 15.6f, 1.3f, 0f, 7, 1);
+            var flyClass = ClassPoi("飛行術の授業を受けている", Academics.Flight, new Vector3(-7.3f, 2.5f, 14f), -11.6f, 15.6f, 1.3f, 0f, 7, 1);
             flyClass.outdoor = true;
             pois.Add(flyClass);
-            var bodyClass = ClassPoi("体術の授業を受けている", 8, new Vector3(9.0f, 0.5f, 10.8f), 7.6f, 10.2f, 0.85f, 2.4f, 4, 2);
+            var bodyClass = ClassPoi("剣術の授業を受けている", Academics.Sword, new Vector3(9.0f, 0.5f, 10.8f), 7.6f, 10.2f, 0.85f, 2.4f, 4, 2);
             bodyClass.outdoor = true;
             pois.Add(bodyClass);
             Label(new Vector3(2.8f, 2.2f, 11.2f), "中庭");
@@ -663,7 +663,7 @@ namespace LifeSimProto
             Lamp(new Vector3(0f, y + 1.8f, 0f), 1.8f, 7f);
             Lamp(new Vector3(-3.0f, y + 0.8f, -4.6f), 1.2f, 4f);
             var star = MakePoi("望遠鏡で星を見ている", new Vector3(0.2f, y + 1.9f, -1.5f), new Vector3(0f, y, -2.75f), new Vector3(-0.75f, y, -2.2f));
-            star.subject = 4; star.outdoor = true;
+            star.outdoor = true; star.stars = true;
             pois.Add(star);
             pois.Add(MakePoi("星図を広げている", new Vector3(2.6f, y + 0.8f, -3.4f), new Vector3(2.6f, y, -4.2f)));
             pois[pois.Count - 1].outdoor = true;

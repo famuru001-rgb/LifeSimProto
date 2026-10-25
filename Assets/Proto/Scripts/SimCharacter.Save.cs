@@ -46,7 +46,9 @@ namespace LifeSimProto
             lonely = s.lonely; tired = s.tired; bored = s.bored; hunger = s.hunger; study = s.study; hobbyNeed = s.hobbyNeed; loveNeed = s.loveNeed; sleepy = s.sleepy; desire = s.desire;
             desireBuild.value = s.heat; mana = s.mana; weekStudy = s.weekStudy; assignProgress = s.assignProgress;
             hasAssignment = s.hasAssignment; desireMaxAtNight = s.desireMaxAtNight; assignSubject = s.assignSubject; assignDeadline = s.assignDeadline;
-            Copy(s.skill, skill); Copy(s.ability, ability); Copy(s.weekSubject, weekSubject);
+            if (s.skill != null && s.skill.Length == skill.Length) Copy(s.skill, skill); // 科目の数が違う（前の版の）セーブの学力は使わない
+            Copy(s.ability, ability);
+            if (s.weekSubject != null && s.weekSubject.Length == weekSubject.Length) Copy(s.weekSubject, weekSubject);
             if (profile != null && s.enrolled != null && s.enrolled.Length > 0) profile.enrolled = (int[])s.enrolled.Clone();
             statuses.Clear();
             if (s.statuses != null)

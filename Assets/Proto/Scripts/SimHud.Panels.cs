@@ -131,7 +131,7 @@ namespace LifeSimProto
             bool anyMagic = false;
             foreach (var sp in FMagic.All)
             {
-                if (!FMagic.Has(sp.subject) || sp.subject == 6 || sp.subject == 7) continue;
+                if (!FMagic.Has(sp.subject) || sp.subject == Academics.Medicine || sp.subject == Academics.Flight) continue; // 相手に使う魔法は相手を選んだときのボタン
                 anyMagic = true;
                 GUI.enabled = !FMagic.UsedToday(sp.subject, world.Day);
                 if (GUI.Button(new Rect(mx, y, 176, 32), "魔法：" + sp.name, smallButton)) FMagic.Use(world, f, sp.subject, null);
@@ -157,11 +157,11 @@ namespace LifeSimProto
             // 篤の魔法（相手に使うもの。近くにいるときだけ）
             bool near = f.Present && c.Present && (f.transform.position - c.transform.position).sqrMagnitude < 9f;
             float mx = r.x + 322;
-            foreach (int sj in new[] { 6, 7 })
+            foreach (int sj in new[] { Academics.Medicine, Academics.Flight })
             {
                 if (!FMagic.Has(sj)) continue;
                 var sp = System.Array.Find(FMagic.All, q => q.subject == sj);
-                GUI.enabled = near && !FMagic.UsedToday(sj, world.Day) && (sj != 6 || c.GetStage(StatusLine.Cold) > 0);
+                GUI.enabled = near && !FMagic.UsedToday(sj, world.Day) && (sj != Academics.Medicine || c.GetStage(StatusLine.Cold) > 0);
                 if (GUI.Button(new Rect(mx, y, 116, 32), sp.name, smallButton)) FMagic.Use(world, f, sj, c);
                 GUI.enabled = true;
                 mx += 122;

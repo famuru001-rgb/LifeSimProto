@@ -144,7 +144,7 @@ namespace LifeSimProto
         public bool IsSick { get { return sickRest; } }
         /// <summary>最後に篤のそばにいた時刻（応援が届いたかの目安）。</summary>
         public double LastFContact { get { return lastFContact; } }
-        /// <summary>風邪を1段階軽くする（篤の回復魔法）。</summary>
+        /// <summary>風邪を1段階軽くする（篤の魔法医学）。</summary>
         public void HealCold() { if (GetStage(StatusLine.Cold) > 0) Ease(StatusLine.Cold); tired = Mathf.Max(0f, tired - 10f); }
         public bool InPrivate { get { return state == State.Private; } }
         bool OnMission
@@ -832,7 +832,7 @@ namespace LifeSimProto
             weekStudy += amount * 0.4f;
             if (subj >= 0) weekSubject[subj] += amount * 0.4f;
             AddSkill(subj, amount * 0.006f);
-            if (subj >= 0 && Academics.IsPractical(subj)) { GrowAbility(Abilities.Magic, amount * 0.0015f); if (subj == 8 || subj == 7) GrowAbility(Abilities.Body, amount * 0.001f); if (subj == 9) GrowAbility(Abilities.Dex, amount * 0.001f); }
+            if (subj >= 0 && Academics.IsPractical(subj)) { GrowAbility(Abilities.Magic, amount * 0.0015f); if (subj == Academics.Sword || subj == Academics.Flight || subj == Academics.Dungeon) GrowAbility(Abilities.Body, amount * 0.001f); if (subj == Academics.Alchemy) GrowAbility(Abilities.Dex, amount * 0.001f); }
             else GrowAbility(Abilities.Mind, amount * 0.0012f);
             focusMin += gm;
             bored += dt * 0.3f;
@@ -891,7 +891,7 @@ namespace LifeSimProto
                 skill[i] = Mathf.Clamp(v, 0f, 100f);
             }
             // 篤の学力はループで持ち越す
-            if (IsTarget && Loop.fSkills != null) for (int i = 0; i < Academics.Count && i < Loop.fSkills.Length; i++) skill[i] = Loop.fSkills[i];
+            if (IsTarget && Loop.fSkills != null && Loop.fSkills.Length == Academics.Count) for (int i = 0; i < Academics.Count; i++) skill[i] = Loop.fSkills[i];
             // 能力値（性格と種族から。少しだけばらつく。篤の分はループで持ち越す）
             var init = Abilities.Initial(letter);
             for (int i = 0; i < Abilities.Count; i++) ability[i] = Mathf.Clamp(init[i] + (IsTarget ? 0f : Random.Range(-3f, 3f)), 0f, 100f);
@@ -1004,7 +1004,7 @@ namespace LifeSimProto
             studySubject = profile.enrolled[Random.Range(0, profile.enrolled.Length)];
         }
 
-        /// <summary>実技の自主練習での、ちょっとした失敗。回復魔法が得意な子が駆けつける。</summary>
+        /// <summary>実技の自主練習での、ちょっとした失敗。魔法医学が得意な子が駆けつける。</summary>
         void PracticeMishap(int subj)
         {
             mishapDay = world.Day;
@@ -1017,7 +1017,7 @@ namespace LifeSimProto
                 if ((o.transform.position - transform.position).sqrMagnitude < 16f) o.ShowBubble(o.Say("surprise", "わっ！"), 1.4f);
             }
             StartCoroutine(MishapAfter());
-            // 駆けつける：回復魔法が得意な子 → いなければ回復魔法の学力が高い子
+            // 駆けつける：魔法医学が得意な子 → いなければ魔法医学の学力が高い子
             SimCharacter healer = null;
             float best = -1f;
             foreach (var o in world.characters)
@@ -1486,7 +1486,7 @@ namespace LifeSimProto
         }
 
         /// <summary>
-        /// 実技の授業が見える場所（中庭：飛行術・体術、工房：錬成、温室：薬草学）が開いていれば、外出せずにその場所で授業を受ける。
+        /// 実技の授業が見える場所（中庭：飛行術・剣術、工房：錬成、温室：薬草学）が開いていれば、外出せずにその場所で授業を受ける。
         /// </summary>
         bool TryClassInPlace(ScheduleItem it)
         {
@@ -2280,7 +2280,7 @@ namespace LifeSimProto
                 w *= Mathf.Exp(0.35f * Mathf.Clamp(PlaceBonus(p.slots[fs]), -4f, 6f));
                 if (p.dynamicSpot) w *= 4f;
                 if (world.BadWeatherToday && p.label == "暖炉にあたっている") w *= 2f;
-                if (p.outdoor && (world.BadWeatherToday || LoungeWorld.IsNight(world.MinuteOfDay))) w *= p.subject == 4 && !world.BadWeatherToday ? 1.5f : 0.08f; // 外は雨・雪・夜は行きにくい（星は夜）
+                if (p.outdoor && (world.BadWeatherToday || LoungeWorld.IsNight(world.MinuteOfDay))) w *= p.stars && !world.BadWeatherToday ? 1.5f : 0.08f; // 外は雨・雪・夜は行きにくい（星は夜）
                 candidates.Add(p);
                 weights.Add(w);
                 total += w;
@@ -2926,7 +2926,7 @@ namespace LifeSimProto
                 yield break;
             }
 
-            // ---- 実技の失敗に駆けつけて、回復魔法で手当てする ----
+            // ---- 実技の失敗に駆けつけて、魔法医学で手当てする ----
             if (intent == Intent.Heal)
             {
                 actionText = partner.displayName + "を手当てしている";
@@ -2938,7 +2938,7 @@ namespace LifeSimProto
                 partner.tired = Mathf.Max(0f, partner.tired - 15f);
                 AddSkill(Academics.Healing, 0.6f);
                 world.rel.Add(id, partner.id, 4f, world.simTime);
-                world.Log(displayName + "が" + partner.displayName + "を回復魔法で手当てした");
+                world.Log(displayName + "が" + partner.displayName + "を魔法医学で手当てした");
                 yield return new WaitForSeconds(1.9f);
                 EndTalk(partner);
                 yield break;

@@ -37,18 +37,28 @@ namespace LifeSimProto
         public CharTrait traits;
         public string traitText = "";
         public int strongStudy = -1, weakStudy = -1, strongPractical = -1, weakPractical = -1;
-        public int[] enrolled = new int[0]; // 取っている科目（6つ。篤は勉学のみ）
+        public int[] enrolled = new int[0]; // 取っている科目（座学4・実技4の8つ。篤は座学のみ）
+        public Affiliation affiliation;     // 騎士団・魔法師団（所属の子は優先科目を必ず取る。今の10人は所属なし）
         public string callF = "篤くん";      // 篤の呼び方
         public readonly Dictionary<string, string[]> lines = new Dictionary<string, string[]>();
 
         public CharProfile L(string key, params string[] v) { lines[key] = v; return this; }
 
         int[] baseEnrolled;
-        /// <summary>取っている科目を最初の状態に戻す（篤は魔法を覚えると実技が増えるため）。</summary>
+        /// <summary>取っている科目を最初の状態に戻す（篤は魔法を覚えると実技が増えるため）。所属の優先科目は必ず入れる。</summary>
         public void ResetEnrolled()
         {
-            if (baseEnrolled == null) baseEnrolled = (int[])enrolled.Clone();
-            else enrolled = (int[])baseEnrolled.Clone();
+            if (baseEnrolled == null) baseEnrolled = WithPriority(enrolled, affiliation);
+            enrolled = (int[])baseEnrolled.Clone();
+        }
+
+        /// <summary>所属の優先科目が入っていなければ足す。</summary>
+        public static int[] WithPriority(int[] list, Affiliation aff)
+        {
+            var res = new List<int>(list);
+            int[] pri = aff == Affiliation.Knight ? Academics.KnightPriority : (aff == Affiliation.Mage ? Academics.MagePriority : new int[0]);
+            foreach (int s in pri) if (!res.Contains(s)) res.Add(s);
+            return res.ToArray();
         }
 
         public bool Likes(string tag) { return System.Array.IndexOf(likes, tag) >= 0; }
@@ -66,6 +76,9 @@ namespace LifeSimProto
         public bool IsWeak(int subject) { return subject >= 0 && (subject == weakStudy || subject == weakPractical); }
     }
 
+    /// <summary>所属（騎士団・魔法師団の学校の要素。famuru 決定 2026-10-25。追加のヒロインで使う）。</summary>
+    public enum Affiliation { None, Knight, Mage }
+
     /// <summary>会話の話題。tags がだれかの好き嫌いに当たると、会話が楽しく（気まずく）なりやすい。</summary>
     public class TalkTopic
     {
@@ -77,7 +90,8 @@ namespace LifeSimProto
     public static class CharProfiles
     {
         // 科目の番号（Academics.Names と同じ並び）
-        const int Theory = 0, Herb = 1, Tools = 2, Ancient = 3, Astro = 4, Element = 5, Heal = 6, Fly = 7, Body = 8, Alchemy = 9;
+        const int Theory = Academics.Theory, Ancient = Academics.Ancient, Tools = Academics.Tools, Herb = Academics.Herb, History = Academics.History, Monster = Academics.Monster;
+        const int Sword = Academics.Sword, MagicArts = Academics.MagicArts, Dungeon = Academics.Dungeon, Alchemy = Academics.Alchemy, Fly = Academics.Flight, Medicine = Academics.Medicine;
 
         public static readonly List<CharProfile> All = new List<CharProfile>();
 
@@ -91,9 +105,9 @@ namespace LifeSimProto
             new TalkTopic("新しい魔道具の話", "魔道具", "工具", "魔道具学"), new TalkTopic("肉料理の話", "肉", "庶民の食べ物"),
             new TalkTopic("走りに行く話", "走る", "じっとする"), new TalkTopic("満月の話", "満月"), new TalkTopic("編み物の話", "編み物"),
             new TalkTopic("星の話", "星", "占い"), new TalkTopic("飛行術の話", "高い所", "飛ぶ"), new TalkTopic("お茶会の話", "お茶会", "みんな", "注目"),
-            new TalkTopic("占星術の話", "占星術", "占い"), new TalkTopic("実験の話", "実験", "大きな音"), new TalkTopic("にんじんケーキの話", "にんじんケーキ", "甘いもの"),
+            new TalkTopic("王国史の話", "王国史", "歴史"), new TalkTopic("実験の話", "実験", "大きな音"), new TalkTopic("にんじんケーキの話", "にんじんケーキ", "甘いもの"),
             new TalkTopic("料理の練習の話", "料理", "庶民の食べ物"), new TalkTopic("木の実の話", "木の実"), new TalkTopic("光る石の話", "光る物"),
-            new TalkTopic("雷の話", "雷", "大きな音"), new TalkTopic("古代語の話", "古代語", "本"), new TalkTopic("元素魔法の話", "元素魔法"),
+            new TalkTopic("雷の話", "雷", "大きな音"), new TalkTopic("古代語の話", "古代語", "本"), new TalkTopic("魔法術の話", "魔法術"),
             new TalkTopic("ひとりの夜の話", "ひとり"), new TalkTopic("王都のうわさ", "正体"),
         };
 
@@ -110,8 +124,8 @@ namespace LifeSimProto
                 hobby = SimCharacter.HobbyKind.Reading, hobbyText = "古文書の読書", hobbyPlace = "図書室",
                 likes = new[] { "本", "辛い料理", "暖炉" }, dislikes = new[] { "寒さ", "甘いもの" },
                 traits = CharTrait.WinterWeak, traitText = "冬に弱い",
-                strongStudy = Ancient, weakStudy = Herb, strongPractical = Element, weakPractical = Heal,
-                enrolled = new[] { Ancient, Element, Heal, Theory, Astro, Body }, callF = "篤",
+                strongStudy = Ancient, weakStudy = Herb, strongPractical = MagicArts, weakPractical = Medicine,
+                enrolled = new[] { Ancient, Theory, Herb, History, MagicArts, Medicine, Sword, Fly }, callF = "篤",
             }
             .L("hello_m", "…おはよう").L("hello_d", "…ああ").L("hello_n", "…早く寝ろ")
             .L("close", "{0}か").L("reply", "…ああ", "…ん")
@@ -135,8 +149,8 @@ namespace LifeSimProto
                 color = new Color(0.35f, 0.7f, 0.35f), social = 0.3f, whim = 0.2f, diligence = 0.8f,
                 hobby = SimCharacter.HobbyKind.Tea, hobbyText = "園芸", hobbyPlace = "温室",
                 likes = new[] { "植物", "ハーブティー", "お菓子" }, dislikes = new[] { "魔道具", "大きな音" },
-                strongStudy = Herb, weakStudy = Tools, strongPractical = Heal, weakPractical = Body,
-                enrolled = new[] { Herb, Heal, Tools, Ancient, Astro, Alchemy }, callF = "篤さん",
+                strongStudy = Herb, weakStudy = Tools, strongPractical = Medicine, weakPractical = Sword,
+                enrolled = new[] { Herb, Tools, Ancient, Theory, Medicine, Sword, Alchemy, MagicArts }, callF = "篤さん",
             }
             .L("hello_m", "ごきげんよう").L("hello_d", "あら").L("hello_n", "おやすみなさいませ")
             .L("close", "あら、{0}").L("reply", "…ふん、ごきげんよう")
@@ -162,8 +176,8 @@ namespace LifeSimProto
                 hobby = SimCharacter.HobbyKind.Walk, hobbyText = "散歩・鍛錬", hobbyPlace = "中庭",
                 likes = new[] { "肉", "走る", "満月", "なでる" }, dislikes = new[] { "じっとする", "古代語" },
                 traits = CharTrait.FullMoon, traitText = "満月の日はそわそわ",
-                strongStudy = Herb, weakStudy = Ancient, strongPractical = Body, weakPractical = Alchemy,
-                enrolled = new[] { Herb, Body, Ancient, Fly, Element, Heal }, callF = "篤",
+                strongStudy = Herb, weakStudy = Ancient, strongPractical = Sword, weakPractical = Alchemy,
+                enrolled = new[] { Herb, Ancient, Monster, History, Sword, Alchemy, Dungeon, Fly }, callF = "篤",
             }
             .L("hello_m", "おっはよー！").L("hello_d", "よっ！").L("hello_n", "おやすみー！")
             .L("close", "{0}！ 遊ぼうぜ！").L("reply", "おう！")
@@ -188,8 +202,8 @@ namespace LifeSimProto
                 hobby = SimCharacter.HobbyKind.Reading, hobbyText = "編み物・星見", hobbyPlace = "屋上の天文台",
                 likes = new[] { "編み物", "甘いもの", "星" }, dislikes = new[] { "高い所", "雷", "大きな音" },
                 traits = CharTrait.DeepSleeper, traitText = "眠りが深い",
-                strongStudy = Astro, weakStudy = Theory, strongPractical = Heal, weakPractical = Fly,
-                enrolled = new[] { Astro, Heal, Fly, Herb, Ancient, Alchemy }, callF = "篤さん",
+                strongStudy = History, weakStudy = Theory, strongPractical = Medicine, weakPractical = Fly,
+                enrolled = new[] { History, Theory, Herb, Ancient, Medicine, Fly, Alchemy, MagicArts }, callF = "篤さん",
             }
             .L("hello_m", "おはようございます").L("hello_d", "こんにちは").L("hello_n", "もう、ちゃんと寝ないとだめですよ")
             .L("close", "{0}さん、お疲れさまです").L("reply", "はい、おかげさまで")
@@ -213,10 +227,10 @@ namespace LifeSimProto
                 letter = "E", name = "ラフィーナ", shortName = "ラフィ", race = "天使族", personality = "自信家のお嬢様、寂しがり",
                 color = new Color(0.95f, 0.8f, 0.35f), social = 0.85f, whim = 0.5f, diligence = 0.45f,
                 hobby = SimCharacter.HobbyKind.Tea, hobbyText = "お茶会",
-                likes = new[] { "お茶会", "注目", "高い所" }, dislikes = new[] { "占星術", "ひとり" },
+                likes = new[] { "お茶会", "注目", "高い所" }, dislikes = new[] { "王国史", "ひとり" },
                 traits = CharTrait.RainWings, traitText = "翼の手入れ・雨で翼が重い",
-                strongStudy = Theory, weakStudy = Astro, strongPractical = Fly, weakPractical = Element,
-                enrolled = new[] { Theory, Fly, Element, Heal, Ancient, Body }, callF = "篤",
+                strongStudy = Theory, weakStudy = History, strongPractical = Fly, weakPractical = MagicArts,
+                enrolled = new[] { Theory, History, Ancient, Monster, Fly, MagicArts, Medicine, Sword }, callF = "篤",
             }
             .L("hello_m", "ごきげんよう！").L("hello_d", "あら、ごきげんよう").L("hello_n", "わたくしはまだ眠くありませんわ")
             .L("close", "{0}、わたくしとお話しなさい！").L("reply", "よろしくてよ！")
@@ -231,7 +245,7 @@ namespace LifeSimProto
             .L("done", "わたくしにかかればこの程度！").L("busy", "課題なんて…").L("teach", "わたくしに任せなさい！")
             .L("thanks", "…感謝してさしあげますわ").L("accept", "わたくしに任せなさい！").L("refuse", "今は気分ではありませんわ")
             .L("night", "おやすみなさい…").L("surprise", "きゃあっ！").L("hurt", "わ、わたくしとしたことが…")
-            .L("rank1", "おーっほっほ！ 当然一番ですわ！").L("examGood", "当然の結果ですわ！").L("examBad", "占星術なんて大嫌いですわ…"));
+            .L("rank1", "おーっほっほ！ 当然一番ですわ！").L("examGood", "当然の結果ですわ！").L("examBad", "王国史なんて大嫌いですわ…"));
 
             // F 篤（転生者）
             All.Add(new CharProfile
@@ -239,7 +253,7 @@ namespace LifeSimProto
                 letter = "F", name = "篤", shortName = "篤", race = "人間（転生者）", personality = "落ち着いた元社会人",
                 male = true, color = new Color(0.55f, 0.55f, 0.58f), social = 0.5f, whim = 0.35f, diligence = 0.6f,
                 hobby = SimCharacter.HobbyKind.Reading, hobbyText = "読書",
-                enrolled = new[] { Theory, Herb, Tools, Ancient, Astro }, callF = "",
+                enrolled = new[] { Theory, Ancient, Tools, Herb, History, Monster }, callF = "",
             }
             .L("hello_m", "ああ、おはよう").L("hello_d", "お疲れ").L("hello_n", "おやすみ")
             .L("close", "{0}、お疲れ").L("reply", "ああ")
@@ -262,9 +276,9 @@ namespace LifeSimProto
                 letter = "G", name = "ロッテ", shortName = "ロッテ", race = "ドワーフ", personality = "理屈っぽい研究者",
                 color = new Color(0.82f, 0.84f, 0.9f), social = 0.3f, whim = 0.3f, diligence = 0.9f,
                 hobby = SimCharacter.HobbyKind.Magic, hobbyText = "魔道具研究・修理", hobbyPlace = "工房",
-                likes = new[] { "魔道具", "工具", "実験" }, dislikes = new[] { "占星術", "飛ぶ" },
-                strongStudy = Tools, weakStudy = Astro, strongPractical = Alchemy, weakPractical = Fly,
-                enrolled = new[] { Tools, Alchemy, Astro, Theory, Element, Ancient }, callF = "篤さん",
+                likes = new[] { "魔道具", "工具", "実験" }, dislikes = new[] { "王国史", "飛ぶ" },
+                strongStudy = Tools, weakStudy = History, strongPractical = Alchemy, weakPractical = Fly,
+                enrolled = new[] { Tools, History, Theory, Ancient, Alchemy, Fly, MagicArts, Dungeon }, callF = "篤さん",
             }
             .L("hello_m", "おはようございます").L("hello_d", "どうも").L("hello_n", "睡眠は大事です")
             .L("close", "{0}さん、ちょうどいいところに").L("reply", "どうも")
@@ -279,7 +293,7 @@ namespace LifeSimProto
             .L("done", "完了です").L("busy", "課題の進捗、六割…").L("teach", "理屈で言うと、こうです")
             .L("thanks", "助かります").L("accept", "了解です").L("refuse", "今は実験中なので")
             .L("night", "おやすみなさい").L("surprise", "わっ！？").L("hurt", "…計算外の反応です")
-            .L("rank1", "予想どおりです").L("examGood", "想定内ですね").L("examBad", "占星術は再現性が…"));
+            .L("rank1", "予想どおりです").L("examGood", "想定内ですね").L("examBad", "王国史は資料によって書いてあることが違って…"));
 
             // H ニナ（うさぎ）
             All.Add(new CharProfile
@@ -289,8 +303,8 @@ namespace LifeSimProto
                 hobby = SimCharacter.HobbyKind.Tea, hobbyText = "おしゃべり・占い",
                 likes = new[] { "にんじんケーキ", "みんな", "占い" }, dislikes = new[] { "ひとり", "雷" },
                 traits = CharTrait.Lonely, traitText = "さみしさがたまりやすい",
-                strongStudy = Astro, weakStudy = Theory, strongPractical = Fly, weakPractical = Alchemy,
-                enrolled = new[] { Astro, Fly, Alchemy, Herb, Heal, Body }, callF = "篤くん",
+                strongStudy = Monster, weakStudy = Theory, strongPractical = Fly, weakPractical = Alchemy,
+                enrolled = new[] { Monster, Theory, Herb, History, Fly, Alchemy, Medicine, Sword }, callF = "篤くん",
             }
             .L("hello_m", "おはよっ！").L("hello_d", "あっ、やっほー！").L("hello_n", "おやすみ…ひとりやだな")
             .L("close", "{0}！ ねえねえ、一緒に行こっ！").L("reply", "えへへ")
@@ -314,8 +328,8 @@ namespace LifeSimProto
                 color = new Color(1f, 0.85f, 0.5f), social = 0.6f, whim = 0.55f, diligence = 0.55f,
                 hobby = SimCharacter.HobbyKind.Tea, hobbyText = "料理の練習", hobbyPlace = "台所",
                 likes = new[] { "庶民の食べ物", "料理" }, dislikes = new[] { "薬草学", "正体" },
-                strongStudy = Ancient, weakStudy = Herb, strongPractical = Element, weakPractical = Body,
-                enrolled = new[] { Ancient, Element, Body, Theory, Heal, Astro }, callF = "篤くん",
+                strongStudy = Ancient, weakStudy = Herb, strongPractical = MagicArts, weakPractical = Sword,
+                enrolled = new[] { Ancient, Herb, Theory, History, MagicArts, Sword, Medicine, Dungeon }, callF = "篤くん",
             }
             .L("hello_m", "おはよう！").L("hello_d", "こんにちは！").L("hello_n", "おやすみなさい")
             .L("close", "{0}、こんにちは！").L("reply", "うん！")
@@ -338,9 +352,9 @@ namespace LifeSimProto
                 letter = "J", name = "キッカ", shortName = "キッカ", race = "リス", personality = "ちょこまかおしゃべり",
                 color = new Color(0.8f, 0.5f, 0.25f), social = 0.7f, whim = 0.8f, diligence = 0.4f,
                 hobby = SimCharacter.HobbyKind.Walk, hobbyText = "収集・木登り", hobbyPlace = "工房",
-                likes = new[] { "木の実", "光る物" }, dislikes = new[] { "魔道具学", "元素魔法" },
-                strongStudy = Theory, weakStudy = Tools, strongPractical = Alchemy, weakPractical = Element,
-                enrolled = new[] { Theory, Alchemy, Element, Herb, Fly, Body }, callF = "篤さん",
+                likes = new[] { "木の実", "光る物" }, dislikes = new[] { "魔道具学", "魔法術" },
+                strongStudy = Theory, weakStudy = Tools, strongPractical = Alchemy, weakPractical = MagicArts,
+                enrolled = new[] { Theory, Tools, Herb, Monster, Alchemy, MagicArts, Fly, Dungeon }, callF = "篤さん",
             }
             .L("hello_m", "おはようなのです！").L("hello_d", "あっ、こんにちはなのです！").L("hello_n", "おやすみなさいなのです")
             .L("close", "{0}さん！ 見て見て！").L("reply", "はいなのです！")
@@ -364,8 +378,8 @@ namespace LifeSimProto
                 hobby = SimCharacter.HobbyKind.Walk, hobbyText = "月光浴", hobbyPlace = "中庭",
                 likes = new[] { "夜の散歩", "月", "ホットミルク", "ふわふわ" }, dislikes = new[] { "早起き", "まぶしい日差し" },
                 traits = CharTrait.FullMoon, traitText = "満月の夜はそわそわ",
-                strongStudy = Astro, weakStudy = Ancient, strongPractical = Heal, weakPractical = Body,
-                enrolled = new[] { Astro, Ancient, Heal, Body, Herb, Fly }, callF = "篤くん",
+                strongStudy = Monster, weakStudy = Ancient, strongPractical = Medicine, weakPractical = Sword,
+                enrolled = new[] { Monster, Ancient, Herb, Theory, Medicine, Sword, Fly, Alchemy }, callF = "篤くん",
             }
             .L("hello_m", "ふわぁ…おはよう…もう夜？").L("hello_d", "ん…こんにちは…ねむい…").L("hello_n", "こんばんは〜。いい夜だね")
             .L("close", "{0}、こっちおいで〜").L("reply", "うん、ふわふわ元気だよ")

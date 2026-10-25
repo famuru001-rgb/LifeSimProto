@@ -215,7 +215,7 @@ namespace LifeSimProto
                 foreach (int s in c.profile.enrolled)
                 {
                     float score = c.skill[s] * 0.8f + Mathf.Min(25f, c.weekSubject[s] * 0.4f) + Random.Range(0f, 15f) - c.GetStage(StatusLine.Sleep) * 5f
-                        + (c.Ab(Abilities.ForSubject(s)) - 50f) * 0.1f; // 勉学は知力、実技は魔力（体術は体力）
+                        + (c.Ab(Abilities.ForSubject(s)) - 50f) * 0.1f; // 座学は知力、実技は魔力（剣術・ダンジョン実習は体力）
                     score = Mathf.Clamp(score, 0f, 100f);
                     Academics.LastExam[s].Add(new Academics.ExamEntry { who = c, score = score, mark = Academics.Mark(score) });
                     sum += score;
@@ -261,6 +261,7 @@ namespace LifeSimProto
             var tops = new List<string>();
             for (int s = 0; s < Academics.Count; s++)
             {
+                if (!Academics.IsActive(s)) continue;
                 var l = Academics.LastExam[s];
                 if (l.Count < 2) continue;
                 var best = l[0];

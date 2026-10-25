@@ -34,7 +34,7 @@ namespace LifeSimProto
             // ---- 学校の行事 ----
             new YearEvent { key = "entrance", name = "入学式と魔力の鑑定の儀式", label = "入学式と魔力の鑑定に出ている", season = Spring, weekday = Light, startHour = 9f, hours = 3.5f, school = true, outing = true, note = "大講堂" },
             new YearEvent { key = "planting", name = "植樹祭", label = "植樹祭で苗を植えている", season = Spring, weekday = Water, startHour = 10f, hours = 2f, school = true, outing = true, note = "学園じゅうで魔法の苗を植える" },
-            new YearEvent { key = "lake", name = "湖での野外実習", label = "湖で野外実習をしている", season = Summer, weekday = Fire, startHour = 9f, hours = 6f, school = true, outing = true, note = "水の元素魔法・薬草の採集" },
+            new YearEvent { key = "lake", name = "湖での野外実習", label = "湖で野外実習をしている", season = Summer, weekday = Fire, startHour = 9f, hours = 6f, school = true, outing = true, note = "水の魔法術・薬草の採集" },
             new YearEvent { key = "race", name = "夏の飛行レース", label = "夏の飛行レースに出ている", season = Summer, weekday = Moon, startHour = 10f, hours = 2f, school = true, outing = true, note = "湖のまわり" },
             new YearEvent { key = "schoolfest", name = "学園祭", label = "学園祭で寮の出し物をしている", season = Autumn, weekday = Water, startHour = 10f, hours = 6f, school = true, outing = true, note = "寮で出し物" },
             new YearEvent { key = "contest", name = "魔法競技会", label = "魔法競技会（寮対抗）に出ている", season = Autumn, weekday = Wind, startHour = 9f, hours = 6f, school = true, outing = true, note = "寮対抗・実技で勝負" },
@@ -43,7 +43,7 @@ namespace LifeSimProto
             new YearEvent { key = "stars", name = "屋上での星見の夜", label = "屋上で星を見ている", season = Spring, weekday = Star, startHour = 21f, hours = 1.5f, outing = true, note = "ミレイユとニナが張り切る" },
             new YearEvent { key = "waterplay", name = "湖での水遊び", label = "湖で水遊びをしている", season = Summer, weekday = Water, startHour = 13f, hours = 3f, outing = true },
             new YearEvent { key = "cooking", name = "料理対決", label = "料理対決に参加している", season = Summer, weekday = Moon, startHour = 17f, hours = 1.5f, area = "食堂", focus = Dining, note = "一人一品" },
-            new YearEvent { key = "summerfest", name = "夏祭りと花火", label = "夏祭りで花火を見ている", season = Summer, weekday = Star, startHour = 18.5f, hours = 2.5f, outing = true, note = "元素魔法の花火" },
+            new YearEvent { key = "summerfest", name = "夏祭りと花火", label = "夏祭りで花火を見ている", season = Summer, weekday = Star, startHour = 18.5f, hours = 2.5f, outing = true, note = "魔法術の花火" },
             new YearEvent { key = "harvest", name = "収穫祭", label = "収穫祭のごちそうを食べている", season = Autumn, weekday = Star, startHour = 17.5f, hours = 1.5f, area = "食堂", focus = Dining, note = "実りをみんなで食べる" },
             new YearEvent { key = "farewell", name = "送別会", label = "送別会に参加している", season = Winter, weekday = Moon, startHour = 19.5f, hours = 1f, area = "談話室", focus = Lounge, note = "卒業する先輩たちを送る" },
             new YearEvent { key = "solstice", name = "冬至の祭り", label = "冬至の祭りで暖炉を囲んでいる", season = Winter, weekday = Star, startHour = 17.5f, hours = 2f, area = "談話室", focus = Fireplace, note = "ごちそうと贈り物・年の終わりの夜" },
@@ -200,17 +200,17 @@ namespace LifeSimProto
                     SimCharacter wet = null;
                     foreach (var c in members)
                     {
-                        c.AddSkill(5, 2f); c.AddSkill(1, 1.5f);
+                        c.AddSkill(Academics.MagicArts, 2f); c.AddSkill(Academics.Herb, 1.5f);
                         c.GrowAbility(Abilities.Body, 0.5f); c.GrowAbility(Abilities.Magic, 0.5f);
                         if (wet == null && c.profile != null && c.profile.IsWeak(5)) wet = c;
                     }
-                    world.Log("湖での野外実習：みんなの元素魔法と薬草学が少し伸びた" + (wet != null ? "。" + wet.displayName + "は水の魔法で頭から水をかぶったらしい" : ""));
+                    world.Log("湖での野外実習：みんなの魔法術と薬草学が少し伸びた" + (wet != null ? "。" + wet.displayName + "は水の魔法で頭から水をかぶったらしい" : ""));
                     memo = "湖での野外実習" + (wet != null ? "（" + wet.displayName + "がずぶぬれ）" : "");
                     break;
                 }
                 case "race":
                 {
-                    var rank = Rank(members, c => c.SkillOf(7) + c.Ab(Abilities.Body) * 0.3f + c.Ab(Abilities.Magic) * 0.2f + Random.Range(0f, 15f) + (FMagic.Has(7) || !c.IsTarget ? 0f : -30f));
+                    var rank = Rank(members, c => c.SkillOf(Academics.Flight) + c.Ab(Abilities.Body) * 0.3f + c.Ab(Abilities.Magic) * 0.2f + Random.Range(0f, 15f) + (FMagic.Has(Academics.Flight) || !c.IsTarget ? 0f : -30f));
                     foreach (var c in members) c.GrowAbility(Abilities.Body, 1f);
                     if (rank.Count > 0)
                     {
@@ -229,7 +229,7 @@ namespace LifeSimProto
                     foreach (var c in members)
                     {
                         float best = 0f;
-                        for (int s = 5; s < Academics.Count; s++) best = Mathf.Max(best, c.SkillOf(s));
+                        for (int s = 0; s < Academics.Count; s++) if (Academics.IsPractical(s) && Academics.IsActive(s)) best = Mathf.Max(best, c.SkillOf(s));
                         best += c.Ab(Abilities.Magic) * 0.2f + c.Ab(Abilities.Body) * 0.1f - 15f;
                         c.GrowAbility(Abilities.Magic, 1f);
                         sum += best;
@@ -297,9 +297,9 @@ namespace LifeSimProto
                 case "summerfest":
                 {
                     SimCharacter fire = null; float best = -1f;
-                    foreach (var c in members) if (c.SkillOf(5) + c.Ab(Abilities.Magic) * 0.5f > best && !c.IsTarget) { best = c.SkillOf(5) + c.Ab(Abilities.Magic) * 0.5f; fire = c; }
+                    foreach (var c in members) if (c.SkillOf(Academics.MagicArts) + c.Ab(Abilities.Magic) * 0.5f > best && !c.IsTarget) { best = c.SkillOf(Academics.MagicArts) + c.Ab(Abilities.Magic) * 0.5f; fire = c; }
                     foreach (var c in members) c.PositiveEvent(0.8f);
-                    world.Log("夏祭り：" + (fire != null ? fire.displayName + "の元素魔法の花火が夜空に咲いた" : "花火がきれいだった"));
+                    world.Log("夏祭り：" + (fire != null ? fire.displayName + "の魔法術の花火が夜空に咲いた" : "花火がきれいだった"));
                     memo = "夏祭りと花火" + (fire != null ? "（" + fire.displayName + "の花火）" : "");
                     break;
                 }
@@ -348,7 +348,7 @@ namespace LifeSimProto
                     var g7 = ByLetter("G");
                     if (g7 == null || !members.Contains(g7)) break;
                     bool cheer = f != null && world.Now - g7.LastFContact < 240;
-                    float p = 0.05f + g7.SkillOf(2) / 200f + g7.Ab(Abilities.Dex) / 300f + (cheer ? 0.2f : 0f);
+                    float p = 0.05f + g7.SkillOf(Academics.Tools) / 200f + g7.Ab(Abilities.Dex) / 300f + (cheer ? 0.2f : 0f);
                     g7.GrowAbility(Abilities.Dex, 1.5f);
                     if (Random.value < p)
                     {

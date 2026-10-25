@@ -146,11 +146,12 @@ namespace LifeSimProto
 
         public static readonly Spell[] All =
         {
-            new Spell { subject = 5, needSubject = 0, need = 40f, name = "暖炉に火をつける", desc = "談話室があたたかくなり、みんなの気分が少し上がる" },
-            new Spell { subject = 6, needSubject = 1, need = 40f, name = "風邪を軽くする", desc = "選んだ子の風邪を1段階軽くする" },
-            new Spell { subject = 9, needSubject = 2, need = 40f, name = "壊れた物を直す", desc = "寮の古い物を直す（寮の評判＋1）" },
-            new Spell { subject = 7, needSubject = 4, need = 45f, name = "一緒に飛ぶ", desc = "選んだ子と夜空を少し飛ぶ（仲よく・気持ちが育つ）" },
-            new Spell { subject = 8, needSubject = 3, need = 45f, name = "身のこなし", desc = "体術の基本。疲れにくくなる" },
+            // 2026-10-25 科目の作り直しに合わせて、実技・必要な座学をつなぎ直した
+            new Spell { subject = Academics.MagicArts, needSubject = Academics.Theory, need = 40f, name = "暖炉に火をつける", desc = "談話室があたたかくなり、みんなの気分が少し上がる" },
+            new Spell { subject = Academics.Medicine, needSubject = Academics.Herb, need = 40f, name = "風邪を軽くする", desc = "選んだ子の風邪を1段階軽くする" },
+            new Spell { subject = Academics.Alchemy, needSubject = Academics.Tools, need = 40f, name = "壊れた物を直す", desc = "寮の古い物を直す（寮の評判＋1）" },
+            new Spell { subject = Academics.Flight, needSubject = Academics.History, need = 45f, name = "一緒に飛ぶ", desc = "選んだ子と夜空を少し飛ぶ（仲よく・気持ちが育つ）" },
+            new Spell { subject = Academics.Sword, needSubject = Academics.Monster, need = 45f, name = "身のこなし", desc = "剣術の基本の呼吸。疲れにくくなる" },
         };
 
         public static readonly HashSet<int> Unlocked = new HashSet<int>();
@@ -187,26 +188,26 @@ namespace LifeSimProto
             f.GrowAbility(Abilities.Magic, 1f);
             switch (subject)
             {
-                case 5:
+                case Academics.MagicArts:
                     f.ShowBubble("（指先に火を灯す）", 2f);
                     foreach (var c in w.characters)
                         if (c != f && c.Present && w.AreaName(c.transform.position) == "談話室") { c.bored = Mathf.Max(0f, c.bored - 15f); c.PositiveEvent(0.3f); }
                     w.Log("篤が魔法で暖炉に火をつけた。談話室がぽかぽかになった");
                     break;
-                case 6:
+                case Academics.Medicine:
                     if (target == null) return false;
                     f.ShowBubble("（手をかざす）", 2f);
                     target.HealCold();
                     w.rel.Add(f.id, target.id, 3f, w.simTime);
                     w.ChangeLove(target, 2f);
-                    w.Log("篤が回復魔法で" + target.displayName + "の具合を軽くした");
+                    w.Log("篤が魔法医学で" + target.displayName + "の具合を軽くした");
                     break;
-                case 9:
+                case Academics.Alchemy:
                     f.ShowBubble("（直れ…）", 2f);
                     w.dormReputation += 1;
                     w.Log("篤が錬成の魔法で寮の古い椅子を直した（寮の評判 " + w.dormReputation + "）");
                     break;
-                case 7:
+                case Academics.Flight:
                     if (target == null) return false;
                     f.ShowBubble("ちょっと飛んでみる？", 2f);
                     target.ShowBubble(target.Say("like", "わあ…！"), 2f);
@@ -216,10 +217,10 @@ namespace LifeSimProto
                     w.Log("篤が" + target.displayName + "と一緒に少しだけ空を飛んだ");
                     Album.Add(w, "篤と" + target.displayName + "が一緒に空を飛んだ");
                     break;
-                case 8:
+                case Academics.Sword:
                     f.tired = Mathf.Max(0f, f.tired - 30f);
                     f.ShowBubble("（呼吸を整える）", 2f);
-                    w.Log("篤が体術の呼吸で疲れを取った");
+                    w.Log("篤が剣術の呼吸で疲れを取った");
                     break;
             }
             return true;

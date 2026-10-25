@@ -5,7 +5,7 @@ namespace LifeSimProto
     /// <summary>
     /// キャラの能力値（0〜100、画面ではランク S〜E）。全員が少しずつ伸び、篤の分はループで持ち越す。
     /// 体力：体を使う行事・疲れにくさ　魅力：会話の楽しさ・恋の気持ちの育ち方・学園祭
-    /// 器用さ：料理・魔道具・錬成・実技の失敗が減る　魔力：実技の試験と行事・魔力のたまりやすさと使いこなし
+    /// 器用さ：料理・魔道具・錬成・実技の失敗が減る　魔力：実技の試験と行事・魔力のたまりやすさと使いこなし（剣術・ダンジョン実習は体力）
     /// 知力：覚えのよさ（科目の学力の伸び・課題の進み・勉学の試験）
     /// </summary>
     public static class Abilities
@@ -37,10 +37,10 @@ namespace LifeSimProto
             }
         }
 
-        /// <summary>科目の試験に効く能力値（勉学→知力、体術→体力、ほかの実技→魔力）。</summary>
+        /// <summary>科目の試験に効く能力値（座学→知力、剣術・ダンジョン実習→体力、ほかの実技→魔力）。</summary>
         public static int ForSubject(int s)
         {
-            if (s == 8) return Body;
+            if (s == Academics.Sword || s == Academics.Dungeon) return Body;
             return Academics.IsPractical(s) ? Magic : Mind;
         }
 

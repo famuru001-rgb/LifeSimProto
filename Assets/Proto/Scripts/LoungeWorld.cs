@@ -37,6 +37,7 @@ namespace LifeSimProto
         public bool classOnly;    // 実技の授業のときだけ使う
         public bool outdoor;      // 外（雨や雪の日は使われにくい）
         public bool kitchen;      // 台所（お菓子づくり）
+        public bool stars;        // 星を見る場所（夜でも行きやすい）
 
         public int FreeSlot()
         {

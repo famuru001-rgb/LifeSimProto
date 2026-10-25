@@ -33,7 +33,7 @@ namespace LifeSimProto
         public static bool ShowNameTags = false;
         Rect MemoryPanel { get { return new Rect(VW / 2f - 470f, 120f, 940f, 820f); } }
         Rect ChoicePanel { get { return new Rect(VW / 2f - 300f, 380f, 600f, 170f); } }
-        Rect ExamPanel { get { return new Rect(VW / 2f - 470f, 120f, 940f, 96f + Academics.Count * 30f + 40f); } }
+        Rect ExamPanel { get { return new Rect(VW / 2f - 470f, 120f, 940f, 96f + Academics.ActiveCount * 30f + 40f); } }
         Rect InfoLine { get { return new Rect(12, 66, 1400, 32); } }
         // 左右・下の欄（しまうと画面の端へ滑る。SimHud.Slide.cs）。…Base はしまう前の位置
         Rect TablePanelBase { get { return new Rect(VW - 492, 108, 480, 400); } }
@@ -814,7 +814,8 @@ namespace LifeSimProto
             y += 30;
             for (int s = 0; s < Academics.Count; s++)
             {
-                GUI.Label(new Rect(r.x + 14, y, 100, 26), Academics.Names[s], small);
+                if (!Academics.IsActive(s)) continue; // 予備の枠は出さない
+                GUI.Label(new Rect(r.x + 14, y, 110, 26), Academics.Names[s], small);
                 var list = Academics.LastExam[s];
                 var parts = new List<string>();
                 for (int i = 0; i < list.Count; i++)

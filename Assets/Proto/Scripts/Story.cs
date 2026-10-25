@@ -83,20 +83,20 @@ namespace LifeSimProto
         {
             switch (c.letter)
             {
-                case "A": return f.SkillOf(3) >= Abilities.RankMin("B");
-                case "B": return w.PlaceOpen(LoungeWorld.Greenhouse) && f.SkillOf(1) >= Abilities.RankMin("C");
+                case "A": return f.SkillOf(Academics.Ancient) >= Abilities.RankMin("B");
+                case "B": return w.PlaceOpen(LoungeWorld.Greenhouse) && f.SkillOf(Academics.Herb) >= Abilities.RankMin("C");
                 case "C": return w.dormReputation >= 30 && f.Ab(Abilities.Body) >= Abilities.RankMin("C");
                 case "D":
                 {
                     var g = ByLetter(w, "G");
                     return f.Ab(Abilities.Dex) >= Abilities.RankMin("B") && g != null && w.rel.Get(c.id, g.id) >= 40f;
                 }
-                case "E": return w.PlaceOpen(LoungeWorld.Library) && f.SkillOf(3) >= Abilities.RankMin("C");
+                case "E": return w.PlaceOpen(LoungeWorld.Library) && f.SkillOf(Academics.Ancient) >= Abilities.RankMin("C");
                 case "G": return Flags.Contains("toolswin");
                 case "H": return w.PlaceOpen(LoungeWorld.Observatory) && f.Ab(Abilities.Magic) >= Abilities.RankMin("D");
                 case "I": return w.dormReputation >= 40 && Flags.Contains("cookwin");
-                case "J": return w.PlaceOpen(LoungeWorld.Workshop) && FMagic.Has(9);
-                case "K": return w.PlaceOpen(LoungeWorld.Observatory) && f.SkillOf(4) >= Abilities.RankMin("C");
+                case "J": return w.PlaceOpen(LoungeWorld.Workshop) && FMagic.Has(Academics.Alchemy);
+                case "K": return w.PlaceOpen(LoungeWorld.Observatory) && f.SkillOf(Academics.Theory) >= Abilities.RankMin("C");
             }
             return true;
         }
@@ -156,7 +156,7 @@ namespace LifeSimProto
                         case "H": k = "屋上の天文台が開いている・篤の魔力 D 以上"; break;
                         case "I": k = "寮の評判40以上・その周の料理対決で篤かリアが優勝"; break;
                         case "J": k = "工房が開いている・篤が錬成の魔法を使える"; break;
-                        case "K": k = "屋上の天文台が開いている・篤の占星術 C 以上"; break;
+                        case "K": k = "屋上の天文台が開いている・篤の魔法理論 C 以上"; break;
                         default: k = ""; break;
                     }
                     return "篤と恋人・" + k;

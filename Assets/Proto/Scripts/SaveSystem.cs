@@ -22,6 +22,7 @@ namespace LifeSimProto
         public double[] loveCooldown;
         // ループで残る物
         public float[] fSkills, fAbilities;
+        public int subjectVersion;   // 科目の並びの版（Academics.Version）。違う版のセーブの学力・魔法は使わない
         public List<string> zukan = new List<string>(), openedPlaces = new List<string>(), nightTogether = new List<string>(), album = new List<string>();
         public List<int> magic = new List<int>();
         public bool escaped, endless;
@@ -110,7 +111,7 @@ namespace LifeSimProto
                 loop = Loop.Count, day = w.Day, gameMinutes = w.gameMinutes,
                 dormReputation = w.dormReputation,
                 money = w.player != null ? w.player.money : 0,
-                fSkills = Loop.fSkills, fAbilities = Loop.fAbilities,
+                fSkills = Loop.fSkills, fAbilities = Loop.fAbilities, subjectVersion = Academics.Version,
                 escaped = Loop.Escaped, endless = Loop.EndlessDays,
             };
             if (w.player != null) foreach (var kv in w.player.inventory) if (kv.Value > 0) d.items.Add(new IntPair { key = (int)kv.Key, value = kv.Value });
@@ -145,14 +146,15 @@ namespace LifeSimProto
             var d = Read(slot);
             if (d == null) return false;
             Loop.Count = Mathf.Max(1, d.loop);
-            Loop.fSkills = d.fSkills != null && d.fSkills.Length > 0 ? d.fSkills : null;
+            bool sameSubjects = d.subjectVersion == Academics.Version; // 2026-10-25 科目の作り直しより前のセーブは、学力と篤の魔法を最初から
+            Loop.fSkills = sameSubjects && d.fSkills != null && d.fSkills.Length == Academics.Count ? d.fSkills : null;
             Loop.fAbilities = d.fAbilities != null && d.fAbilities.Length > 0 ? d.fAbilities : null;
             Loop.Escaped = d.escaped; Loop.EndlessDays = d.endless; Loop.AskChoice = false;
             Fill(Loop.Zukan, d.zukan);
             Loop.OpenedPlaces.Clear(); if (d.openedPlaces != null) Loop.OpenedPlaces.AddRange(d.openedPlaces);
             Fill(Loop.NightTogether, d.nightTogether);
             Album.Entries.Clear(); if (d.album != null) Album.Entries.AddRange(d.album);
-            FMagic.Unlocked.Clear(); if (d.magic != null) foreach (var m in d.magic) FMagic.Unlocked.Add(m);
+            FMagic.Unlocked.Clear(); if (sameSubjects && d.magic != null) foreach (var m in d.magic) FMagic.Unlocked.Add(m);
             HLog.Entries.Clear(); if (d.hlog != null) HLog.Entries.AddRange(d.hlog);
             HLog.Total.Clear(); if (d.hTotal != null) foreach (var kv in d.hTotal) HLog.Total[kv.key] = kv.value;
             Story.Done.Clear(); if (d.storyDone != null) foreach (var kv in d.storyDone) Story.Done[kv.key] = kv.value;
