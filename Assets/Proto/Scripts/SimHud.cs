@@ -178,9 +178,7 @@ namespace LifeSimProto
             float now = Time.unscaledTime;
             if (hit == null)
             {
-                // 篤を選んでいるときは、床のクリックで移動
-                Vector3 p;
-                if (selected != null && selected.IsTarget && FloorPoint(ray, out p)) { selected.OrderMove(p); return; }
+                // 何もない所を左クリック：選ぶのをやめる（篤の移動は右クリック。famuru 2026-10-25）
                 Select(null);
                 return;
             }
@@ -717,8 +715,8 @@ namespace LifeSimProto
             {
                 "右ドラッグ：視点を回す　ホイール：近づく/離れる",
                 "WASD：移動　Q/E：回す　R/F：上下　中ドラッグ：平行移動",
-                "キャラをクリック：選ぶ　篤を選んで床をクリック：移動",
-                "キャラを右クリック：話しかける・渡す・エッチに誘う・お願い",
+                "キャラをクリック：選ぶ（何もない所で選ぶのをやめる）",
+                "床を右クリック：篤が移動　キャラを右クリック：選択肢",
                 "キャラを選ぶと、お願い・渡す のボタン",
                 "ダブルクリック：追いかける（Escで解除）",
                 "スペース：一時停止　1〜4：速さ　Tab：壁",

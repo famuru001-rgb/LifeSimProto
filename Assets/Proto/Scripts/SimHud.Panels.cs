@@ -121,7 +121,7 @@ namespace LifeSimProto
         void DrawFActions(Rect r, ref float y)
         {
             var f = selected;
-            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "床をクリックで移動・キャラを右クリックで話しかける・誘う・渡す", tiny); y += 24;
+            GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "床を右クリックで移動・キャラを右クリックで話しかける・誘う・渡す", tiny); y += 24;
             if (GUI.Button(new Rect(r.x + 14, y, 180, 32), "寮の手伝い（+20）", smallButton)) f.OrderWork();
             if (GUI.Button(new Rect(r.x + 202, y, 200, 32), "街のアルバイト（+70）", smallButton)) f.OrderPartTime();
             if (GUI.Button(new Rect(r.x + 410, y, 150, 32), "購買部を開く", smallButton)) shopOpen = true;
@@ -175,6 +175,16 @@ namespace LifeSimProto
         // ---- ようす ----
         void TabNowGui(SimCharacter c, float w, ref float y)
         {
+            // エッチの場面の今の様子（2026-10-25 famuru）
+            var hl = c.HStatusLines();
+            if (hl != null)
+            {
+                Color oc = GUI.color;
+                GUI.color = new Color(1f, 0.75f, 0.85f);
+                foreach (var l in hl) { GUI.Label(new Rect(4, y, w, 22), l, small); y += 22; }
+                GUI.color = oc;
+                y += 6;
+            }
             if (c.statuses.Count == 0) { GUI.Label(new Rect(4, y, w, 22), "状態：ふつう", small); y += 24; }
             foreach (var st in c.statuses)
             {
@@ -449,6 +459,13 @@ namespace LifeSimProto
                 any = true;
                 GUI.Label(new Rect(x + 22, y, w - 22, 22), "―― " + note, small);
                 y += 22;
+            }
+            // 場面の流れ（時刻つきの文。HStory.cs）
+            if (e.story != null && e.story.Count > 0)
+            {
+                any = true;
+                GUI.Label(new Rect(x + 22, y, w - 22, 20), "流れ：", tiny); y += 20;
+                foreach (var l in e.story) { GUI.Label(new Rect(x + 32, y, w - 32, 20), l, tiny); y += 20; }
             }
             if (!any) { GUI.Label(new Rect(x + 22, y, w - 22, 20), "（この記録には文がない）", tiny); y += 20; }
             GUI.color = old;

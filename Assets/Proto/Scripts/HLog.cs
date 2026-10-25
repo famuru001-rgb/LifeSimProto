@@ -23,6 +23,7 @@ namespace LifeSimProto
             public float[] ml;             // 1人ずつ：量（ml）の合計（letters と同じ順）
             public int finishes;           // フィニッシュの回数
             public float mlTotal;          // 量（ml）の合計
+            public List<string> story = new List<string>(); // 場面の流れの文（時刻つき。HStory.cs。2026-10-25）
         }
 
         public static readonly List<Entry> Entries = new List<Entry>();

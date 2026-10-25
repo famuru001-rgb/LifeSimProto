@@ -3538,6 +3538,7 @@ namespace LifeSimProto
             privateUntil = until;
             privateRoom = r;
             privateOnFloor = floorSpot;
+            privateLie = false;
             goal = Goal.None;
             target = null;
             ReleaseSeatAndPoi();
@@ -3978,7 +3979,7 @@ namespace LifeSimProto
         Pose CurrentPose()
         {
             bool onFloor = seat != null && seat.floorSeat;
-            if (state == State.Private) return privateOnFloor ? Pose.SitFloor : Pose.Sit;
+            if (state == State.Private) return privateLie ? (privateOnFloor ? Pose.LieFloor : Pose.Lie) : (privateOnFloor ? Pose.SitFloor : Pose.Sit);
             if (dozing && state == State.Sleeping) return onFloor ? Pose.SitFloor : Pose.Sit;
             if (state == State.Sleeping || (state == State.Talking && sickRest)) return onFloor ? Pose.LieFloor : Pose.Lie;
             if (state == State.Bathing) return Pose.Soak;

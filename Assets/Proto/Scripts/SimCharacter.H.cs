@@ -65,6 +65,22 @@ namespace LifeSimProto
 
         public bool InHSession { get { return hs != null; } }
 
+        /// <summary>エッチの場面の今の様子（キャラの情報に出す）。場面の中でなければ null。</summary>
+        public List<string> HStatusLines() { return hs != null ? hs.StatusLines(this) : null; }
+
+        bool privateLie; // エッチの場面で、ベッドに寝転んでいる
+
+        /// <summary>エッチの場面の中で、場所と姿勢を変える（ベッドに寝転ぶ／腰かける）。</summary>
+        void PlaceInPrivate(Vector3 pos, Vector3 facing, bool floor, bool lie)
+        {
+            if (state != State.Private) return;
+            transform.position = pos;
+            if (facing.sqrMagnitude > 0.001f) transform.rotation = Quaternion.LookRotation(facing);
+            privateOnFloor = floor;
+            privateLie = lie;
+            ApplyPose();
+        }
+
         /// <summary>篤の精力：ふだんの回復（場面の中は HSession が動かす）。</summary>
         void UpdateVigor(float gm)
         {
@@ -195,6 +211,125 @@ namespace LifeSimProto
                 SetPhase("start");
                 nextRotate = w.Now + HBook.RotateMin;
                 nextJoin = w.Now + HBook.JoinCheckMin;
+                Story("start", Direct != null ? Direct.c : null);
+                Arrange();
+            }
+
+            // ---------------- 場面の流れの文（記録。HStory.cs） ----------------
+            void Story(string ev, SimCharacter who, float ml = 0f)
+            {
+                var names = new List<string>();
+                foreach (var p in ps) names.Add(p.c.displayName);
+                var v = new Dictionary<string, string>
+                {
+                    { "名", who != null ? who.displayName : (names.Count > 0 ? names[0] : "") },
+                    { "篤", f.displayName },
+                    { "場所", spot != null ? spot.name : "" },
+                    { "みんな", string.Join("・", names.ToArray()) },
+                    { "回", finishes.ToString() },
+                    { "ml", ml.ToString("0.0") },
+                    { "合計", entry != null ? entry.mlTotal.ToString("0.0") : "0" },
+                };
+                HStory.Add(world, entry, ev, who != null ? who.letter : null, v);
+            }
+
+            // ---------------- ベッドの上の並び（2026-10-25 famuru：している子はベッドに寝転ぶ、順番待ちと休憩はベッドに腰かける） ----------------
+            string arrangedSig;
+
+            string RoleSig()
+            {
+                var sb = new System.Text.StringBuilder();
+                foreach (var p in ps) sb.Append(p.c.id).Append((int)p.role).Append(',');
+                return sb.ToString();
+            }
+
+            void Arrange()
+            {
+                arrangedSig = RoleSig();
+                var room = spot != null ? spot.room : null;
+                if (room == null || room.bed == null) return; // 個室のベッドのときだけ（ほかの場所は席に座ったまま）
+                var lie = new List<SimCharacter> { f };
+                var sit = new List<SimCharacter>();
+                foreach (var p in ps)
+                {
+                    if (phase != "after" && (p.role == HRole.Direct || p.role == HRole.Pet)) lie.Add(p.c);
+                    else if (phase == "after") lie.Add(p.c);
+                    else sit.Add(p.c);
+                }
+                Vector3 along = room.bed.forward, edge = room.bedEdge;
+                float width = 0.8f * Mathf.Clamp(room.bedSpread, 1f, 2f);
+                float gap = Mathf.Min(0.42f, width / lie.Count);
+                Vector3 center = room.bed.position - edge * 0.08f;
+                for (int i = 0; i < lie.Count; i++)
+                {
+                    Vector3 pos = center + edge * ((i - (lie.Count - 1) / 2f) * gap);
+                    lie[i].PlaceInPrivate(pos, along, false, true);
+                }
+                // 腰かける：ベッドの縁（4人まで）、5人目からはベッドの前の床
+                float[] offs = sit.Count <= 2 ? new[] { -0.45f, 0.35f } : (sit.Count == 3 ? new[] { -0.55f, -0.05f, 0.45f } : new[] { -0.72f, -0.25f, 0.22f, 0.69f });
+                for (int i = 0; i < sit.Count; i++)
+                {
+                    if (i < 4)
+                    {
+                        Vector3 pos = room.bed.position + along * (offs[Mathf.Min(i, offs.Length - 1)] * room.bedSpread) + edge * (room.bedEdgeDist + 0.12f);
+                        sit[i].PlaceInPrivate(pos, edge, false, false);
+                    }
+                    else
+                    {
+                        int row = (i - 4) / 4, col = (i - 4) % 4;
+                        float[] o4 = { -0.72f, -0.25f, 0.22f, 0.69f };
+                        Vector3 pos = room.bed.position + along * (o4[col] * room.bedSpread) + edge * (room.bedEdgeDist + 0.85f + row * 0.6f);
+                        sit[i].PlaceInPrivate(pos, -edge, true, false);
+                    }
+                }
+            }
+
+            // ---------------- 今の様子（キャラの情報の「ようす」に出す） ----------------
+            static string PhaseName(string p)
+            {
+                switch (p)
+                {
+                    case "start": return "始まり";
+                    case "mid1": return "前半";
+                    case "mid2": return "中盤";
+                    case "mid3": return "後半";
+                    case "finish": return "フィニッシュ";
+                    case "resume": return "ひと息";
+                    case "after": return "終わったあと";
+                    default: return p;
+                }
+            }
+
+            static string RoleName(HRole r)
+            {
+                switch (r)
+                {
+                    case HRole.Direct: return "篤の相手";
+                    case HRole.Pet: return "いっしょに";
+                    case HRole.Wait: return "順番待ち";
+                    default: return "休憩中";
+                }
+            }
+
+            public List<string> StatusLines(SimCharacter me)
+            {
+                var res = new List<string>();
+                int min = Mathf.RoundToInt((float)(world.Now - startAt));
+                res.Add("エッチ中：" + PhaseName(phase) + "　" + (spot != null ? spot.name : "") + "（" + (min / 60 > 0 ? (min / 60) + "時間" : "") + (min % 60) + "分）");
+                var mine = ps.Find(p => p.c == me);
+                if (me == f) res.Add("篤：精力 " + Mathf.RoundToInt(f.vigor) + "／100");
+                else if (mine != null) res.Add("今：" + RoleName(mine.role) + (sick ? "（体調が悪いので軽めに）" : ""));
+                var parts = new List<string>();
+                foreach (var p in ps) parts.Add(p.c.displayName + "（" + RoleName(p.role) + "）");
+                res.Add("いっしょ：" + string.Join("・", parts.ToArray()));
+                res.Add("フィニッシュ " + finishes + "回・合計 " + (entry != null ? entry.mlTotal.ToString("0.0") : "0.0") + "ml" + (me != f ? "　篤の精力 " + Mathf.RoundToInt(f.vigor) : ""));
+                if (joining.Count > 0)
+                {
+                    var jn = new List<string>();
+                    foreach (var j in joining) jn.Add(j.displayName);
+                    res.Add("向かっている：" + string.Join("・", jn.ToArray()));
+                }
+                return res;
             }
 
             int Size { get { int n = 1; foreach (var p in ps) if (p.role != HRole.Rest) n++; return n; } }
@@ -257,6 +392,7 @@ namespace LifeSimProto
 
                 UpdateGauges(gm);
                 UpdateJoining(dt);
+                if (RoleSig() != arrangedSig) Arrange(); // 順番の入れかえ・休憩・途中参加で並びを直す
 
                 if (phase == "after")
                 {
@@ -289,11 +425,12 @@ namespace LifeSimProto
 
             void NextPhase()
             {
+                var dd = Direct != null ? Direct.c : null;
                 switch (phase)
                 {
-                    case "start": SetPhase("mid1"); break;
-                    case "mid1": if (sick) DoFinish(); else SetPhase("mid2"); break;
-                    case "mid2": SetPhase("mid3"); break;
+                    case "start": SetPhase("mid1"); Story("mid1", dd); break;
+                    case "mid1": if (sick) DoFinish(); else { SetPhase("mid2"); Story("mid2", dd); } break;
+                    case "mid2": SetPhase("mid3"); Story("mid3", dd); break;
                     case "mid3": DoFinish(); break;
                     case "finish": AfterFinish(); break;
                     case "resume":
@@ -313,6 +450,7 @@ namespace LifeSimProto
                 {
                     float ml = HBook.Ml(f.vigor, f.desire, finishes);
                     HLog.AddFinish(entry, d.c.letter, ml);
+                    Story("finish", d.c, ml);
                 }
                 f.vigor = Mathf.Max(0f, f.vigor - HBook.VigorPerFinish);
                 f.desire = Mathf.Max(0f, f.desire - HBook.AtsushiFinishDesireDrop);
@@ -361,6 +499,7 @@ namespace LifeSimProto
             {
                 p.role = HRole.Rest;
                 p.restSince = world.Now;
+                Story("rest", p.c);
                 Say(p.c, "rest_in");
                 var see = ps.Find(x => x != p && (x.role == HRole.Direct || x.role == HRole.Pet));
                 if (see != null && Random.value < 0.6f) Say(see.c, "rest_see");
@@ -372,7 +511,7 @@ namespace LifeSimProto
                 if (Direct == null)
                 {
                     var next = ps.Find(p => p.role == HRole.Wait) ?? ps.Find(p => p.role == HRole.Pet);
-                    if (next != null) { next.role = HRole.Direct; Say(next.c, "turn"); }
+                    if (next != null) { next.role = HRole.Direct; Say(next.c, "turn"); Story("turn", next.c); }
                 }
                 foreach (var p in ps)
                 {
@@ -394,6 +533,7 @@ namespace LifeSimProto
                 ps.Remove(d); ps.Add(d);
                 if (Engaged > HBook.MaxEngaged) d.role = HRole.Wait;
                 Say(next.c, "turn");
+                Story("turn", next.c);
             }
 
             void UpdateGauges(float gm)
@@ -411,6 +551,7 @@ namespace LifeSimProto
                         {
                             p.role = Engaged >= HBook.MaxEngaged ? HRole.Wait : HRole.Pet;
                             Say(c, "rest_back");
+                            Story("back", c);
                             if (Direct == null) FillEngaged();
                         }
                         continue;
@@ -518,6 +659,8 @@ namespace LifeSimProto
                 f.privateGroupSize = ps.Count + 1;
                 if (Direct == null) FillEngaged();
                 Say(j, "join_in");
+                Story("join", j);
+                Arrange();
                 world.Log("♥ " + j.displayName + "が加わった（" + spot.name + "）");
             }
 
@@ -525,6 +668,8 @@ namespace LifeSimProto
             void GoAfter()
             {
                 SetPhase("after");
+                Story("after", Direct != null ? Direct.c : null);
+                Arrange(); // 終わったあとは、みんなでベッドに寝転ぶ
                 foreach (var p in ps) if (Random.value < 0.7f) Say(p.c, "after");
                 Say(f, "after");
             }
@@ -545,6 +690,7 @@ namespace LifeSimProto
                     if (c.state == State.Private) c.EndPrivate();
                     c.hsEnded = false;
                 }
+                Story("end", null);
                 if (entry != null) world.Log("♥ エッチが終わった（フィニッシュ " + finishes + "回・合計 " + entry.mlTotal.ToString("0.0") + "ml）");
             }
         }

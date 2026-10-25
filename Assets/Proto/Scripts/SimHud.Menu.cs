@@ -6,7 +6,8 @@ namespace LifeSimProto
 {
     /// <summary>
     /// キャラを右クリックしたときの選択肢（2026-10-25 famuru）。
-    /// ・左クリック：キャラを選ぶ（そのキャラの画面が出る）だけ。篤を選んで床をクリックすると移動
+    /// ・左クリック：キャラを選ぶ（そのキャラの画面が出る）だけ。何もない所で選ぶのをやめる
+    /// ・床を右クリック：篤がそこへ移動
     /// ・右クリック（押してすぐ離す）：選択肢が出る。篤が話しかける・プレゼントする・エッチに誘う／ヒロインを選んでいるときは「〇〇に会いに行って」とお願い
     /// ・右ボタンを押したまま動かすのは、今までどおりカメラを回す
     /// </summary>
@@ -53,7 +54,15 @@ namespace LifeSimProto
             Ray ray = world.mainCamera.ScreenPointToRay(new Vector3(mp.x, mp.y, 0f));
             RaycastHit info;
             if (Physics.Raycast(ray, out info, 300f)) hit = info.collider.GetComponentInParent<SimCharacter>();
-            if (hit == null || F == null) { CloseMenu(); return; }
+            if (F == null) { CloseMenu(); return; }
+            if (hit == null)
+            {
+                // 何もない所（床）を右クリック：篤がそこへ移動（famuru 2026-10-25）
+                CloseMenu();
+                Vector3 p;
+                if (FloorPoint(ray, out p)) F.OrderMove(p);
+                return;
+            }
             menuChar = hit;
             menuSelected = selected;
             menuGift = false;
