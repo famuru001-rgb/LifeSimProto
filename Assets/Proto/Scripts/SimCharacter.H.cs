@@ -78,9 +78,17 @@ namespace LifeSimProto
         string HSay(string scene, int size, string other, bool sick = false)
         {
             string key = letter;
+            // 新しい演出（2026-10-25）：最中の本文を持たない子は、最中を声で出す（区切りの場面だけせりふ）
+            if (HLines.IsMid(scene) && HLines.Has(key) && !HLines.HasMidBody(key))
+            {
+                string v = HLines.Voice(key, scene);
+                if (v != null) return v;
+            }
             var conds = HConds(sick);
             string s = HLines.Build(key, scene, size, conds, other, profile != null ? profile.callF : null, letter == "A" ? 1 : -1, letter == "A", displayName);
             if (s != null) return s;
+            // せりふのファイルがある子は、ない場面では今までのせりふを出さない（最中なら声、ほかは黙る）
+            if (HLines.Has(key)) return HLines.IsMid(scene) || scene == "wait" || scene == "rest" ? HLines.Voice(key, "mid1") : null;
             // まだせりふがない子：今までのせりふ
             if (scene == "invite") return IsTarget ? "…いいか？" : "ねえ…エッチしよ？";
             if (scene == "move" || scene == "after" || scene == "wait" || scene == "rest") return null;

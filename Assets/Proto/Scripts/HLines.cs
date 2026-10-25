@@ -52,6 +52,36 @@ namespace LifeSimProto
 
         public static bool Has(string key) { return Of(key).Count > 0; }
 
+        // ---------- 新しい演出（2026-10-25）：最中は「声」が中心、区切りの場面だけせりふ ----------
+        static readonly HashSet<string> MidScenes = new HashSet<string> { "mid1", "mid2", "mid3", "resume", "pet" };
+
+        /// <summary>最中の場面か（声の演出を使う場面）。</summary>
+        public static bool IsMid(string scene) { return MidScenes.Contains(scene); }
+
+        /// <summary>最中の本文（共通または条件つき）を持っているか。持っていなければ、その子は最中を声で出す。</summary>
+        public static bool HasMidBody(string key)
+        {
+            foreach (var l in Of(key))
+                if (l.part == "本文" && l.cond != "sick" && (MidScenes.Contains(l.scene) || l.scene == "mid")) return true;
+            return false;
+        }
+
+        /// <summary>声（act の頭）を1つか2つ。なければ null。</summary>
+        public static string Voice(string key, string scene)
+        {
+            string grp = Group(scene);
+            var c = new List<Line>(); var w = new List<float>();
+            foreach (var l in Of(key)) if (l.part == "頭" && l.type == "act" && l.scene == grp) { c.Add(l); w.Add(1f); }
+            if (c.Count == 0) return null;
+            var a = PickWeighted(key, c, w); Remember(key, a.text);
+            if (Random.value < 0.3f && c.Count > 1)
+            {
+                var b = PickWeighted(key, c, w); Remember(key, b.text);
+                if (b.text != a.text) return a.text + "　" + b.text;
+            }
+            return a.text;
+        }
+
         /// <summary>場面の群。頭・しめと条件つきの本文はこの群で選ぶ。</summary>
         public static string Group(string scene)
         {

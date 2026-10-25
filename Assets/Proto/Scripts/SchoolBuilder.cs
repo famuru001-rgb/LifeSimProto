@@ -170,6 +170,9 @@ namespace LifeSimProto
             // 部屋
             foreach (var r in north) SchoolRoom(f, r, 25, SCor0, false);
             foreach (var r in south) SchoolRoom(f, r, SCor1, SBack, true);
+            // 内装と什器（SchoolInterior.cs）
+            foreach (var r in north) FurnishSchoolRoom(f, r, 25, SCor0, false);
+            foreach (var r in south) FurnishSchoolRoom(f, r, SCor1, SBack, true);
         }
 
         void SchoolRoom(int f, SRoom r, float sy0, float sy1, bool southSide)
@@ -306,6 +309,7 @@ namespace LifeSimProto
             Label(S3(mid, 10f, 2.6f), name);
             AddArea(name, SR(sx0, 0, sx1, SVer0), 0);
             AddArea(name + "の2階席", SR(sx0, 20.5f, sx1, SVer0), 1);
+            FurnishSchoolHall(sx0, sx1, name);
         }
 
         // ================= 本館の中庭（北に開く。噴水・石畳の小道・丸い休憩所） =================
