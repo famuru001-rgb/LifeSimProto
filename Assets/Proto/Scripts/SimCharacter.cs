@@ -592,9 +592,10 @@ namespace LifeSimProto
                 if (state == State.Activity && poi != null) FaceTowards(poi.lookAt, dt);
                 if (state == State.Activity && poi == null && gathering != null) FaceTowards(gatherFocus, dt);
                 if (state == State.Activity && goal == Goal.None && choice == Choice.Hover && world.RomanceTarget != null) FaceTowards(world.RomanceTarget.transform.position, dt);
+                if (state == State.Private && hs != null && hs.f == this) hs.Tick(dt); // エッチの場面の進行は篤が動かす（SimCharacter.H.cs）
                 if (bubble == null && state != State.Sleeping && state != State.Private) IdleBubbles(dt);
-                // 二人きりの時間：寄り添って話す（描写はしない）
-                else if (bubble == null && state == State.Private && Random.value < dt * 0.04f)
+                // 二人きりの時間：エッチの場面（HSession）がない時だけ、今までのせりふ
+                else if (bubble == null && state == State.Private && hs == null && Random.value < dt * 0.04f)
                 {
                     string pl = privateGroupSize >= 3 && Random.value < 0.5f ? Pick("n_private_group") : null; // 3人以上のとき
                     if (pl == null) pl = Pick("n_private");
@@ -705,6 +706,7 @@ namespace LifeSimProto
             ExpireMods();
             bool studyingNow = ((state == State.Sitting || state == State.Activity) && act == Act.Study) || (state == State.Away && awayKind == AwayKind.Class) || inPlaceClass;
             desire += gm * DesireRate() * (studyingNow ? 2f : 1f); // 勉強中はたまりやすい
+            UpdateVigor(gm); // 篤の精力（SimCharacter.H.cs）
             if (GetStage(StatusLine.ManaOut) == 0) mana += gm * (hobby == HobbyKind.Magic ? 0.035f : 0.02f) * (0.5f + Ab(Abilities.Magic) / 100f); // 魔力が強い子ほどたまりやすい
 
             float lonelyMul = RateMul(NeedKind.Lonely), tiredMul = RateMul(NeedKind.Tired), boredMul = RateMul(NeedKind.Bored);
@@ -725,7 +727,8 @@ namespace LifeSimProto
                     else { study -= gm * 0.35f; weekStudy += gm * 0.35f; }
                     break;
                 case State.Private:
-                    desire -= gm * 4f * desireBuild.Relief * ReliefMul(NeedKind.Desire); lonely -= gm * 2f; loveNeed -= gm * 3f; lastFContact = world.Now; break;
+                    if (hs == null) desire -= gm * 4f * desireBuild.Relief * ReliefMul(NeedKind.Desire); // 場面の中はフィニッシュで下がる（HSession）
+                    lonely -= gm * 2f; loveNeed -= gm * 3f; lastFContact = world.Now; break;
                 case State.Sleeping:
                 {
                     float recover = 0.6f;
@@ -1181,7 +1184,7 @@ namespace LifeSimProto
                 float sum = 0f;
                 foreach (var c in world.characters)
                     if (!c.IsTarget && c.LoveStage >= 2) { float x = rom.love[c.id] / 50f; sum += x * x; }
-                return (DesireBase + Mathf.Min(0.15f, 0.015f * sum)) * RateMul(NeedKind.Desire);
+                return (DesireBase + Mathf.Min(0.15f, 0.015f * sum)) * RateMul(NeedKind.Desire) * VigorDesireMul(); // 精力が多いと増えやすい
             }
             float love = 0f;
             if (LoveStage >= 2) { float l = rom.love[id] / 50f; love = 0.025f * l * l * l; }
@@ -1714,7 +1717,7 @@ namespace LifeSimProto
                     if (now >= awayUntil) ReturnHome();
                     return;
                 case State.Private:
-                    if (now >= privateUntil) EndPrivate();
+                    if (now >= privateUntil || (hs == null && privateUntil > 1e17)) EndPrivate();
                     return;
                 case State.Eating:
                     if (now < eatUntil) return;
@@ -3317,10 +3320,10 @@ namespace LifeSimProto
                 }
                 privateEscorts.Clear();
             }
-            ShowBubble("ねえ…エッチしよ？", 1.5f);
-            yield return new WaitForSeconds(1.5f);
-            partner.ShowBubble("うん", 1.2f);
-            yield return new WaitForSeconds(1.2f);
+            ShowBubble(HSay("invite", group.Count, partner.displayName) ?? "ねえ…エッチしよ？", 2f);
+            yield return new WaitForSeconds(2f);
+            partner.ShowBubble(partner.HSay("invite", group.Count, displayName) ?? "うん", 1.6f);
+            yield return new WaitForSeconds(1.6f);
 
             // 場所を選ぶ：個室（女の子の部屋・篤の部屋）か、開いている場所（温室・図書室・屋上の天文台・中庭）で、ほかの人がいない所
             var spot = PickPrivateSpot(group, f, girl);
@@ -3329,7 +3332,7 @@ namespace LifeSimProto
             if (spot == null) { CancelPrivate(group); yield break; }
             for (int i = 0; i < group.Count; i++) group[i].GoPrivate(spot.walkTo[i % spot.walkTo.Count], spot.name);
 
-            float t = 0f;
+            float t = 0f, moveTalk = 2f;
             while (true)
             {
                 bool all = true;
@@ -3337,13 +3340,20 @@ namespace LifeSimProto
                 if (all) break;
                 t += Time.deltaTime;
                 if (t > 60f) break;
+                moveTalk -= Time.deltaTime;
+                if (moveTalk <= 0f)
+                {
+                    moveTalk = Random.Range(3f, 5f);
+                    var mvSp = group[Random.Range(0, group.Count)];
+                    if (mvSp.bubble == null) { var mvLine = mvSp.HSay("move", group.Count, mvSp == partner ? displayName : partner.displayName); if (mvLine != null) mvSp.ShowBubble(mvLine, 2.2f); }
+                }
                 yield return null;
             }
             var arrived = group.FindAll(c => c.privateArrived);
             if (!arrived.Contains(f) || arrived.Count < 2) { CancelPrivate(group); yield break; }
             foreach (var c in group) if (!arrived.Contains(c)) c.CancelPrivateSelf();
 
-            double until = world.Now + 30.0 + 10.0 * (arrived.Count - 2);
+            double until = double.MaxValue; // 終わりはエッチの場面（HSession）が決める
             var names = new List<string>();
             var spots = spot.Spots(arrived.Count);
             for (int i = 0; i < arrived.Count; i++)
@@ -3354,7 +3364,8 @@ namespace LifeSimProto
                 names.Add(arrived[i].displayName);
             }
             world.Log("♥ " + string.Join("・", names.ToArray()) + "が" + spot.name + "でエッチしている");
-            HLog.Record(world, arrived, spot.name, this); // エッチの記録（誘った人＝この子）
+            var hEntry = HLog.Record(world, arrived, spot.name, this); // エッチの記録（誘った人＝この子）
+            new HSession(world, f, arrived, spot, hEntry); // 場面の流れ・順番・休憩・途中参加・精力（SimCharacter.H.cs）
             // 夜（21時〜朝）なら「夜をいっしょに過ごした」と記録する（その周だけ。物語の針の条件）
             float mm = world.MinuteOfDay;
             if (mm >= 21f * 60f || LoungeWorld.IsNight(mm))
@@ -3486,7 +3497,7 @@ namespace LifeSimProto
         {
             if (privateRoom != null) transform.position = world.NearestFree(privateRoom.bed.approach + new Vector3(Random.Range(-0.5f, 0.5f), 0f, Random.Range(-0.4f, 0.6f)));
             else transform.position = world.NearestFree(transform.position + transform.forward * 0.7f);
-            desire *= 1f - desireBuild.Relief; // たまりが少なければ0に、多いと少し残る
+            if (!hsEnded) desire *= 1f - desireBuild.Relief; // たまりが少なければ0に、多いと少し残る（エッチの場面ではフィニッシュで下がる）
             lonely = Mathf.Max(0f, lonely - 40f);
             loveNeed = 0f;
             if (!IsTarget)
