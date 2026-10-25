@@ -160,7 +160,7 @@ namespace LifeSimProto.EditorTools
                         var rig = w.mainCamera != null ? w.mainCamera.GetComponent<CameraRig>() : null;
                         if (c == null || rig == null || c.room == null) { log.AppendLine("cam: ng"); break; }
                         rig.follow = null;
-                        rig.pivot = new Vector3(c.room.rect.center.x, LoungeWorld.Floor2Y + 0.5f, c.room.rect.center.y);
+                        rig.pivot = new Vector3(c.room.rect.center.x, LoungeWorld.FloorY(c.room.floor) + 0.5f, c.room.rect.center.y);
                         rig.distance = a.Length > 2 ? float.Parse(a[2], System.Globalization.CultureInfo.InvariantCulture) : 6f;
                         rig.pitch = a.Length > 3 ? float.Parse(a[3], System.Globalization.CultureInfo.InvariantCulture) : 60f;
                         w.wallMode = WallMode.Low;

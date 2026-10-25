@@ -45,9 +45,10 @@ namespace LifeSimProto
         }
     }
 
-    /// <summary>1階と2階をつなぐ階段。</summary>
+    /// <summary>上下の階をつなぐ階段（lowerFloor の階と、その1つ上の階）。</summary>
     public class Stair
     {
+        public int lowerFloor;
         public Vector3 bottomApproach, bottom, top, topApproach;
         public Vector3 lane; // 上りは +lane、下りは -lane の側を通る（すれ違えるように）
         public Vector3 UpBottom { get { return bottom + lane; } }
@@ -78,7 +79,7 @@ namespace LifeSimProto
     }
 
     /// <summary>
-    /// 魔法大学の寮（談話室・食堂・浴場・2階の個室10部屋）を組み立てて、試作を動かす中心の部品。
+    /// 魔法大学の寮（3階建て。談話室・食堂・浴場・個室30部屋など。DormBuilder.cs）を組み立てて、試作を動かす中心の部品。
     /// 設定（1日の長さ・倍速など）はこの部品の Inspector で変更できる。
     /// </summary>
     public partial class LoungeWorld : MonoBehaviour
@@ -113,12 +114,17 @@ namespace LifeSimProto
         public float startHour = 6.2f;
 
         public const float NightStartMin = 23f * 60f, NightEndMin = 6.5f * 60f;
-        public const float Floor2Y = 3f;
-        public const float Floor3Y = 6f; // 屋上の天文台（2階の屋根の上）
+        public const float Floor2Y = 3f; // 2階の床の高さ
+        public const float Floor3Y = 6f; // 3階の床の高さ
+        public const float RoofY = 9f;   // 屋上
 
         // ---- 状態 ----
-        public GridNav nav0, nav1, nav2; // 1階・2階・屋上（天文台）
-        public Stair roofStair;          // 2階 → 屋上の天文台への階段
+        public readonly GridNav[] navs = new GridNav[4]; // 1階・2階・3階・屋上の歩ける所
+        public GridNav nav0 { get { return navs[0]; } }
+        public GridNav nav1 { get { return navs[1]; } }
+        public GridNav nav2 { get { return navs[2]; } }
+        public GridNav nav3 { get { return navs[3]; } }
+        public Stair roofStair;          // 使わない（屋上への階段も stairs に入っている）
         public Relationships rel;
         public Romance romance;
         public readonly List<SimCharacter> characters = new List<SimCharacter>();
@@ -158,8 +164,9 @@ namespace LifeSimProto
         }
 
         // 寮を大きくした位置（2026-10-21）。場面に保存された古い値を使わないよう、Inspector には出さない
-        [System.NonSerialized] public Vector3 exitPoint = new Vector3(0f, 0f, -17.2f);     // 授業へ出かけるときの行き先（外）
-        [System.NonSerialized] public Vector3 entrancePoint = new Vector3(0f, 0f, -13.4f); // 帰ってきて最初に立つ場所
+        // 2026-10-25 寮の作り直し：学校へは2階の入口の通路から渡り廊下を通って出かける
+        [System.NonSerialized] public Vector3 exitPoint = new Vector3(7.3f, Floor2Y, -23.6f);     // 授業へ出かけるときの行き先（渡り廊下の先）
+        [System.NonSerialized] public Vector3 entrancePoint = new Vector3(7.3f, Floor2Y, -14.0f); // 帰ってきて最初に立つ場所（入口の通路）
 
         public int Day { get { return (int)(gameMinutes / 1440.0) + 1; } }
         public float MinuteOfDay { get { return (float)(gameMinutes % 1440.0); } }
@@ -203,6 +210,7 @@ namespace LifeSimProto
             UpdateSpeed();
             UpdateLighting();
             UpdateCutaway();
+            UpdateFloorView();
             UpdatePlaces();
         }
 
@@ -248,81 +256,61 @@ namespace LifeSimProto
         }
 
         // ================= 道さがし =================
-        public static int FloorOf(float y) { return y > 4.5f ? 2 : (y > 1.5f ? 1 : 0); }
-        public GridNav Nav(int floor) { return floor == 0 ? nav0 : (floor == 1 ? nav1 : nav2); }
+        /// <summary>高さから階を決める（0＝1階、1＝2階、2＝3階、3＝屋上）。</summary>
+        public static int FloorOf(float y) { return y > 7.5f ? 3 : (y > 4.5f ? 2 : (y > 1.5f ? 1 : 0)); }
+        public GridNav Nav(int floor) { return navs[Mathf.Clamp(floor, 0, navs.Length - 1)]; }
         public GridNav NavAt(Vector3 p) { return Nav(FloorOf(p.y)); }
         public Vector3 NearestFree(Vector3 p) { return NavAt(p).NearestFreePoint(p); }
 
         public static bool OnFloorLevel(Vector3 p)
         {
-            return Mathf.Abs(p.y) < 0.05f || Mathf.Abs(p.y - Floor2Y) < 0.05f || Mathf.Abs(p.y - Floor3Y) < 0.05f;
+            for (int f = 0; f <= 3; f++) if (Mathf.Abs(p.y - FloorY(f)) < 0.05f) return true;
+            return false;
         }
 
-        /// <summary>階段をまたぐ道も探す。</summary>
+        /// <summary>その階とすぐ上の階をつなぐ階段。</summary>
+        Stair StairUpFrom(int floor)
+        {
+            foreach (var s in stairs) if (s.lowerFloor == floor) return s;
+            return null;
+        }
+
+        /// <summary>階段をまたぐ道も探す（1階ずつ、その階の階段を通る）。</summary>
         public List<Vector3> FindPath(Vector3 from, Vector3 to)
         {
             int ff = FloorOf(from.y), tf = FloorOf(to.y);
-            if (ff == tf)
+            if (ff == tf) return Nav(ff).FindPath(from, to);
+            var res = new List<Vector3>();
+            Vector3 cur = from;
+            int f = ff;
+            while (f != tf)
             {
-                var same = Nav(ff).FindPath(from, to);
-                // 2階の左と右はつながっていないので、いったん1階に下りて反対側の階段から上がる
-                if (same == null && ff == 1 && stairs.Count >= 2 && (from.x < 0f) != (to.x < 0f))
+                if (tf > f)
                 {
-                    Stair a = from.x < 0f ? stairs[0] : stairs[1], b = to.x < 0f ? stairs[0] : stairs[1];
-                    var p1 = nav1.FindPath(from, a.topApproach);
-                    var p0 = nav0.FindPath(a.bottomApproach, b.bottomApproach);
-                    var p2 = nav1.FindPath(b.topApproach, to);
-                    if (p1 == null || p0 == null || p2 == null) return null;
-                    var r = new List<Vector3>();
-                    r.AddRange(p1); r.Add(a.DownTop); r.Add(a.DownBottom); r.Add(a.bottomApproach);
-                    r.AddRange(p0); r.Add(b.UpBottom); r.Add(b.UpTop); r.Add(b.topApproach);
-                    r.AddRange(p2);
-                    return r;
-                }
-                return same;
-            }
-            // 屋上（天文台）をまたぐときは、2階の天文台への階段を通る
-            if ((ff == 2 || tf == 2) && roofStair != null && nav2 != null)
-            {
-                var rs = roofStair;
-                var r2 = new List<Vector3>();
-                if (ff == 2)
-                {
-                    var p1 = nav2.FindPath(from, rs.topApproach);
-                    var p2 = FindPath(rs.bottomApproach, to);
-                    if (p1 == null || p2 == null) return null;
-                    r2.AddRange(p1); r2.Add(rs.DownTop); r2.Add(rs.DownBottom); r2.Add(rs.bottomApproach); r2.AddRange(p2);
+                    var s = StairUpFrom(f);
+                    if (s == null) return null;
+                    var p = Nav(f).FindPath(cur, s.bottomApproach);
+                    if (p == null) return null;
+                    res.AddRange(p);
+                    res.Add(s.UpBottom); res.Add(s.UpTop); res.Add(s.topApproach);
+                    cur = s.topApproach;
+                    f++;
                 }
                 else
                 {
-                    var p1 = FindPath(from, rs.bottomApproach);
-                    var p2 = nav2.FindPath(rs.topApproach, to);
-                    if (p1 == null || p2 == null) return null;
-                    r2.AddRange(p1); r2.Add(rs.UpBottom); r2.Add(rs.UpTop); r2.Add(rs.topApproach); r2.AddRange(p2);
+                    var s = StairUpFrom(f - 1);
+                    if (s == null) return null;
+                    var p = Nav(f).FindPath(cur, s.topApproach);
+                    if (p == null) return null;
+                    res.AddRange(p);
+                    res.Add(s.DownTop); res.Add(s.DownBottom); res.Add(s.bottomApproach);
+                    cur = s.bottomApproach;
+                    f--;
                 }
-                return r2;
             }
-            Vector3 upper = ff == 1 ? from : to;
-            Stair s = upper.x < 0f ? stairs[0] : stairs[1];
-            var res = new List<Vector3>();
-            if (ff == 0)
-            {
-                var p1 = nav0.FindPath(from, s.bottomApproach);
-                var p2 = nav1.FindPath(s.topApproach, to);
-                if (p1 == null || p2 == null) return null;
-                res.AddRange(p1);
-                res.Add(s.UpBottom); res.Add(s.UpTop); res.Add(s.topApproach);
-                res.AddRange(p2);
-            }
-            else
-            {
-                var p1 = nav1.FindPath(from, s.topApproach);
-                var p2 = nav0.FindPath(s.bottomApproach, to);
-                if (p1 == null || p2 == null) return null;
-                res.AddRange(p1);
-                res.Add(s.DownTop); res.Add(s.DownBottom); res.Add(s.bottomApproach);
-                res.AddRange(p2);
-            }
+            var last = Nav(tf).FindPath(cur, to);
+            if (last == null) return null;
+            res.AddRange(last);
             return res;
         }
 

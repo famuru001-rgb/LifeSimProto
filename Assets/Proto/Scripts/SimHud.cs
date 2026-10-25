@@ -41,7 +41,10 @@ namespace LifeSimProto
         // 操作の説明：右上の歯車を押したときだけ、歯車の下に出す（famuru 決定 2026-10-24）
         bool helpOpen;
         Rect GearRect { get { return new Rect(VW - 12 - 46, 68, 46, 36); } }
-        Rect HelpPopup { get { return new Rect(VW - 12 - 480, GearRect.yMax + 4, 480, 280); } }
+        Rect HelpPopup { get { return new Rect(VW - 12 - 480, GearRect.yMax + 4, 480, 310); } }
+        // 見る階のボタン（1階・2階・3階・屋上）：歯車の左に並べる（2026-10-25 寮を3階建てにした）
+        static readonly string[] FloorButtonNames = { "1階", "2階", "3階", "屋上" };
+        Rect FloorButtonsRect { get { return new Rect(GearRect.x - 8 - FloorButtonNames.Length * 62, GearRect.y, FloorButtonNames.Length * 62, GearRect.height); } }
         Rect DetailPanelBase { get { return new Rect(12, 108, 580, 960); } }
         Rect RomancePanelBase { get { return new Rect(VW - 492, 516, 480, 292); } }
         Rect TablePanel { get { return Slid(TablePanelBase, slideTable); } }
@@ -95,7 +98,7 @@ namespace LifeSimProto
         {
             if (OverSlideTags(v)) return true;
             if (TopBar.Contains(v) || TablePanel.Contains(v) || LogPanel.Contains(v) || RomancePanel.Contains(v)) return true;
-            if (GearRect.Contains(v) || (helpOpen && HelpPopup.Contains(v))) return true;
+            if (GearRect.Contains(v) || FloorButtonsRect.Contains(v) || (helpOpen && HelpPopup.Contains(v))) return true;
             if (selected != null && DetailPanel.Contains(v)) return true;
             if (selected != null && Portrait(selected, "stand") != null && StandRect.Contains(v)) return true;
             if (shopOpen && ShopPanel.Contains(v)) return true;
@@ -218,24 +221,17 @@ namespace LifeSimProto
         {
             p = Vector3.zero;
             if (Mathf.Abs(ray.direction.y) < 0.0001f) return false;
-            float t2 = (LoungeWorld.Floor3Y - ray.origin.y) / ray.direction.y;
-            if (t2 > 0f && world.nav2 != null)
+            // 見えている階のうち、上の階から順に（隠れている階の床はクリックできない）
+            int top = Mathf.Clamp(world.ViewFloor < 0 ? 3 : world.ViewFloor, 0, 3);
+            for (int f = top; f >= 0; f--)
             {
-                Vector3 q = ray.origin + ray.direction * t2;
-                if (world.nav2.IsFree(q)) { p = q; return true; } // 屋上の天文台
-            }
-            float t1 = (LoungeWorld.Floor2Y - ray.origin.y) / ray.direction.y;
-            if (t1 > 0f)
-            {
-                Vector3 q = ray.origin + ray.direction * t1;
-                if (world.nav1.IsFree(q)) { p = q; return true; }
-            }
-            float t0 = -ray.origin.y / ray.direction.y;
-            if (t0 > 0f)
-            {
-                Vector3 q = ray.origin + ray.direction * t0;
-                if (world.nav0.IsFree(q)) { p = q; return true; }
-                if (q.x > -15f && q.x < 15f && q.z > -18f && q.z < 8f) { p = world.nav0.NearestFreePoint(q); return true; }
+                var nav = world.Nav(f);
+                if (nav == null) continue;
+                float t = (LoungeWorld.FloorY(f) - ray.origin.y) / ray.direction.y;
+                if (t <= 0f) continue;
+                Vector3 q = ray.origin + ray.direction * t;
+                if (nav.IsFree(q)) { p = q; return true; }
+                if (f == 0 && q.x > -17f && q.x < 17f && q.z > -24f && q.z < 18f) { p = nav.NearestFreePoint(q); return true; }
             }
             return false;
         }
@@ -336,6 +332,7 @@ namespace LifeSimProto
             }
             DrawSlideControls(); // 左右・下の欄の「しまう」ボタンと札（真ん中に開く画面より下に描く）
             DrawGear();
+            DrawFloorButtons();
             if (helpOpen) DrawHelp();
             if (shopOpen) DrawShop();
             if (examOpen) DrawExam();
@@ -358,6 +355,7 @@ namespace LifeSimProto
             foreach (var kv in world.worldLabels)
             {
                 if ((kv.Key - cam).sqrMagnitude > 40f * 40f) continue;
+                if (world.ViewFloor >= 0 && Mathf.FloorToInt((kv.Key.y - 0.2f) / LoungeWorld.FloorH) > world.ViewFloor) continue; // 隠れている階の札は出さない
                 Vector2 g;
                 if (!ToGui(kv.Key, s, out g)) continue;
                 GUI.Label(new Rect(g.x - 150, g.y - 12, 300, 24), kv.Value, worldLabel);
@@ -388,7 +386,7 @@ namespace LifeSimProto
             list.Sort((a, b) => (b.transform.position - cam).sqrMagnitude.CompareTo((a.transform.position - cam).sqrMagnitude));
             foreach (var c in list)
             {
-                if (!c.Present) continue;
+                if (!c.Present || !world.FloorVisible(c.transform.position.y)) continue;
                 Vector2 g;
                 if (!ToGui(c.transform.position + Vector3.up * c.HeadHeight, s, out g)) continue;
 
@@ -465,10 +463,7 @@ namespace LifeSimProto
             x += 138;
             if (GUI.Button(new Rect(x, r.y + 8, 104, 34), ShowNameTags ? "名札：あり" : "名札：なし", ShowNameTags ? buttonOn : button)) ShowNameTags = !ShowNameTags;
             x += 108;
-            if (GUI.Button(new Rect(x, r.y + 8, 58, 34), "1階", button) && rig != null) rig.LookAtFloor(0);
-            x += 62;
-            if (GUI.Button(new Rect(x, r.y + 8, 58, 34), "2階", button) && rig != null) rig.LookAtFloor(1);
-            x += 74;
+            x += 12; // 見る階のボタンは右上（歯車の左。DrawFloorButtons）
             if (Player != null)
             {
                 GUI.Label(new Rect(x, r.y + 11, 130, 30), "銀貨 " + Player.money, clock);
@@ -711,6 +706,17 @@ namespace LifeSimProto
             return gearTex;
         }
 
+        /// <summary>見る階のボタン。押すとその階を見る（上の階は隠れる）。今見ている階は色を変える。</summary>
+        void DrawFloorButtons()
+        {
+            Rect r = FloorButtonsRect;
+            for (int i = 0; i < FloorButtonNames.Length; i++)
+            {
+                bool on = world.ViewFloor == i;
+                if (GUI.Button(new Rect(r.x + i * 62, r.y, 58, r.height), FloorButtonNames[i], on ? buttonOn : smallButton) && rig != null) rig.LookAtFloor(i);
+            }
+        }
+
         void DrawGear()
         {
             Rect g = GearRect;
@@ -738,6 +744,7 @@ namespace LifeSimProto
                 "スペース：一時停止　1〜4：速さ　Tab：壁",
                 "B：購買部　G：成績　M：思い出　L：記録　P：セーブ",
                 "欄の右上の ◀ ▶ ▼：欄をしまう（画面の端の札で戻す）",
+                "右上の 1階〜屋上：見る階（上の階は隠れる。R/F でも）",
             };
             float y = r.y + 40;
             foreach (var l in lines) { GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), l, small); y += 25; }

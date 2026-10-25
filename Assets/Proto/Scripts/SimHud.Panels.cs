@@ -69,7 +69,7 @@ namespace LifeSimProto
             float ty = 2f;
             if (!c.IsTarget)
             {
-                string roomName = c.room != null ? "2階・" + c.room.name + "の部屋" : "なし";
+                string roomName = c.room != null ? (c.room.floor + 1) + "階・" + c.room.AreaName : "なし";
                 string loveText = "篤への気持ち：" + Romance.StageName(world.romance.Stage(c.id)) + "（" + Mathf.RoundToInt(world.romance.love[c.id]) + "）";
                 var f = F;
                 string relF = f != null ? "　篤との仲：" + Relationships.StageName(world.rel.Stage(c.id, f.id)) + "（" + Mathf.RoundToInt(world.rel.Get(c.id, f.id)) + "）" : "";

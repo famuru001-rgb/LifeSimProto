@@ -18,10 +18,11 @@ namespace LifeSimProto
 
         const float MinDist = 1.5f, MaxDist = 45f;
 
+        /// <summary>その階を見る（0＝1階 … 3＝屋上）。見ている階より上の階は隠れる（LoungeWorld.UpdateFloorView）。</summary>
         public void LookAtFloor(int floor)
         {
             follow = null;
-            pivot.y = floor == 0 ? 0.8f : LoungeWorld.Floor2Y + 0.8f;
+            pivot.y = LoungeWorld.FloorY(Mathf.Clamp(floor, 0, 3)) + 0.8f;
         }
 
         void LateUpdate()
@@ -79,9 +80,9 @@ namespace LifeSimProto
                 pivot = Vector3.Lerp(pivot, want, 1f - Mathf.Exp(-dt * 5f));
             }
 
-            pivot.x = Mathf.Clamp(pivot.x, -22f, 18f);
-            pivot.z = Mathf.Clamp(pivot.z, -20f, 28f); // 中庭・台所・玄関の外まで見られるように
-            pivot.y = Mathf.Clamp(pivot.y, 0.2f, 6f);
+            pivot.x = Mathf.Clamp(pivot.x, -24f, 24f);
+            pivot.z = Mathf.Clamp(pivot.z, -28f, 38f); // 前庭・渡り廊下・中庭まで見られるように
+            pivot.y = Mathf.Clamp(pivot.y, 0.2f, LoungeWorld.RoofY + 0.9f);
 
             Quaternion rot = Quaternion.Euler(pitch, yaw, 0f);
             Vector3 pos = pivot - rot * Vector3.forward * distance;

@@ -561,7 +561,7 @@ namespace LifeSimProto
             }
             else
             {
-                transform.position = world.NearestFree(new Vector3(0f, 0f, -2f));
+                transform.position = world.NearestFree(LoungeWorld.LoungeCenter);
                 SetState(State.Idle);
             }
         }
@@ -1605,11 +1605,29 @@ namespace LifeSimProto
             thinkTimer = Random.Range(1f, 3f);
         }
 
+        bool shownByState = true; // 出かけていない（SetVisible）
+        bool floorHidden;         // 見ている階より上にいるので隠している（LoungeWorld.UpdateFloorView）
+
         void SetVisible(bool v)
         {
-            foreach (var r in renderers) if (r != null && r.gameObject != ring) r.enabled = v;
-            foreach (var c in colliders) if (c != null) c.enabled = v;
+            shownByState = v;
+            ApplyVisible();
             if (!v) selected = false;
+        }
+
+        /// <summary>見ている階より上にいるときは隠す（クリックもできない）。</summary>
+        public void SetFloorHidden(bool hidden)
+        {
+            if (floorHidden == hidden) return;
+            floorHidden = hidden;
+            ApplyVisible();
+        }
+
+        void ApplyVisible()
+        {
+            bool v = shownByState && !floorHidden;
+            if (renderers != null) foreach (var r in renderers) if (r != null && r.gameObject != ring) r.enabled = v;
+            if (colliders != null) foreach (var c in colliders) if (c != null) c.enabled = v;
         }
 
         // ================= 行事 =================
@@ -2393,7 +2411,7 @@ namespace LifeSimProto
             AreaInfo area = world.AreaAt(transform.position);
             Vector3 p;
             if (area == null || area.name == "外" || Random.value < 0.35f)
-                p = world.nav0.RandomFreePoint(new Rect(-6.5f, -7f, 13f, 14f));
+                p = world.nav0.RandomFreePoint(LoungeWorld.LoungeWanderRect);
             else
                 p = world.NavAt(transform.position).RandomFreePoint(area.rect);
             if (!GoTo(p, State.Walking)) SetState(State.Idle);
