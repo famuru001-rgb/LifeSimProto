@@ -19,6 +19,10 @@ namespace LifeSimProto
             public string inviter;         // 誘った人（記号）
             public bool night;             // 夜（21時〜朝）だった
             public string[] notes;         // 1人ずつの「どんなふうに過ごしたか」の1文（letters と同じ順。篤は空）。HNotes.cs
+            public int[] direct;           // 1人ずつ：フィニッシュのとき篤が直接相手をしていた回数（letters と同じ順）
+            public float[] ml;             // 1人ずつ：量（ml）の合計（letters と同じ順）
+            public int finishes;           // フィニッシュの回数
+            public float mlTotal;          // 量（ml）の合計
         }
 
         public static readonly List<Entry> Entries = new List<Entry>();
@@ -29,9 +33,9 @@ namespace LifeSimProto
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetAll() { Entries.Clear(); Total.Clear(); }
 
-        public static void Record(LoungeWorld w, List<SimCharacter> who, string place, SimCharacter inviter)
+        public static Entry Record(LoungeWorld w, List<SimCharacter> who, string place, SimCharacter inviter)
         {
-            if (w == null || who == null || who.Count == 0) return;
+            if (w == null || who == null || who.Count == 0) return null;
             var e = new Entry
             {
                 loop = Loop.Count,
@@ -56,8 +60,55 @@ namespace LifeSimProto
             }
             e.letters = ls.ToArray();
             e.notes = ns.ToArray();
+            e.direct = new int[e.letters.Length];
+            e.ml = new float[e.letters.Length];
             Entries.Add(e);
             if (Entries.Count > MaxEntries) Entries.RemoveAt(0);
+            return e;
+        }
+
+        /// <summary>途中で加わった子を記録に足す（2026-10-23 サブ連携のチャット）。</summary>
+        public static void AddMember(Entry e, SimCharacter c)
+        {
+            if (e == null || c == null || string.IsNullOrEmpty(c.letter) || System.Array.IndexOf(e.letters, c.letter) >= 0) return;
+            int n = e.letters.Length;
+            System.Array.Resize(ref e.letters, n + 1); e.letters[n] = c.letter;
+            if (e.notes == null) e.notes = new string[n];
+            System.Array.Resize(ref e.notes, n + 1); e.notes[n] = "";
+            if (e.direct == null) e.direct = new int[n];
+            System.Array.Resize(ref e.direct, n + 1);
+            if (e.ml == null) e.ml = new float[n];
+            System.Array.Resize(ref e.ml, n + 1);
+            int t;
+            Total[c.letter] = (Total.TryGetValue(c.letter, out t) ? t : 0) + 1;
+        }
+
+        /// <summary>フィニッシュを記録する（直接相手をしていた子に、回数と量）。</summary>
+        public static void AddFinish(Entry e, string letter, float ml)
+        {
+            if (e == null) return;
+            e.finishes++;
+            e.mlTotal += ml;
+            int i = letter != null ? System.Array.IndexOf(e.letters, letter) : -1;
+            if (i < 0) return;
+            if (e.direct == null || e.direct.Length != e.letters.Length) System.Array.Resize(ref e.direct, e.letters.Length);
+            if (e.ml == null || e.ml.Length != e.letters.Length) System.Array.Resize(ref e.ml, e.letters.Length);
+            e.direct[i]++;
+            e.ml[i] += ml;
+        }
+
+        /// <summary>その子の、直接の回数と量（loop が 0 なら全部の周）。</summary>
+        public static void DirectOf(string letter, int loop, out int count, out float ml)
+        {
+            count = 0; ml = 0f;
+            foreach (var e in Entries)
+            {
+                if (loop > 0 && e.loop != loop) continue;
+                int i = System.Array.IndexOf(e.letters, letter);
+                if (i < 0) continue;
+                if (e.direct != null && i < e.direct.Length) count += e.direct[i];
+                if (e.ml != null && i < e.ml.Length) ml += e.ml[i];
+            }
         }
 
         public static int TotalOf(string letter) { int n; return letter != null && Total.TryGetValue(letter, out n) ? n : 0; }

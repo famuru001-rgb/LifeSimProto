@@ -9,6 +9,7 @@ namespace LifeSimProto
     {
         public string letter;
         public float lonely, tired, bored, hunger, study, hobbyNeed, loveNeed, sleepy, desire, heat, mana, weekStudy, assignProgress;
+        public float vigor = 100f; // 篤の精力
         public bool hasAssignment, desireMaxAtNight;
         public int assignSubject = -1;
         public double assignDeadline;
@@ -30,7 +31,7 @@ namespace LifeSimProto
             {
                 letter = letter,
                 lonely = lonely, tired = tired, bored = bored, hunger = hunger, study = study, hobbyNeed = hobbyNeed, loveNeed = loveNeed, sleepy = sleepy, desire = desire,
-                heat = desireBuild.value, mana = mana, weekStudy = weekStudy, assignProgress = assignProgress,
+                heat = desireBuild.value, mana = mana, weekStudy = weekStudy, assignProgress = assignProgress, vigor = vigor,
                 hasAssignment = hasAssignment, desireMaxAtNight = desireMaxAtNight, assignSubject = assignSubject, assignDeadline = assignDeadline,
                 skill = (float[])skill.Clone(), ability = (float[])ability.Clone(), weekSubject = (float[])weekSubject.Clone(),
                 enrolled = profile != null ? (int[])profile.enrolled.Clone() : null,
@@ -44,7 +45,7 @@ namespace LifeSimProto
         {
             if (s == null) return;
             lonely = s.lonely; tired = s.tired; bored = s.bored; hunger = s.hunger; study = s.study; hobbyNeed = s.hobbyNeed; loveNeed = s.loveNeed; sleepy = s.sleepy; desire = s.desire;
-            desireBuild.value = s.heat; mana = s.mana; weekStudy = s.weekStudy; assignProgress = s.assignProgress;
+            desireBuild.value = s.heat; mana = s.mana; weekStudy = s.weekStudy; assignProgress = s.assignProgress; vigor = s.vigor;
             hasAssignment = s.hasAssignment; desireMaxAtNight = s.desireMaxAtNight; assignSubject = s.assignSubject; assignDeadline = s.assignDeadline;
             Copy(s.skill, skill); Copy(s.ability, ability); Copy(s.weekSubject, weekSubject);
             if (profile != null && s.enrolled != null && s.enrolled.Length > 0) profile.enrolled = (int[])s.enrolled.Clone();
