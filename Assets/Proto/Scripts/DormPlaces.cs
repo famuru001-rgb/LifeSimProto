@@ -35,7 +35,7 @@ namespace LifeSimProto
         static readonly Dictionary<string, Vector3> PlaceFocus = new Dictionary<string, Vector3>
         {
             { Courtyard, new Vector3(2.8f, 0f, 14.5f) + YardOff }, { Greenhouse, new Vector3(-7.5f, 0f, 19.5f) + YardOff }, { Library, new Vector3(-8.5f, 6f, 13.5f) },
-            { Workshop, new Vector3(8.5f, 0f, 19.8f) + YardOff }, { Observatory, new Vector3(0f, 9f, -2f) }, { Kitchen, new Vector3(12.8f, 0f, 13.5f) },
+            { Workshop, new Vector3(8.5f, 0f, 19.8f) + YardOff }, { Observatory, new Vector3(0f, 9f, -0.6f) }, { Kitchen, new Vector3(12.8f, 0f, 14.6f) },
         };
         int appliedPlaceCount = -1;
         int seatMark, poiMark;
