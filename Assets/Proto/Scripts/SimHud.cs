@@ -859,7 +859,7 @@ namespace LifeSimProto
             new Color(0.45f, 0.6f, 0.95f), new Color(0.9f, 0.6f, 0.3f), new Color(0.6f, 0.85f, 0.4f), new Color(0.95f, 0.75f, 0.3f), new Color(0.5f, 0.75f, 0.9f),
             new Color(0.75f, 0.6f, 0.95f), new Color(0.55f, 0.55f, 0.8f), new Color(1f, 0.5f, 0.65f), new Color(0.85f, 0.4f, 0.55f)
         };
-        static float[] NeedValues(SimCharacter c) { return new[] { c.lonely, c.tired, c.bored, c.hunger, c.study, c.hobbyNeed, c.sleepy, c.loveNeed, c.desire, c.Heat }; }
+        static float[] NeedValues(SimCharacter c) { return new[] { c.lonely, c.tired, c.bored, c.hunger, c.study, c.hobbyNeed, c.sleepy, c.loveNeed, c.desire, c.Heat, c.vigor }; } // 9＝性欲のたまり（隠し）、10＝篤の精力
 
         class NeedSample { public double t; public float[] v; public float[] rate; }
         readonly Dictionary<SimCharacter, NeedSample> needSamples = new Dictionary<SimCharacter, NeedSample>();

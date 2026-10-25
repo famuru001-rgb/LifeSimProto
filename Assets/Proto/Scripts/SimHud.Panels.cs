@@ -200,6 +200,8 @@ namespace LifeSimProto
                     float v = inv ? 100f - vals[k] : vals[k], rt = inv ? -rates[k] : rates[k];
                     NeedBar(new Rect(4, y, w, 20), NeedNames[k], v, rt, NeedColors[k]); y += 22;
                 }
+                // 篤の精力（時間で増え、エッチのフィニッシュで減る。SimCharacter.H.cs の HBook）
+                if (!inv && c.IsTarget) { NeedBar(new Rect(4, y, w, 20), "精力", vals[10], rates[10], new Color(0.95f, 0.55f, 0.25f)); y += 22; }
             }
             if (GUI.Button(new Rect(4, y, 220, 24), ShowHidden ? "隠しパラメータ：表示中" : "隠しパラメータ：非表示", smallButton)) ShowHidden = !ShowHidden;
             y += 28;
