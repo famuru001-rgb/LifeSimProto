@@ -67,6 +67,7 @@ namespace LifeSimProto.EditorTools
                 case "finvite":
                 case "ftalk":
                 case "fmove":
+                case "hstat":
                     break;
                 default:
                     return false;
@@ -193,6 +194,16 @@ namespace LifeSimProto.EditorTools
                         var f = w.RomanceTarget; var g = w.characters[int.Parse(a[1])];
                         if (a[0] == "finvite") f.OrderInvite(g); else f.OrderTalk(g);
                         log.AppendLine(a[0] + ": " + g.displayName + " / 篤の状態 " + f.StateName() + " 性欲" + Mathf.RoundToInt(g.desire));
+                        break;
+                    }
+                    case "hstat":
+                    {
+                        // 試験用：エッチの場面の今の様子（全員分）を Logs\status_h2.txt に追記
+                        var sb = new StringBuilder();
+                        sb.AppendLine("== hstat " + w.Day + "日目 " + LifeSimProto.ScheduleMaker.Clock(w.Now));
+                        foreach (var c in w.characters) { var l = c.HStatusLines(); if (l != null) sb.AppendLine(c.displayName + "｜" + string.Join("｜", l.ToArray())); }
+                        File.AppendAllText(Path.Combine(Dir, "status_h2.txt"), sb.ToString(), Encoding.UTF8);
+                        log.AppendLine("hstat: ok");
                         break;
                     }
                     case "fmove":

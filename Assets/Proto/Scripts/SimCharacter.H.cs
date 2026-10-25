@@ -10,7 +10,8 @@ namespace LifeSimProto
     public static class HBook
     {
         // 場面の長さ（分）
-        public static float StartMin = 10f, Mid1Min = 20f, Mid2Min = 30f, Mid3Min = 20f, FinishMin = 4f, ResumeMin = 5f, AfterMin = 20f;
+        // 2026-10-25 famuru「速く」：1回目のフィニッシュまで約30分（5＋10＋10＋5）、2回目からは約20分（4＋3＋10＋5。性欲70以上なら後半から）
+        public static float StartMin = 5f, Mid1Min = 10f, Mid2Min = 10f, Mid3Min = 5f, FinishMin = 4f, ResumeMin = 3f, AfterMin = 20f;
         public static float MaxSessionMin = 720f;         // どんな状態でも最長12時間
         public static float SickMaxMin = 120f;            // 風邪・発熱のとき（2人だけ）の最長
         public static float SickStartMin = 5f, SickMid1Min = 25f, SickAfterMin = 15f;
@@ -28,10 +29,10 @@ namespace LifeSimProto
 
         // 順番
         public static int MaxEngaged = 4;                 // 同時に相手をする人数（直接1人＋ペッティング3人）
-        public static float RotateMin = 20f;              // 直接の相手を入れかえる間隔
+        public static float RotateMin = 10f;              // 直接の相手を入れかえる間隔（2026-10-25 速くした。前は20）
 
         // 途中参加
-        public static float JoinCheckMin = 15f;           // 加わる子を探す間隔
+        public static float JoinCheckMin = 10f;           // 加わる子を探す間隔（前は15）
         public static float JoinChance = 0.5f;            // 1回の確率
 
         // 篤の精力
@@ -81,12 +82,30 @@ namespace LifeSimProto
             ApplyPose();
         }
 
-        /// <summary>篤の精力：ふだんの回復（場面の中は HSession が動かす）。</summary>
+        /// <summary>篤の精力：ふだんの回復（場面の中は HSession が動かす）。ヒロインは中出しの量が少しずつ減る。</summary>
         void UpdateVigor(float gm)
         {
-            if (!IsTarget || hs != null) return;
-            vigor = Mathf.Min(HBook.VigorMax, vigor + gm * HBook.VigorRegenPerHour / 60f * (1f + desire / 100f));
+            if (!IsTarget)
+            {
+                if (inside > 0f) inside = Mathf.Max(0f, inside - gm * HSkill.InsideDecayPerHour / 60f * HSkill.InsideDecayMul(HLevel));
+                return;
+            }
+            if (hs != null) return;
+            vigor = Mathf.Min(VigorMaxNow, vigor + gm * HBook.VigorRegenPerHour / 60f * (1f + desire / 100f));
         }
+
+        /// <summary>エッチのスキルの段（0〜10。通算回数で決まる）。</summary>
+        public int HLevel { get { return HSkill.Level(letter); } }
+        /// <summary>篤の精力の最大値（スキルで増える）。</summary>
+        public float VigorMaxNow { get { return HSkill.VigorMax(HLevel); } }
+
+        /// <summary>中出しの量（ml。ヒロインだけ。時間で減る）。量に応じて能力すべてが上がる。</summary>
+        public float inside;
+        float InsideBonus { get { return IsTarget || inside <= 0f ? 0f : Mathf.Min(HSkill.InsideMaxBonus, Mathf.Floor(inside / HSkill.InsideMlPerAbility)); } }
+        public int InsideBonusNow { get { return Mathf.RoundToInt(InsideBonus); } }
+
+        /// <summary>性欲の増え方（ヒロインのスキル）。</summary>
+        float HDesireMul() { return IsTarget ? 1f : HSkill.DesireRate(HLevel); }
 
         float VigorDesireMul() { return IsTarget && vigor >= HBook.VigorBoostLine ? HBook.VigorBoostDesireMul : 1f; }
 
@@ -167,6 +186,9 @@ namespace LifeSimProto
             public SimCharacter c;
             public HRole role;
             public double restSince;
+            public float pleasure;   // 快感ゲージ（2026-10-25）
+            public int climax;       // この場面での絶頂の回数
+            public int drops;        // 絶頂で最大値が下がった回数（3回まで）
         }
 
         /// <summary>
@@ -304,10 +326,10 @@ namespace LifeSimProto
             {
                 switch (r)
                 {
-                    case HRole.Direct: return "篤の相手";
-                    case HRole.Pet: return "いっしょに";
-                    case HRole.Wait: return "順番待ち";
-                    default: return "休憩中";
+                    case HRole.Direct: return "挿入";
+                    case HRole.Pet: return "愛撫";
+                    case HRole.Wait: return "参加";
+                    default: return "休憩";
                 }
             }
 
@@ -317,12 +339,15 @@ namespace LifeSimProto
                 int min = Mathf.RoundToInt((float)(world.Now - startAt));
                 res.Add("エッチ中：" + PhaseName(phase) + "　" + (spot != null ? spot.name : "") + "（" + (min / 60 > 0 ? (min / 60) + "時間" : "") + (min % 60) + "分）");
                 var mine = ps.Find(p => p.c == me);
-                if (me == f) res.Add("篤：精力 " + Mathf.RoundToInt(f.vigor) + "／100");
-                else if (mine != null) res.Add("今：" + RoleName(mine.role) + (sick ? "（体調が悪いので軽めに）" : ""));
-                var parts = new List<string>();
-                foreach (var p in ps) parts.Add(p.c.displayName + "（" + RoleName(p.role) + "）");
-                res.Add("いっしょ：" + string.Join("・", parts.ToArray()));
-                res.Add("フィニッシュ " + finishes + "回・合計 " + (entry != null ? entry.mlTotal.ToString("0.0") : "0.0") + "ml" + (me != f ? "　篤の精力 " + Mathf.RoundToInt(f.vigor) : ""));
+                if (mine != null) res.Add("今：" + RoleName(mine.role) + "　快感 " + Mathf.RoundToInt(mine.pleasure) + "／" + Mathf.RoundToInt(GaugeMax(mine)) + "・絶頂 " + mine.climax + "回" + (sick ? "（体調が悪いので軽めに）" : ""));
+                // 役ごとに全員（挿入1人・愛撫3人まで・ほかは参加・休憩）。画面では折り返して出す
+                foreach (var r in new[] { HRole.Direct, HRole.Pet, HRole.Wait, HRole.Rest })
+                {
+                    var parts = new List<string>();
+                    foreach (var p in ps) if (p.role == r) parts.Add(p.c.displayName + "（快感" + Mathf.RoundToInt(p.pleasure) + "／" + Mathf.RoundToInt(GaugeMax(p)) + "・絶頂" + p.climax + "）");
+                    if (parts.Count > 0) res.Add(RoleName(r) + "：" + string.Join("、", parts.ToArray()));
+                }
+                res.Add("篤：フィニッシュ " + finishes + "回・合計 " + (entry != null ? entry.mlTotal.ToString("0.0") : "0.0") + "ml・精力 " + Mathf.RoundToInt(f.vigor) + "／" + Mathf.RoundToInt(f.VigorMaxNow));
                 if (joining.Count > 0)
                 {
                     var jn = new List<string>();
@@ -330,6 +355,74 @@ namespace LifeSimProto
                     res.Add("向かっている：" + string.Join("・", jn.ToArray()));
                 }
                 return res;
+            }
+
+            void UpdateActionTexts()
+            {
+                string ph = PhaseName(phase);
+                var d = Direct;
+                foreach (var p in ps)
+                    p.c.actionText = "エッチ中（" + ph + "・" + RoleName(p.role) + (p.role == HRole.Rest ? "" : "・快感 " + Mathf.RoundToInt(p.pleasure) + "／" + Mathf.RoundToInt(GaugeMax(p))) + "）";
+                f.actionText = "エッチ中（" + ph + (d != null ? "・挿入：" + d.c.displayName : "") + "・" + (ps.Count + 1) + "人）";
+            }
+
+            // ---------------- 快感ゲージと絶頂（2026-10-25 famuru） ----------------
+            /// <summary>快感ゲージの最大値（状態・欲を高める物・恋人・回数・この場面の絶頂・スキルで下がる。いちばん低くて10）。</summary>
+            float GaugeMax(HP p)
+            {
+                var c = p.c;
+                int de = c.GetStage(StatusLine.Desire);
+                float m = de >= 3 ? 50f : (de == 2 ? 70f : (de == 1 ? 90f : 100f));
+                float items = 0f;
+                foreach (var a in c.mods)
+                {
+                    if (a.mod == null) continue;
+                    float r, b;
+                    bool up = (a.mod.rate.TryGetValue(NeedKind.Desire, out r) && r > 1f) || (a.mod.build.TryGetValue(NeedKind.Desire, out b) && b > 1f);
+                    if (up) items += 5f;
+                }
+                m -= Mathf.Min(10f, items);
+                if (c.IsLover) m -= 5f;
+                if (HLog.TotalOf(c.letter) >= 5) m -= 5f;
+                m -= 5f * Mathf.Min(3, p.drops);
+                m -= HSkill.GaugeMaxDrop(c.HLevel);
+                return Mathf.Max(HSkill.GaugeMin, m);
+            }
+
+            void UpdatePleasure(float gm)
+            {
+                if (phase == "after") return;
+                float fSex = f.Ab(Abilities.Sex);
+                bool anyone = false;
+                foreach (var p in ps)
+                {
+                    float per, grow;
+                    switch (p.role)
+                    {
+                        case HRole.Direct: per = HSkill.InsertPerMin; grow = HSkill.GrowInsertPerMin; break;
+                        case HRole.Pet: per = HSkill.CaressPerMin; grow = HSkill.GrowCaressPerMin; break;
+                        case HRole.Wait: per = HSkill.PettingPerMin; grow = HSkill.GrowPettingPerMin; break;
+                        default: continue;
+                    }
+                    anyone = true;
+                    var c = p.c;
+                    float own = c.Ab(Abilities.Sex);
+                    float mul = HSkill.SkillSpeed(own, fSex) * HSkill.GaugeSpeed(c.HLevel) * HSkill.PartnerSpeed(f.HLevel);
+                    if (sick) mul *= 0.5f;
+                    p.pleasure += gm * per * mul;
+                    c.GrowAbility(Abilities.Sex, gm * grow);
+                    float max = GaugeMax(p);
+                    if (p.pleasure >= max)
+                    {
+                        p.pleasure = 0f;
+                        p.climax++;
+                        if (p.drops < 3) p.drops++;
+                        HLog.AddClimax(entry, c.letter);
+                        Story("climax", c);
+                        Say(c, "climax");
+                    }
+                }
+                if (anyone) f.GrowAbility(Abilities.Sex, gm * HSkill.GrowInsertPerMin);
             }
 
             int Size { get { int n = 1; foreach (var p in ps) if (p.role != HRole.Rest) n++; return n; } }
@@ -365,6 +458,9 @@ namespace LifeSimProto
                     case "after": len = sick ? HBook.SickAfterMin : HBook.AfterMin; break;
                     default: len = 10f; break;
                 }
+                // ヒロインのスキル：篤の相手のとき、篤のフィニッシュまでの時間が短くなる
+                var dd = Direct;
+                if (dd != null && (p == "mid1" || p == "mid2" || p == "mid3" || p == "resume")) len *= HSkill.FinishTimeMul(dd.c.HLevel);
                 phaseUntil = world.Now + len;
             }
 
@@ -393,6 +489,7 @@ namespace LifeSimProto
                 UpdateGauges(gm);
                 UpdateJoining(dt);
                 if (RoleSig() != arrangedSig) Arrange(); // 順番の入れかえ・休憩・途中参加で並びを直す
+                UpdateActionTexts(); // 「今：」の表示を今の様子にする（2026-10-25 famuru「更新されない」）
 
                 if (phase == "after")
                 {
@@ -448,11 +545,12 @@ namespace LifeSimProto
                 var d = Direct;
                 if (d != null)
                 {
-                    float ml = HBook.Ml(f.vigor, f.desire, finishes);
+                    float ml = HBook.Ml(f.vigor, f.desire, finishes) * HSkill.MlMul(f.HLevel);
                     HLog.AddFinish(entry, d.c.letter, ml);
+                    d.c.inside += ml; // 中出しの量（能力が上がるバフ。時間で減る）
                     Story("finish", d.c, ml);
                 }
-                f.vigor = Mathf.Max(0f, f.vigor - HBook.VigorPerFinish);
+                f.vigor = Mathf.Max(0f, f.vigor - HSkill.VigorPerFinish(f.HLevel));
                 f.desire = Mathf.Max(0f, f.desire - HBook.AtsushiFinishDesireDrop);
                 foreach (var p in ps)
                 {
@@ -539,7 +637,8 @@ namespace LifeSimProto
             void UpdateGauges(float gm)
             {
                 // 篤の精力：性欲が高いほど回復が速い
-                f.vigor = Mathf.Min(HBook.VigorMax, f.vigor + gm * HBook.VigorRegenPerHour / 60f * (1f + f.desire / 100f));
+                f.vigor = Mathf.Min(f.VigorMaxNow, f.vigor + gm * HBook.VigorRegenPerHour / 60f * (1f + f.desire / 100f));
+                UpdatePleasure(gm);
                 foreach (var p in ps)
                 {
                     var c = p.c;
@@ -682,6 +781,7 @@ namespace LifeSimProto
                 var all = new List<SimCharacter>();
                 foreach (var p in ps) all.Add(p.c);
                 all.Add(f);
+                foreach (var c in all) c.GrowAbility(Abilities.Sex, HSkill.GrowPerSession); // 性技：1回ごとに伸びる
                 foreach (var c in all)
                 {
                     c.hs = null;

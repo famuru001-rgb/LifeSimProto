@@ -24,6 +24,7 @@ namespace LifeSimProto
             public int finishes;           // フィニッシュの回数
             public float mlTotal;          // 量（ml）の合計
             public List<string> story = new List<string>(); // 場面の流れの文（時刻つき。HStory.cs。2026-10-25）
+            public int[] climax;           // 1人ずつ：絶頂の回数（letters と同じ順。篤はフィニッシュの回数。2026-10-25）
         }
 
         public static readonly List<Entry> Entries = new List<Entry>();
@@ -84,10 +85,36 @@ namespace LifeSimProto
             Total[c.letter] = (Total.TryGetValue(c.letter, out t) ? t : 0) + 1;
         }
 
-        /// <summary>フィニッシュを記録する（直接相手をしていた子に、回数と量）。</summary>
+        /// <summary>絶頂を記録する（2026-10-25）。</summary>
+        public static void AddClimax(Entry e, string letter)
+        {
+            if (e == null || e.letters == null) return;
+            int i = letter != null ? System.Array.IndexOf(e.letters, letter) : -1;
+            if (i < 0) return;
+            if (e.climax == null || e.climax.Length != e.letters.Length) System.Array.Resize(ref e.climax, e.letters.Length);
+            e.climax[i]++;
+        }
+
+        public static int ClimaxIn(Entry e, string letter)
+        {
+            if (e == null || e.climax == null || e.letters == null) return 0;
+            int i = System.Array.IndexOf(e.letters, letter);
+            return i >= 0 && i < e.climax.Length ? e.climax[i] : 0;
+        }
+
+        /// <summary>その子の絶頂の回数（loop が 0 なら全部の周）。</summary>
+        public static int ClimaxOf(string letter, int loop)
+        {
+            int n = 0;
+            foreach (var e in Entries) if (loop == 0 || e.loop == loop) n += ClimaxIn(e, letter);
+            return n;
+        }
+
+        /// <summary>フィニッシュを記録する（直接相手をしていた子に、回数と量）。篤の絶頂もここで数える。</summary>
         public static void AddFinish(Entry e, string letter, float ml)
         {
             if (e == null) return;
+            AddClimax(e, "F");
             e.finishes++;
             e.mlTotal += ml;
             int i = letter != null ? System.Array.IndexOf(e.letters, letter) : -1;

@@ -173,6 +173,8 @@ namespace LifeSimProto
         }
 
         // ---- ようす ----
+        GUIStyle wrapSmall;
+
         void TabNowGui(SimCharacter c, float w, ref float y)
         {
             // エッチの場面の今の様子（2026-10-25 famuru）
@@ -181,9 +183,21 @@ namespace LifeSimProto
             {
                 Color oc = GUI.color;
                 GUI.color = new Color(1f, 0.75f, 0.85f);
-                foreach (var l in hl) { GUI.Label(new Rect(4, y, w, 22), l, small); y += 22; }
+                if (wrapSmall == null) wrapSmall = new GUIStyle(small) { wordWrap = true, clipping = TextClipping.Overflow };
+                foreach (var l in hl)
+                {
+                    // 人数が多くても見切れないように折り返す（2026-10-25）
+                    float h = Mathf.Max(22f, wrapSmall.CalcHeight(new GUIContent(l), w));
+                    GUI.Label(new Rect(4, y, w, h), l, wrapSmall);
+                    y += h;
+                }
                 GUI.color = oc;
                 y += 6;
+            }
+            if (!c.IsTarget && c.inside > 0f)
+            {
+                GUI.Label(new Rect(4, y, w, 22), "中出しの量 " + c.inside.ToString("0.0") + "ml：能力すべて＋" + c.InsideBonusNow + "（1時間に約0.1mlずつ減る）", tiny);
+                y += 22;
             }
             if (c.statuses.Count == 0) { GUI.Label(new Rect(4, y, w, 22), "状態：ふつう", small); y += 24; }
             foreach (var st in c.statuses)
@@ -271,6 +285,8 @@ namespace LifeSimProto
             }
         }
 
+        GUIStyle wrapTiny;
+
         // ---- 能力・成績 ----
         void TabAbilityGui(SimCharacter c, float w, ref float y)
         {
@@ -287,6 +303,15 @@ namespace LifeSimProto
                 GUI.color = old;
                 GUI.Label(new Rect(346, y, 120, 22), Abilities.Rank(v) + "（" + Mathf.RoundToInt(v) + "）", small);
                 y += 24;
+            }
+            // エッチのスキル（通算回数で10段。2026-10-25）
+            {
+                int lv = c.HLevel, nx = HSkill.ToNext(c.letter);
+                GUI.Label(new Rect(4, y + 4, w, 22), "エッチのスキル Lv" + lv + "／10　通算 " + HLog.TotalOf(c.letter) + "回" + (nx > 0 ? "（次まであと" + nx + "回）" : "（最高）"), small); y += 26;
+                if (wrapTiny == null) wrapTiny = new GUIStyle(tiny) { wordWrap = true, clipping = TextClipping.Overflow };
+                string et = c.IsTarget ? HSkill.FEffectText(lv) : HSkill.GirlEffectText(lv);
+                float eh = Mathf.Max(20f, wrapTiny.CalcHeight(new GUIContent(et), w - 10));
+                GUI.Label(new Rect(14, y, w - 10, eh), et, wrapTiny); y += eh;
             }
             y += 8;
             GUI.Label(new Rect(4, y, w, 22), "科目と学力（★得意 ▽苦手）　平均 " + Mathf.RoundToInt(c.academic), small); y += 24;
@@ -411,6 +436,7 @@ namespace LifeSimProto
                 HLog.DirectOf(c.letter, Loop.Count, out dl, out ml);
                 HLog.DirectOf(c.letter, 0, out da, out ma);
                 GUI.Label(new Rect(4, y, w, 22), "フィニッシュで直接：この周 " + dl + "回・" + ml.ToString("0.0") + "ml　通算 " + da + "回・" + ma.ToString("0.0") + "ml", tiny); y += 22;
+                GUI.Label(new Rect(4, y, w, 22), "絶頂：この周 " + HLog.ClimaxOf(c.letter, Loop.Count) + "回・通算 " + HLog.ClimaxOf(c.letter, 0) + "回", tiny); y += 22;
             }
             else { GUI.Label(new Rect(4, y, w, 22), "精力：" + Mathf.RoundToInt(c.vigor) + "／100", tiny); y += 22; }
             GUI.Label(new Rect(4, y, w, 22), "最後：" + (lastE != null ? HLog.WhenText(lastE) + "　" + lastE.place + "　" + HLog.Names(lastE) : "まだない"), tiny); y += 26;
@@ -454,7 +480,8 @@ namespace LifeSimProto
                 string note = e.notes != null && i < e.notes.Length ? e.notes[i] : "";
                 int dn = e.direct != null && i < e.direct.Length ? e.direct[i] : 0;
                 float dm = e.ml != null && i < e.ml.Length ? e.ml[i] : 0f;
-                if (dn > 0) { any = true; GUI.Label(new Rect(x + 22, y, w - 22, 20), HLog.NameOf(e.letters[i]) + "：直接 " + dn + "回・" + dm.ToString("0.0") + "ml", tiny); y += 20; }
+                int cl = HLog.ClimaxIn(e, e.letters[i]);
+                if (dn > 0 || cl > 0) { any = true; GUI.Label(new Rect(x + 22, y, w - 22, 20), HLog.NameOf(e.letters[i]) + "：" + (dn > 0 ? "直接 " + dn + "回・" + dm.ToString("0.0") + "ml　" : "") + "絶頂 " + cl + "回", tiny); y += 20; }
                 if (string.IsNullOrEmpty(note)) continue;
                 any = true;
                 GUI.Label(new Rect(x + 22, y, w - 22, 22), "―― " + note, small);

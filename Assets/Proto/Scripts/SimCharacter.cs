@@ -897,7 +897,11 @@ namespace LifeSimProto
             if (IsTarget && Loop.fSkills != null && Loop.fSkills.Length == Academics.Count) for (int i = 0; i < Academics.Count; i++) skill[i] = Loop.fSkills[i];
             // 能力値（性格と種族から。少しだけばらつく。篤の分はループで持ち越す）
             var init = Abilities.Initial(letter);
-            for (int i = 0; i < Abilities.Count; i++) ability[i] = Mathf.Clamp(init[i] + (IsTarget ? 0f : Random.Range(-3f, 3f)), 0f, 100f);
+            for (int i = 0; i < Abilities.Count; i++)
+            {
+                float b = i < init.Length ? init[i] : (i == Abilities.Sex ? Abilities.InitialSex(letter) : 50f);
+                ability[i] = Mathf.Clamp(b + (IsTarget || i == Abilities.Sex ? 0f : Random.Range(-3f, 3f)), 0f, 100f);
+            }
             if (IsTarget && Loop.fAbilities != null) for (int i = 0; i < Abilities.Count && i < Loop.fAbilities.Length; i++) ability[i] = Loop.fAbilities[i];
         }
 
@@ -928,6 +932,7 @@ namespace LifeSimProto
             if (a < 0 || a >= Abilities.Count) return 50f;
             float v = ability[a];
             foreach (var x in mods) { float b; if (x.mod.abilityBonus.TryGetValue(a, out b)) v += b; }
+            v += InsideBonus; // 中出しの量のバフ（SimCharacter.H.cs）
             return Mathf.Clamp(v, 0f, 100f);
         }
 
@@ -1184,7 +1189,7 @@ namespace LifeSimProto
                 float sum = 0f;
                 foreach (var c in world.characters)
                     if (!c.IsTarget && c.LoveStage >= 2) { float x = rom.love[c.id] / 50f; sum += x * x; }
-                return (DesireBase + Mathf.Min(0.15f, 0.015f * sum)) * RateMul(NeedKind.Desire) * VigorDesireMul(); // 精力が多いと増えやすい
+                return (DesireBase + Mathf.Min(0.15f, 0.015f * sum)) * RateMul(NeedKind.Desire) * VigorDesireMul() * HDesireMul(); // 精力が多いと増えやすい・ヒロインのスキルで増えやすい
             }
             float love = 0f;
             if (LoveStage >= 2) { float l = rom.love[id] / 50f; love = 0.025f * l * l * l; }
@@ -1804,7 +1809,7 @@ namespace LifeSimProto
                 {
                     privateEscorts.Clear();
                     BeginApproach(pt, false, Intent.Private);
-                    actionText = pt.displayName + "を探しに行く";
+                    if (state == State.Approaching) actionText = pt.displayName + "を探しに行く";
                     return;
                 }
             }
@@ -2206,7 +2211,8 @@ namespace LifeSimProto
             {
                 var o = others[i];
                 if (o == this || !o.AvailableForTalk) continue;
-                if (TalkedJustNow(o) && !o.sickRest) continue; // さっき話したばかりの相手には、ほかのことをするか時間がたつまで行かない
+                if (TalkedJustNow(o) && !o.sickRest) continue;
+                if (GaveUpRecently(o)) continue; // さっき話したばかりの相手には、ほかのことをするか時間がたつまで行かない
                 float a = world.rel.Get(id, o.id);
                 if (o.sickRest && a < 40f) continue;
                 float w = anyone ? 1f : Mathf.Pow((a + 10f) / 110f, 1f + shy * 3f);
@@ -2740,6 +2746,7 @@ namespace LifeSimProto
         void BeginApproach(SimCharacter who, bool order, Intent why)
         {
             if (who == null) return;
+            if (!order && why != Intent.Heal && GaveUpRecently(who)) { StartWander(); return; } // さっきあきらめた相手には行かない
             LeaveCurrentSpot();
             target = who;
             hasOrder = order;
@@ -2853,8 +2860,15 @@ namespace LifeSimProto
             if (waitTimer > (hasOrder ? 20f : 8f)) GiveUp();
         }
 
+        // 一度あきらめた相手には、ゲームの30分は会いに行かない（famuru 2026-10-25）
+        SimCharacter gaveUpOn;
+        double gaveUpAt = -1e9;
+        const double GiveUpWaitMinutes = 30;
+        bool GaveUpRecently(SimCharacter o) { return o != null && o == gaveUpOn && world.Now - gaveUpAt < GiveUpWaitMinutes; }
+
         void GiveUp()
         {
+            if (target != null) { gaveUpOn = target; gaveUpAt = world.Now; }
             if (target != null) world.Log(displayName + "は" + target.displayName + "に会うのをあきらめた");
             ReleaseEscorts();
             if (intent == Intent.Give) RefundGift(intent);

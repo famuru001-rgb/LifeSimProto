@@ -10,8 +10,9 @@ namespace LifeSimProto
     /// </summary>
     public static class Abilities
     {
-        public const int Body = 0, Charm = 1, Dex = 2, Magic = 3, Mind = 4, Count = 5;
-        public static readonly string[] Names = { "体力", "魅力", "器用さ", "魔力", "知力" };
+        public const int Body = 0, Charm = 1, Dex = 2, Magic = 3, Mind = 4, Sex = 5, Count = 6;
+        public static readonly string[] Names = { "体力", "魅力", "器用さ", "魔力", "知力", "性技" };
+        // 性技（2026-10-25 famuru）：エッチの回数と時間で伸びる。高いほど快感ゲージが速くたまる（HSkill.cs）
 
         public static string Rank(float v)
         {
@@ -63,6 +64,26 @@ namespace LifeSimProto
                 case "J": return new float[] { 60, 55, 70, 45, 50 }; // キッカ：リス。すばしこく手先が器用
                 case "K": return new float[] { 35, 65, 45, 75, 55 }; // セレネ：月の精霊。体は弱め、魔力が高い
                 default: return new float[] { 50, 50, 50, 50, 50 };
+            }
+        }
+
+        /// <summary>最初の性技（仮の値。篤は元社会人で少し経験がある）。</summary>
+        public static float InitialSex(string letter)
+        {
+            switch (letter)
+            {
+                case "F": return 15f;
+                case "H": return 10f;  // ニナ：甘えん坊
+                case "C": return 8f;   // ルピナ
+                case "E": return 6f;   // ラフィーナ
+                case "J": return 6f;   // キッカ
+                case "A": return 5f;
+                case "D": return 5f;
+                case "K": return 5f;
+                case "G": return 4f;
+                case "B": return 3f;
+                case "I": return 2f;   // リア：王女で世間知らず
+                default: return 5f;
             }
         }
     }
