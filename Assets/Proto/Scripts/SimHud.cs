@@ -231,7 +231,9 @@ namespace LifeSimProto
                 if (t <= 0f) continue;
                 Vector3 q = ray.origin + ray.direction * t;
                 if (nav.IsFree(q)) { p = q; return true; }
-                if (f == 0 && q.x > -17f && q.x < 17f && q.z > -24f && q.z < 18f) { p = nav.NearestFreePoint(q); return true; }
+                bool inDorm = q.x > -17f && q.x < 17f && q.z > -24f && q.z < 18f;
+                bool inSchool = q.x > -15f && q.x < 31.5f && q.z > -95f && q.z < -24f; // 学校の本館（SchoolBuilder.cs）
+                if (f == 0 && (inDorm || inSchool)) { p = nav.NearestFreePoint(q); return true; }
             }
             return false;
         }

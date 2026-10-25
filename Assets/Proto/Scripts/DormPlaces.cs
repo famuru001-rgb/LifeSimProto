@@ -59,6 +59,7 @@ namespace LifeSimProto
         // ================= 組み立て =================
         void CreatePlaceMaterials()
         {
+            if (grassMat != null) return; // 学校の本館（先に作る）で、もう作ってある
             grassMat = ProtoArt.Mat(new Color(0.55f, 0.72f, 0.38f), ProtoArt.Fabric, new Vector2(14f, 10f), 0.05f);
             glassMat = ProtoArt.Mat(new Color(0.78f, 0.9f, 0.92f), null, null, 0.95f);
             brassMat = ProtoArt.Mat(new Color(0.85f, 0.65f, 0.3f), null, null, 0.7f);

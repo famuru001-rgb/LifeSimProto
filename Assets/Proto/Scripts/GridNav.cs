@@ -28,15 +28,62 @@ namespace LifeSimProto
 
         void SetRect(Rect r, bool value)
         {
-            for (int y = 0; y < height; y++)
+            // 範囲にかかるマスだけ調べる（マスの真ん中が範囲に入っていれば変える）
+            int x0 = Mathf.Max(0, Mathf.FloorToInt((r.xMin - min.x) / cell) - 1), x1 = Mathf.Min(width - 1, Mathf.CeilToInt((r.xMax - min.x) / cell) + 1);
+            int y0 = Mathf.Max(0, Mathf.FloorToInt((r.yMin - min.y) / cell) - 1), y1 = Mathf.Min(height - 1, Mathf.CeilToInt((r.yMax - min.y) / cell) + 1);
+            for (int y = y0; y <= y1; y++)
             {
-                for (int x = 0; x < width; x++)
+                for (int x = x0; x <= x1; x++)
                 {
                     Vector3 p = ToWorld(x, y);
                     if (p.x >= r.xMin && p.x <= r.xMax && p.z >= r.yMin && p.z <= r.yMax)
                         blocked[y * width + x] = value;
                 }
             }
+            compDirty = true;
+        }
+
+        // ---- つながっている範囲（同じ番号どうしは歩いて行き来できる） ----
+        int[] comp;
+        bool compDirty = true;
+
+        /// <summary>その点（通れなければいちばん近い通れるマス）の、つながっている範囲の番号。どこにもなければ -1。</summary>
+        public int ComponentOf(Vector3 p)
+        {
+            if (compDirty || comp == null) LabelComponents();
+            Vector2Int c = NearestFree(ToCell(p));
+            return IsFree(c.x, c.y) ? comp[c.y * width + c.x] : -1;
+        }
+
+        void LabelComponents()
+        {
+            int n = width * height;
+            if (comp == null || comp.Length != n) comp = new int[n];
+            for (int i = 0; i < n; i++) comp[i] = -1;
+            var queue = new Queue<int>();
+            int label = 0;
+            for (int i = 0; i < n; i++)
+            {
+                if (blocked[i] || comp[i] >= 0) continue;
+                comp[i] = label;
+                queue.Enqueue(i);
+                while (queue.Count > 0)
+                {
+                    int cur = queue.Dequeue();
+                    int cx = cur % width, cy = cur / width;
+                    for (int k = 0; k < 4; k++)
+                    {
+                        int nx = cx + DX[k], ny = cy + DY[k];
+                        if (!IsFree(nx, ny)) continue;
+                        int ni = ny * width + nx;
+                        if (comp[ni] >= 0) continue;
+                        comp[ni] = label;
+                        queue.Enqueue(ni);
+                    }
+                }
+                label++;
+            }
+            compDirty = false;
         }
 
         /// <summary>x,z の範囲（Rect の x=X, y=Z）を通れるようにする。</summary>

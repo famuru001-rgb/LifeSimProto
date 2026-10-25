@@ -269,51 +269,97 @@ namespace LifeSimProto
             return false;
         }
 
-        /// <summary>その階とすぐ上の階をつなぐ階段。</summary>
-        Stair StairUpFrom(int floor)
-        {
-            foreach (var s in stairs) if (s.lowerFloor == floor) return s;
-            return null;
-        }
-
-        /// <summary>階段をまたぐ道も探す（1階ずつ、その階の階段を通る）。</summary>
+        /// <summary>
+        /// 道を探す。同じ階でつながっていれば、その階の道。そうでなければ、階段（寮と本館に何か所もある）を
+        /// どう使えばいちばん近いかを、階段の上と下の点を結んだ図で先に決めてから（直線の距離で見積もる）、その道すじだけ細かく探す。
+        /// </summary>
         public List<Vector3> FindPath(Vector3 from, Vector3 to)
         {
             int ff = FloorOf(from.y), tf = FloorOf(to.y);
-            if (ff == tf) return Nav(ff).FindPath(from, to);
+            var nf = Nav(ff);
+            int cf = nf.ComponentOf(from), ct = Nav(tf).ComponentOf(to);
+            if (ff == tf && cf == ct) return nf.FindPath(from, to);
+
+            // 点：階段ごとに「下の点」（2i）と「上の点」（2i+1）
+            int nNodes = stairs.Count * 2;
+            var nodeFloor = new int[nNodes];
+            var nodeComp = new int[nNodes];
+            var nodePos = new Vector3[nNodes];
+            for (int i = 0; i < stairs.Count; i++)
+            {
+                var s = stairs[i];
+                nodeFloor[2 * i] = s.lowerFloor; nodePos[2 * i] = s.bottomApproach;
+                nodeFloor[2 * i + 1] = s.lowerFloor + 1; nodePos[2 * i + 1] = s.topApproach;
+                nodeComp[2 * i] = Nav(nodeFloor[2 * i]).ComponentOf(nodePos[2 * i]);
+                nodeComp[2 * i + 1] = Nav(nodeFloor[2 * i + 1]).ComponentOf(nodePos[2 * i + 1]);
+            }
+            var dist = new float[nNodes];
+            var prev = new int[nNodes];
+            var done = new bool[nNodes];
+            for (int i = 0; i < nNodes; i++)
+            {
+                prev[i] = -2; // -2：まだ、-1：出発点から
+                dist[i] = float.MaxValue;
+                if (nodeFloor[i] == ff && nodeComp[i] == cf && cf >= 0) { dist[i] = Flat(from, nodePos[i]); prev[i] = -1; }
+            }
+            float best = float.MaxValue;
+            int bestLast = -1;
+            while (true)
+            {
+                int u = -1;
+                for (int i = 0; i < nNodes; i++) if (!done[i] && dist[i] < float.MaxValue && (u < 0 || dist[i] < dist[u])) u = i;
+                if (u < 0 || dist[u] >= best) break;
+                done[u] = true;
+                if (nodeFloor[u] == tf && nodeComp[u] == ct && ct >= 0)
+                {
+                    float c = dist[u] + Flat(nodePos[u], to);
+                    if (c < best) { best = c; bestLast = u; }
+                }
+                // 階段を上る・下りる
+                int partner = u ^ 1;
+                var st = stairs[u / 2];
+                float sc = dist[u] + (st.top - st.bottom).magnitude + 1f;
+                if (sc < dist[partner]) { dist[partner] = sc; prev[partner] = u; }
+                // 同じ階でつながっている、ほかの階段の点へ歩く
+                for (int v = 0; v < nNodes; v++)
+                {
+                    if (v == u || nodeFloor[v] != nodeFloor[u] || nodeComp[v] != nodeComp[u] || nodeComp[v] < 0) continue;
+                    float wc = dist[u] + Flat(nodePos[u], nodePos[v]);
+                    if (wc < dist[v]) { dist[v] = wc; prev[v] = u; }
+                }
+            }
+            if (bestLast < 0) return null;
+
+            // 道すじ（点の並び）を作ってから、歩くところだけ細かく探す
+            var seq = new List<int>();
+            for (int v = bestLast; v >= 0; v = prev[v]) seq.Add(v);
+            seq.Reverse();
             var res = new List<Vector3>();
             Vector3 cur = from;
-            int f = ff;
-            while (f != tf)
+            int k = 0;
+            while (k < seq.Count)
             {
-                if (tf > f)
+                int a = seq[k];
+                var p = Nav(nodeFloor[a]).FindPath(cur, nodePos[a]);
+                if (p == null) return null;
+                res.AddRange(p);
+                cur = nodePos[a];
+                if (k + 1 < seq.Count && seq[k + 1] == (a ^ 1))
                 {
-                    var s = StairUpFrom(f);
-                    if (s == null) return null;
-                    var p = Nav(f).FindPath(cur, s.bottomApproach);
-                    if (p == null) return null;
-                    res.AddRange(p);
-                    res.Add(s.UpBottom); res.Add(s.UpTop); res.Add(s.topApproach);
-                    cur = s.topApproach;
-                    f++;
+                    var s = stairs[a / 2];
+                    if ((a & 1) == 0) { res.Add(s.UpBottom); res.Add(s.UpTop); res.Add(s.topApproach); cur = s.topApproach; }
+                    else { res.Add(s.DownTop); res.Add(s.DownBottom); res.Add(s.bottomApproach); cur = s.bottomApproach; }
+                    k += 2;
                 }
-                else
-                {
-                    var s = StairUpFrom(f - 1);
-                    if (s == null) return null;
-                    var p = Nav(f).FindPath(cur, s.topApproach);
-                    if (p == null) return null;
-                    res.AddRange(p);
-                    res.Add(s.DownTop); res.Add(s.DownBottom); res.Add(s.bottomApproach);
-                    cur = s.bottomApproach;
-                    f--;
-                }
+                else k += 1;
             }
             var last = Nav(tf).FindPath(cur, to);
             if (last == null) return null;
             res.AddRange(last);
             return res;
         }
+
+        static float Flat(Vector3 a, Vector3 b) { float dx = a.x - b.x, dz = a.z - b.z; return Mathf.Sqrt(dx * dx + dz * dz); }
 
         public AreaInfo AreaAt(Vector3 p)
         {

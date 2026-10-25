@@ -106,6 +106,7 @@ namespace LifeSimProto
             BuildOuterWalls();
             BuildFrontYard();
             BuildBridge();
+            BuildSchool();   // 学校の本館（SchoolBuilder.cs）
             BuildRoof();
             BuildPlaces();   // 台所・図書室・中庭・温室・工房・屋上の天文台（DormPlaces.cs）
             FinishAreas();
@@ -394,7 +395,7 @@ namespace LifeSimProto
         // ================= 地面と床 =================
         void BuildGround()
         {
-            Box("Ground", new Vector3(0f, -0.12f, 5f), new Vector3(80f, 0.1f, 90f), groundMat);
+            Box("Ground", new Vector3(2.5f, -0.12f, -27.5f), new Vector3(85f, 0.1f, 155f), groundMat); // 寮と学校の本館（z −105〜50）
             slabRenderers.Add(new KeyValuePair<float, Renderer>(0.02f, root.Find("Ground").GetComponent<Renderer>()));
         }
 
@@ -1072,7 +1073,7 @@ namespace LifeSimProto
                 }
                 blockers[0].Add(new Rect(x - 1.1f, -22.05f, 2.2f, 1.1f));
             }
-            Bench(new Vector3(-3.6f, 0f, -23.4f), 0f);
+            Bench(new Vector3(3.6f, 0f, -23.4f), 0f); // 南側（x −4.2）には学校の本館の裏口があるので北側へ
             Label(new Vector3(0f, 1.6f, -22.5f), "前庭");
             AddArea("前庭", Rect.MinMaxRect(-6f, z0, 10f, FrontOut), 0);
         }
@@ -1258,7 +1259,7 @@ namespace LifeSimProto
             float inflate = 0.1f; // 家具のまわりのすき間（小さいほど通路が広い）
 
             // ---- 1階 ----
-            var n0 = navs[0] = new GridNav(new Vector2(-22f, -27f), new Vector2(22f, 38f), 0.25f, 0f);
+            var n0 = navs[0] = new GridNav(new Vector2(-22f, -100f), new Vector2(34f, 38f), 0.25f, 0f); // 学校の本館まで
             n0.Open(In(-WingIn, FrontOut, WingIn, BackZ));                       // 談話室
             n0.Open(Rect.MinMaxRect(-WingCorr + 0.25f, FrontZ + 0.25f, WingCorr - 0.25f, BackZ - 0.25f)); // 廊下（談話室とつながる）
             for (int s = -1; s <= 1; s += 2)
@@ -1281,12 +1282,13 @@ namespace LifeSimProto
             n0.Open(Rect.MinMaxRect(-0.75f, FrontOut - 0.6f, 0.75f, FrontOut + 0.4f)); // 入り口
             n0.Open(Rect.MinMaxRect(-5.75f, -24.25f, 9.75f, FrontOut - 0.45f));          // 前庭
             OpenPlacesNav();
+            OpenSchoolNav(0);
             foreach (var r in blockers[0]) n0.Block(Rect.MinMaxRect(r.xMin - inflate, r.yMin - inflate, r.xMax + inflate, r.yMax + inflate));
 
             // ---- 2階・3階 ----
             for (int f = 1; f <= 2; f++)
             {
-                var n = navs[f] = new GridNav(new Vector2(-17.5f, -25f), new Vector2(17.5f, 18.5f), 0.25f, FloorY(f));
+                var n = navs[f] = new GridNav(new Vector2(-17.5f, -100f), new Vector2(34f, 18.5f), 0.25f, FloorY(f)); // 学校の本館まで
                 n.Open(Rect.MinMaxRect(WingIn + 0.25f, FrontZ + 0.25f, WingCorr - 0.25f, BackZ - 0.25f));   // 北の廊下
                 n.Open(Rect.MinMaxRect(-WingCorr + 0.25f, FrontZ + 0.25f, -WingIn - 0.25f, BackZ - 0.25f)); // 南の廊下
                 n.Open(Rect.MinMaxRect(-WingCorr + 0.25f, FrontZ + 0.25f, WingCorr - 0.25f, VoidZ0 - 0.25f)); // 手前の通路
@@ -1320,6 +1322,7 @@ namespace LifeSimProto
                     n.Open(DoorNav(9.8f, BackZ, true));
                 }
                 if (f == 2) OpenPlacesNav2F();
+                OpenSchoolNav(f);
                 foreach (var r in blockers[f]) n.Block(Rect.MinMaxRect(r.xMin - inflate, r.yMin - inflate, r.xMax + inflate, r.yMax + inflate));
             }
 
