@@ -11,6 +11,7 @@ namespace LifeSimProto
     /// ・西に体育館、東に大講堂（sy 0〜23・2階建ての高さ。2階に見下ろし席）。そのあいだが本館の中庭（北に開く）
     /// ・教室の棟の北側に外廊下（sy 23〜25。1階と2階。寮の前庭と渡り廊下は外廊下の西のはしにつながる）
     /// ・家具と授業はこのあと（建物と歩ける所だけ）
+    /// ・2026-10-31：空き教室も扉を開けて入れるようにした（二人きりの時間の場所）
     /// </summary>
     public partial class LoungeWorld
     {
@@ -95,6 +96,7 @@ namespace LifeSimProto
             BuildSchoolHall(0f, 18f, "体育館", "西");
             BuildSchoolHall(52f, 70f, "大講堂", "東");
             BuildSchoolCourtyard();
+            BuildMobDorms(); // 寮生以外の学生の寮（仮の建物。SchoolDorms.cs）
             // 正門への道（南）
             Box("School_FrontPath", S3(35f, 50f, -0.02f), new Vector3(8f * SK, 0.04f, 4f * SK), flagstone);
             Label(S3(35f, 49f, 1.6f), "正門へ");
@@ -185,7 +187,7 @@ namespace LifeSimProto
             switch (r.kind)
             {
                 case SKind.Vacant:
-                    ClosedDoor(S3(r.Mid, southSide ? SCor1 : SCor0, y), false, 1.2f * SK);
+                    // 空き教室も入れるようにした（2026-10-31 famuru：二人きりの時間に使う）。前は扉が閉まっていた
                     Label(S3(r.Mid, cy, y + 2.0f), r.name);
                     AddArea(fn + r.name, SR(r.x0, sy0, r.x1, sy1), f);
                     break;
@@ -376,14 +378,12 @@ namespace LifeSimProto
             n.Open(SIn(0, SCor0, SLen, SCor1));                       // 大廊下
             foreach (var r in SNorth[f])
             {
-                if (r.kind == SKind.Vacant) continue;
                 if (r.kind == SKind.Pass) { n.Open(SR(r.x0 + 0.25f, SVer1 - 0.6f, r.x1 - 0.25f, SCor0 + 0.5f)); continue; }
                 n.Open(SIn(r.x0, 25, r.x1, SCor0));
                 n.Open(SDoorNav(r.Mid, SCor0, true));
             }
             foreach (var r in SSouth[f])
             {
-                if (r.kind == SKind.Vacant) continue;
                 if (r.kind == SKind.Stair) { n.Open(SR(r.x0 + 0.25f, SCor0 + 0.5f, r.x1 - 0.25f, SBack - 0.25f)); continue; }
                 n.Open(SIn(r.x0, SCor1, r.x1, SBack));
                 if (r.kind == SKind.Hall) n.Open(SR(r.Mid - 1.75f, SCor1 - 0.5f, r.Mid + 1.75f, SCor1 + 0.5f));

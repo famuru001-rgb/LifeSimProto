@@ -204,6 +204,11 @@ namespace LifeSimProto
             readonly HLog.Entry entry;
             readonly bool sick;
             readonly double startAt;
+            // 篤が決めた内容（2026-10-31 famuru。null の項目はおまかせ）
+            readonly HPlan plan;
+            readonly int depth;        // 0 キスだけ・1 愛撫まで・2 最後まで
+            readonly bool outside;     // フィニッシュを外に
+            public readonly string pose; // 体位（モーションのチャットで動きを付ける）
             string phase;
             double phaseUntil, nextRotate, nextJoin, noneSince = -1;
             int finishes;
@@ -214,9 +219,13 @@ namespace LifeSimProto
             readonly Dictionary<SimCharacter, float> joinWait = new Dictionary<SimCharacter, float>();
             bool ended;
 
-            public HSession(LoungeWorld w, SimCharacter atsushi, List<SimCharacter> who, PrivateSpot sp, HLog.Entry e)
+            public HSession(LoungeWorld w, SimCharacter atsushi, List<SimCharacter> who, PrivateSpot sp, HLog.Entry e, HPlan pl = null)
             {
                 world = w; f = atsushi; spot = sp; entry = e;
+                plan = pl;
+                depth = pl != null ? Mathf.Clamp(pl.depth, 0, 2) : 2;
+                outside = pl != null && pl.finish == 2;
+                pose = pl != null && !string.IsNullOrEmpty(pl.pose) ? pl.pose : HPlan.Poses[Random.Range(0, HPlan.Poses.Length)];
                 startAt = w.Now;
                 f.vigor = Mathf.Max(f.vigor, HBook.VigorMinAtStart);
                 int girls = 0;
@@ -234,6 +243,7 @@ namespace LifeSimProto
                 nextRotate = w.Now + HBook.RotateMin;
                 nextJoin = w.Now + HBook.JoinCheckMin;
                 Story("start", Direct != null ? Direct.c : null);
+                if (pl != null) HStory.AddText(w, e, "（篤が決めた内容：" + (pl.placeName ?? "場所はおまかせ") + "・" + pl.Summary() + "）");
                 Arrange();
             }
 
@@ -328,11 +338,11 @@ namespace LifeSimProto
                 }
             }
 
-            static string RoleName(HRole r)
+            string RoleName(HRole r)
             {
                 switch (r)
                 {
-                    case HRole.Direct: return "挿入";
+                    case HRole.Direct: return depth == 0 ? "キス" : (depth == 1 ? "愛撫（直接）" : "挿入・" + pose);
                     case HRole.Pet: return "愛撫";
                     case HRole.Wait: return "参加";
                     default: return "休憩";
@@ -343,7 +353,7 @@ namespace LifeSimProto
             {
                 var res = new List<string>();
                 int min = Mathf.RoundToInt((float)(world.Now - startAt));
-                res.Add("エッチ中：" + PhaseName(phase) + "　" + (spot != null ? spot.name : "") + "（" + (min / 60 > 0 ? (min / 60) + "時間" : "") + (min % 60) + "分）");
+                res.Add("エッチ中：" + PhaseName(phase) + "　" + (spot != null ? spot.name : "") + "　" + (depth >= 2 ? pose + "・" : "") + HPlan.DepthNames[depth] + (plan != null && plan.solo ? "・二人きり" : "") + (outside ? "・外に" : "") + "（" + (min / 60 > 0 ? (min / 60) + "時間" : "") + (min % 60) + "分）");
                 var mine = ps.Find(p => p.c == me);
                 if (mine != null) res.Add("今：" + RoleName(mine.role) + "　快感 " + Mathf.RoundToInt(mine.pleasure) + "／" + Mathf.RoundToInt(GaugeMax(mine)) + "・絶頂 " + mine.climax + "回" + (sick ? "（体調が悪いので軽めに）" : ""));
                 // 役ごとに全員（挿入1人・愛撫3人まで・ほかは参加・休憩）。画面では折り返して出す
@@ -369,7 +379,7 @@ namespace LifeSimProto
                 var d = Direct;
                 foreach (var p in ps)
                     p.c.actionText = "エッチ中（" + ph + "・" + RoleName(p.role) + (p.role == HRole.Rest ? "" : "・快感 " + Mathf.RoundToInt(p.pleasure) + "／" + Mathf.RoundToInt(GaugeMax(p))) + "）";
-                f.actionText = "エッチ中（" + ph + (d != null ? "・挿入：" + d.c.displayName : "") + "・" + (ps.Count + 1) + "人）";
+                f.actionText = "エッチ中（" + ph + (d != null ? "・" + RoleName(HRole.Direct) + "：" + d.c.displayName : "") + "・" + (ps.Count + 1) + "人）";
             }
 
             // ---------------- 快感ゲージと絶頂（2026-10-25 famuru） ----------------
@@ -405,7 +415,11 @@ namespace LifeSimProto
                     float per, grow;
                     switch (p.role)
                     {
-                        case HRole.Direct: per = HSkill.InsertPerMin; grow = HSkill.GrowInsertPerMin; break;
+                        case HRole.Direct:
+                            if (depth == 0) { per = HSkill.PettingPerMin; grow = HSkill.GrowPettingPerMin; }      // キスだけ
+                            else if (depth == 1) { per = HSkill.CaressPerMin; grow = HSkill.GrowCaressPerMin; }  // 愛撫まで
+                            else { per = HSkill.InsertPerMin; grow = HSkill.GrowInsertPerMin; }
+                            break;
                         case HRole.Pet: per = HSkill.CaressPerMin; grow = HSkill.GrowCaressPerMin; break;
                         case HRole.Wait: per = HSkill.PettingPerMin; grow = HSkill.GrowPettingPerMin; break;
                         default: continue;
@@ -520,7 +534,7 @@ namespace LifeSimProto
                 // 順番の入れかえ
                 if (now >= nextRotate && phase != "finish") { Rotate(); nextRotate = now + HBook.RotateMin; }
                 // 途中参加
-                if (now >= nextJoin && !sick) { nextJoin = now + HBook.JoinCheckMin; TryJoin(); }
+                if (now >= nextJoin && !sick && (plan == null || !plan.solo)) { nextJoin = now + HBook.JoinCheckMin; TryJoin(); } // 二人きりなら加わらない
 
                 if (now >= phaseUntil) NextPhase();
                 Chatter(dt);
@@ -531,9 +545,13 @@ namespace LifeSimProto
                 var dd = Direct != null ? Direct.c : null;
                 switch (phase)
                 {
-                    case "start": SetPhase("mid1"); Story("mid1", dd); break;
-                    case "mid1": if (sick) DoFinish(); else { SetPhase("mid2"); Story("mid2", dd); } break;
-                    case "mid2": SetPhase("mid3"); Story("mid3", dd); break;
+                    case "start":
+                        if (depth == 0) { GoAfter(); break; } // キスだけ：始まりのあと、そのまま余韻へ
+                        SetPhase("mid1"); Story("mid1", dd); break;
+                    case "mid1": if (sick && depth >= 2) DoFinish(); else { SetPhase("mid2"); Story("mid2", dd); } break;
+                    case "mid2":
+                        if (depth == 1) { GoAfter(); break; } // 愛撫まで：フィニッシュしない
+                        SetPhase("mid3"); Story("mid3", dd); break;
                     case "mid3": DoFinish(); break;
                     case "finish": AfterFinish(); break;
                     case "resume":
@@ -553,8 +571,8 @@ namespace LifeSimProto
                 {
                     float ml = HBook.Ml(f.vigor, f.desire, finishes) * HSkill.MlMul(f.HLevel);
                     HLog.AddFinish(entry, d.c.letter, ml);
-                    d.c.inside += ml; // 中出しの量（能力が上がるバフ。時間で減る）
-                    Story("finish", d.c, ml);
+                    if (!outside) d.c.inside += ml; // 中出しの量（能力が上がるバフ。時間で減る）。外に出したときは入らない
+                    Story(outside ? "finish_out" : "finish", d.c, ml);
                 }
                 f.vigor = Mathf.Max(0f, f.vigor - HSkill.VigorPerFinish(f.HLevel));
                 f.desire = Mathf.Max(0f, f.desire - HBook.AtsushiFinishDesireDrop);

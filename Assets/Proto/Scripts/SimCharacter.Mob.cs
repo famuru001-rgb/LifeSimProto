@@ -6,8 +6,8 @@ namespace LifeSimProto
     /// <summary>
     /// 寮生以外の学生（冒険者寮・騎士寮・魔法師寮に30人ずつ）と先生7人の動き（2026-10-30 famuru）。
     /// ・欲求なし・関係なし・会話なし。エッチはできる（篤が誘えば受ける。自分からは誘わない）
-    /// ・朝は正門から登校し、取っている科目の授業の時間は教室へ（授業中は教室の中＝見えない）、昼は学食、あいた時間は学校の中や前庭で過ごす。
-    ///   夕方〜夜に正門から自分の寮へ帰る（ほかの寮はまだ作っていないので、帰ると見えなくなる）
+    /// ・朝は自分の寮（本館の北の原っぱにある仮の建物。SchoolDorms.cs。先生は正門）から登校し、取っている科目の授業の時間は教室へ（授業中は教室の中＝見えない）、昼は学食、あいた時間は学校の中や前庭で過ごす。
+    ///   夕方〜夜に自分の寮へ帰る（寮の扉に着くと見えなくなる。寮の中はまだ作っていない）
     /// ・寮ごとの評価（試験・行事）のため、ひとりずつ学力と能力がある。授業・自習・運動で少しずつ伸びる
     /// </summary>
     public partial class SimCharacter
@@ -57,16 +57,19 @@ namespace LifeSimProto
             return d0 + 1020 + rnd.Next(0, 210);                   // 17:00〜20:30
         }
 
+        /// <summary>朝出てきて、夜帰る所：自分の寮の扉の前（先生は正門）。</summary>
+        Vector3 MobHomeDoor { get { return IsTeacher || profile.mobDorm < 0 || profile.mobDorm > 2 ? LoungeWorld.SchoolGate : LoungeWorld.MobDormDoor(profile.mobDorm); } }
+
         string MobHomeLabel { get { return IsTeacher ? "家に帰っている" : MobDormName + "にいる"; } }
 
-        /// <summary>最初の状態：自分の寮にいる（見えない）。来る時刻になったら正門から入ってくる。</summary>
+        /// <summary>最初の状態：自分の寮にいる（見えない）。来る時刻になったら寮の扉（先生は正門）から出てくる。</summary>
         void MobInit()
         {
             if (seat != null && seat.occupant == this) seat.occupant = null;
             seat = null;
             path.Clear();
             goal = Goal.None;
-            transform.position = LoungeWorld.SchoolGate;
+            transform.position = MobHomeDoor;
             mobDay = world.Day;
             mobHomeAt = MobLeaveTime(mobDay);
             double now = world.Now;
@@ -154,7 +157,7 @@ namespace LifeSimProto
             if (mobHomeTrip)
             {
                 mobHomeTrip = false;
-                transform.position = world.NearestFree(LoungeWorld.SchoolGate + new Vector3(Random.Range(-1.5f, 1.5f), 0f, Random.Range(-1f, 1f)));
+                transform.position = world.NearestFree(MobHomeDoor + new Vector3(Random.Range(-1f, 0.3f), 0f, Random.Range(-1.2f, 1.2f)));
                 actionText = IsTeacher ? "出勤してきた" : "登校してきた";
                 mobDay = world.Day;
                 mobHomeAt = MobLeaveTime(mobDay);
@@ -184,7 +187,7 @@ namespace LifeSimProto
             awayLabel = MobHomeLabel;
             goal = Goal.Exit;
             actionText = IsTeacher ? "帰る" : MobDormName + "へ帰る";
-            if (!GoTo(world.NearestFree(LoungeWorld.SchoolGate), State.Walking)) MobVanish();
+            if (!GoTo(world.NearestFree(MobHomeDoor), State.Walking)) MobVanish();
         }
 
         void MobGoClass(ScheduleItem it)

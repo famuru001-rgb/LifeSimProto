@@ -80,7 +80,7 @@ namespace LifeSimProto
                 pivot = Vector3.Lerp(pivot, want, 1f - Mathf.Exp(-dt * 5f));
             }
 
-            pivot.x = Mathf.Clamp(pivot.x, -38f, 46f);
+            pivot.x = Mathf.Clamp(pivot.x, -38f, 78f); // 東の3つの寮まで（2026-10-31）
             pivot.z = Mathf.Clamp(pivot.z, -132f, 38f); // 前庭・渡り廊下・中庭、学校の本館まで見られるように
             pivot.y = Mathf.Clamp(pivot.y, 0.2f, LoungeWorld.RoofY + 0.9f);
 

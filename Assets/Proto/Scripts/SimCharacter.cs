@@ -2494,7 +2494,7 @@ namespace LifeSimProto
         public void OrderTalk(SimCharacter g) { OrderApproach(g, Intent.Talk); }
 
         /// <summary>篤がエッチに誘いに行く（famuru 2026-10-25。右クリックの選択肢）。受けるかは CanJoinPrivate、断られたらふつうに話す。</summary>
-        public void OrderInvite(SimCharacter g) { OrderApproach(g, Intent.Private); }
+        public void OrderInvite(SimCharacter g) { OrderInvite(g, null); } // おまかせ（場所と内容を選ぶときは SimCharacter.HPlace.cs）
 
         /// <summary>
         /// 指示が来たとき、会話中なら会話を切り上げる（famuru 2026-10-25「篤が話しているときも会話を中断して他の動作を開始」）。
@@ -3390,9 +3390,14 @@ namespace LifeSimProto
             partner.privatePending = true;
             var f = IsTarget ? this : partner;
             var girl = IsTarget ? partner : this;
+            // 篤が場所と内容を決めて誘ったとき（2026-10-31）
+            HPlan plan = IsTarget ? invitePlan : null;
+            invitePlan = null;
+            bool solo = plan != null && plan.solo;
 
             var group = new List<SimCharacter> { this, partner };
-            if (PrivateNight)
+            if (solo) privateEscorts.Clear(); // 二人きり：ほかの子は加わらない
+            else if (PrivateNight)
             {
                 // 夜：二人きりになりたい子（性欲55以上）が集まる（最大4人。篤との関係に関係なく）
                 foreach (var c in world.residents)
@@ -3431,7 +3436,8 @@ namespace LifeSimProto
             yield return new WaitForSeconds(1.6f);
 
             // 場所を選ぶ：個室（女の子の部屋・篤の部屋）か、開いている場所（温室・図書室・屋上の天文台・中庭）で、ほかの人がいない所
-            var spot = PickPrivateSpot(group, f, girl);
+            var spot = plan != null && plan.placeKey != null ? BuildPrivateSpot(plan.placeKey, group) : null;
+            if (spot == null) spot = PickPrivateSpot(group, f, girl);
             talkPartner = null;
             partner.talkPartner = null;
             if (spot == null) { CancelPrivate(group); yield break; }
@@ -3473,7 +3479,7 @@ namespace LifeSimProto
             }
             world.Log("♥ " + string.Join("・", names.ToArray()) + "が" + spot.name + "でエッチしている");
             var hEntry = HLog.Record(world, arrived, spot.name, this); // エッチの記録（誘った人＝この子）
-            new HSession(world, f, arrived, spot, hEntry); // 場面の流れ・順番・休憩・途中参加・精力（SimCharacter.H.cs）
+            new HSession(world, f, arrived, spot, hEntry, plan); // 場面の流れ・順番・休憩・途中参加・精力（SimCharacter.H.cs）
             // 夜（21時〜朝）なら「夜をいっしょに過ごした」と記録する（その周だけ。物語の針の条件）
             float mm = world.MinuteOfDay;
             if (mm >= 21f * 60f || LoungeWorld.IsNight(mm))
@@ -3487,6 +3493,7 @@ namespace LifeSimProto
             public RoomInfo room;
             public readonly List<Vector3> walkTo = new List<Vector3>();
             public readonly List<Seat> seatList = new List<Seat>();
+            public readonly List<Place> points = new List<Place>(); // 決まった席のない所（学校の部屋など。2026-10-31）
 
             public struct Place { public Vector3 pos, facing; public bool floor; }
 
@@ -3513,7 +3520,8 @@ namespace LifeSimProto
                         res.Add(new Place { pos = room.bed.position + sitAx * (o4[col] * mul) + edgeOut * (room.bedEdgeDist + 0.75f + row * 0.6f), facing = -edgeOut, floor = true });
                     }
                 }
-                else foreach (var s in seatList) res.Add(new Place { pos = s.position, facing = s.forward, floor = s.floorSeat });
+                else if (seatList.Count > 0) foreach (var s in seatList) res.Add(new Place { pos = s.position, facing = s.forward, floor = s.floorSeat });
+                else res.AddRange(points);
                 return res;
             }
         }
@@ -3547,6 +3555,9 @@ namespace LifeSimProto
                 for (int i = 0; i < group.Count; i++) { ps.seatList.Add(free[i]); ps.walkTo.Add(free[i].approach); }
                 cands.Add(ps);
             }
+            // 学校にいるときは、学校のいちばん近い部屋も（2026-10-31。人がいても使える）
+            var near = NearestSchoolSpot(girl, group.Count);
+            if (near != null) { cands.Add(near); cands.Add(near); }
             if (cands.Count == 0) return null;
             // 個室は少し選ばれやすい
             float total = 0f;

@@ -8,7 +8,7 @@ namespace LifeSimProto
     /// できごとごとに1文を時刻つきで残す。文は Resources/Text/HStory.txt から選ぶ（なければ下の決まった文）。
     /// HStory.txt の書き方（1行1件）：
     ///   できごと|記号|文
-    ///   できごと：start（始まり）・mid1（前半）・mid2（中盤）・mid3（後半）・finish（フィニッシュ）・climax（ヒロインの絶頂）・turn（直接の相手の交代）・join（途中参加）・
+    ///   できごと：start（始まり）・mid1（前半）・mid2（中盤）・mid3（後半）・finish（フィニッシュ）・finish_out（外に出したフィニッシュ）・climax（ヒロインの絶頂）・turn（直接の相手の交代）・join（途中参加）・
     ///             rest（ひと休み）・back（休憩から戻る）・after（終わったあと）・end（終わり）
     ///   記号：その文の中心の子（A〜K）か *（だれでも）。合う記号の行があればそちらを選ぶ
     ///   文の {名} はその子、{篤} は篤、{場所}、{みんな}（いっしょにいる子の名前）、{回}（フィニッシュの回数）、{ml}（その回の量）、{合計}（量の合計）
@@ -31,6 +31,7 @@ namespace LifeSimProto
             { "mid2", new[] { "{名}の息が少しずつ上がっていく", "{名}が{篤}に甘えるように身を寄せた" } },
             { "mid3", new[] { "いちばん高まったところ", "{名}がぎゅっと{篤}にしがみついた" } },
             { "finish", new[] { "{回}回目のフィニッシュ（{名}・{ml}ml）" } },
+            { "finish_out", new[] { "{回}回目のフィニッシュ（外に・{名}・{ml}ml）" } },
             { "turn", new[] { "{名}の番になった", "{名}が{篤}のとなりへ" } },
             { "climax", new[] { "{名}が絶頂を迎えた" } },
             { "join", new[] { "{名}が加わった", "{名}がそっと入ってきた" } },
@@ -73,6 +74,15 @@ namespace LifeSimProto
             lastUsed[key] = t;
             if (vars != null) foreach (var kv in vars) t = t.Replace("{" + kv.Key + "}", kv.Value ?? "");
             return t;
+        }
+
+        /// <summary>決まった文をそのまま記録に足す（時刻つき）。</summary>
+        public static void AddText(LoungeWorld w, HLog.Entry e, string text)
+        {
+            if (e == null || w == null || string.IsNullOrEmpty(text)) return;
+            if (e.story == null) e.story = new List<string>();
+            if (e.story.Count >= 80) return;
+            e.story.Add(ScheduleMaker.Clock(w.MinuteOfDay) + "　" + text);
         }
 
         /// <summary>記録に1文を足す（時刻つき）。</summary>
