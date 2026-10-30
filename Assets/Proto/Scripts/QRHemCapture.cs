@@ -1,4 +1,4 @@
-#if UNITY_EDITOR
+﻿#if UNITY_EDITOR
 using System;using System.Collections;using System.Collections.Generic;using System.IO;using System.Linq;using System.Reflection;using System.Text;using UnityEngine;using UnityEngine.Playables;
 namespace LifeSimProto {
 public class QRHemCapture:MonoBehaviour {
@@ -19,7 +19,7 @@ public class QRHemCapture:MonoBehaviour {
     string id=letter+"_"+clip+"_"+sample;var go=new GameObject("HemReview_"+letter);made.Add(go);go.transform.position=stage;go.transform.rotation=Quaternion.Euler(0,180,0);cam.transform.position=stage+new Vector3(0,1,-3);cam.transform.LookAt(stage+Vector3.up*.75f);
     var pb=ProtoBody.Create(go,CharLook.Get(letter,false,Color.gray),letter);pb.testMode=true;pb.testLetter=letter;pb.testScene="";pb.testMood="";pb.testOutfit="Uniform";pb.testFace="";pb.testClip=clip;pb.testPose=clip.StartsWith("Sit")?BodyPose.Sit:BodyPose.Stand;pb.testSkirtSit=0;pb.testTalk=false;
     if(Variant=="after"||Variant.StartsWith("pair")){
-     var candidate=UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Proto/Editor/QRHemReviewCopies/"+(Variant.StartsWith("pair")?"Pair7/":"")+letter+"/Char"+letter+".fbx");
+     var candidate=UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Proto/Editor/QRHemReviewCopies/"+(Variant.StartsWith("pair")?(Variant=="pair13"?"Pair13/":"Pair7/"):"")+letter+"/Char"+letter+".fbx");
      foreach(var src in candidate.GetComponentsInChildren<SkinnedMeshRenderer>(true).Where(r=>r.name=="Outfit_Uniform_Jacket"||r.name=="Outfit_Uniform_Skirt")){var dst=go.GetComponentsInChildren<SkinnedMeshRenderer>(true).First(r=>r.name==src.name);
      if(!src.bones.Select(b=>b.name).SequenceEqual(dst.bones.Select(b=>b.name)))throw new Exception("Jacket bone order differs");
      if(src.sharedMesh.GetBlendShapeIndex("Corrective_Skirt_Sit")!=dst.sharedMesh.GetBlendShapeIndex("Corrective_Skirt_Sit"))throw new Exception("Key order differs");
