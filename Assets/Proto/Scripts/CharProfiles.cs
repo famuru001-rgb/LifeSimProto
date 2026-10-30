@@ -105,6 +105,7 @@ namespace LifeSimProto
         // 科目の番号（Academics.Names と同じ並び）
         const int Theory = Academics.Theory, Ancient = Academics.Ancient, Tools = Academics.Tools, Herb = Academics.Herb, History = Academics.History, Monster = Academics.Monster;
         const int Sword = Academics.Sword, MagicArts = Academics.MagicArts, Dungeon = Academics.Dungeon, Alchemy = Academics.Alchemy, Fly = Academics.Flight, Medicine = Academics.Medicine;
+        const int Astro = Academics.Astrology, BodyArts = Academics.BodyArts, Elemental = Academics.Elemental, HealMagic = Academics.HealMagic; // 2026-10-30 追加の科目
 
         public static readonly List<CharProfile> All = new List<CharProfile>();
 

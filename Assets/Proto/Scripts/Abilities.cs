@@ -38,10 +38,10 @@ namespace LifeSimProto
             }
         }
 
-        /// <summary>科目の試験に効く能力値（座学→知力、剣術・ダンジョン実習→体力、ほかの実技→魔力）。</summary>
+        /// <summary>科目の試験に効く能力値（座学→知力、剣術・ダンジョン実習・体術→体力、ほかの実技→魔力）。</summary>
         public static int ForSubject(int s)
         {
-            if (s == Academics.Sword || s == Academics.Dungeon) return Body;
+            if (s == Academics.Sword || s == Academics.Dungeon || s == Academics.BodyArts) return Body; // 体術も体力（2026-10-30）
             return Academics.IsPractical(s) ? Magic : Mind;
         }
 

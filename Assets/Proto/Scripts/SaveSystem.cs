@@ -147,7 +147,13 @@ namespace LifeSimProto
             if (d == null) return false;
             Loop.Count = Mathf.Max(1, d.loop);
             bool sameSubjects = d.subjectVersion == Academics.Version; // 2026-10-25 科目の作り直しより前のセーブは、学力と篤の魔法を最初から
-            Loop.fSkills = sameSubjects && d.fSkills != null && d.fSkills.Length == Academics.Count ? d.fSkills : null;
+            Loop.fSkills = null;
+            if (sameSubjects && d.fSkills != null && d.fSkills.Length <= Academics.Count)
+            {
+                // 2026-10-30 科目を後ろに足した：前のセーブは、ある分だけ使い、足した科目は最初の値（篤は来たばかり）
+                Loop.fSkills = new float[Academics.Count];
+                for (int i = 0; i < Academics.Count; i++) Loop.fSkills[i] = i < d.fSkills.Length ? d.fSkills[i] : 8f;
+            }
             Loop.fAbilities = d.fAbilities != null && d.fAbilities.Length > 0 ? d.fAbilities : null;
             Loop.Escaped = d.escaped; Loop.EndlessDays = d.endless; Loop.AskChoice = false;
             Fill(Loop.Zukan, d.zukan);

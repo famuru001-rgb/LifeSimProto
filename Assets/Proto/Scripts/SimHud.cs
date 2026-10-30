@@ -33,7 +33,7 @@ namespace LifeSimProto
         public static bool ShowNameTags = false;
         Rect MemoryPanel { get { return new Rect(VW / 2f - 470f, 120f, 940f, 820f); } }
         Rect ChoicePanel { get { return new Rect(VW / 2f - 300f, 380f, 600f, 170f); } }
-        Rect ExamPanel { get { return new Rect(VW / 2f - 470f, 120f, 940f, 96f + Academics.ActiveCount * 30f + 40f); } }
+        Rect ExamPanel { get { return new Rect(VW / 2f - 470f, 120f, 940f, 96f + Academics.ActiveCount * 30f + 70f); } }
         Rect InfoLine { get { return new Rect(12, 66, 1400, 32); } }
         // 左右・下の欄（しまうと画面の端へ滑る。SimHud.Slide.cs）。…Base はしまう前の位置
         Rect TablePanelBase { get { return new Rect(VW - 492, 108, 480, 400); } }
