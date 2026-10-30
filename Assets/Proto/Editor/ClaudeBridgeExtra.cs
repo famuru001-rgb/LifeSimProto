@@ -74,6 +74,8 @@ namespace LifeSimProto.EditorTools
                 case "gestureshots":
                 case "motionvideo":
                 case "usagevideo":
+                case "hpreview":
+                case "hpreviewshot":
                     break;
                 default:
                     return false;
@@ -249,6 +251,26 @@ namespace LifeSimProto.EditorTools
                         else if (s1 == "render") log.AppendLine(LifeSimProto.PerfProbe.Render(a.Length > 2 ? a[2] : "reset", a.Length > 3 ? a[3] : ""));
                         else if (s1 == "clear") log.AppendLine(LifeSimProto.PerfProbe.Clear());
                         else log.AppendLine(LifeSimProto.PerfProbe.Begin(a.Length > 2 ? a[2] : "測定", float.Parse(s1, System.Globalization.CultureInfo.InvariantCulture)));
+                        break;
+                    }
+                    case "hpreview":   // 確認用の場：hpreview [形] [場面 -1..3] [相手の記号] / hpreview close（2026-10-31 モーション）
+                    {
+                        if (a.Length > 1 && a[1] == "close") { if (LifeSimProto.HPreview.Instance != null) UnityEngine.Object.Destroy(LifeSimProto.HPreview.Instance.gameObject); log.AppendLine("hpreview: closed"); break; }
+                        var hp = LifeSimProto.HPreview.Open();
+                        if (a.Length > 1) hp.SetForm(a[1]);
+                        if (a.Length > 2) hp.SetPhase(int.Parse(a[2]));
+                        if (a.Length > 3) hp.SetLetter(a[3]);
+                        log.AppendLine("hpreview: " + hp.Status());
+                        break;
+                    }
+                    case "hpreviewshot":   // hpreviewshot ファイル名 [yaw pitch dist]
+                    {
+                        var hp = LifeSimProto.HPreview.Instance;
+                        if (hp == null) { log.AppendLine("hpreviewshot: not open"); break; }
+                        if (a.Length > 4) hp.SetView(float.Parse(a[2], System.Globalization.CultureInfo.InvariantCulture), float.Parse(a[3], System.Globalization.CultureInfo.InvariantCulture), float.Parse(a[4], System.Globalization.CultureInfo.InvariantCulture));
+                        string path = System.IO.Path.Combine(System.IO.Path.GetFullPath("Logs"), a.Length > 1 ? a[1] : "hpreview.png");
+                        hp.Shot(path);
+                        log.AppendLine("hpreviewshot: " + path + " / " + hp.Status());
                         break;
                     }
                     case "usagevideo":
