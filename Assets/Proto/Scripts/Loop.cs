@@ -101,7 +101,7 @@ namespace LifeSimProto
             new Gate { place = "図書室", abilityIndex = Abilities.Mind, ability = "B", friends = new[] { "A", "I" } },
             new Gate { place = "工房", abilityIndex = Abilities.Dex, ability = "C", friends = new[] { "G", "J" } },
             new Gate { place = "屋上の天文台", abilityIndex = Abilities.Magic, ability = "D", friends = new[] { "D", "H", "K" } },
-            new Gate { place = "台所", abilityIndex = Abilities.Dex, ability = "D", friends = new[] { "I" } },
+            // 台所は最初から開いている（famuru 2026-10-26。前は 器用さD以上・リアの物語の第1話）
         };
 
         public static string Text(Gate g)

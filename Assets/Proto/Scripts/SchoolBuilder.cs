@@ -253,10 +253,17 @@ namespace LifeSimProto
             Box("Veranda_Path", S3(SLen / 2f, (SVer0 + SVer1) / 2f, -0.02f), new Vector3((SVer1 - SVer0) * SK, 0.04f, SLen * SK), flagstone);
             Slab("Veranda_Floor2", 1, SR(0, SVer0, SLen, SVer1), woodFloor);
             Box("Veranda_Roof", S3(SLen / 2f, (SVer0 + SVer1) / 2f, FloorY(2) + 0.05f), new Vector3((SVer1 - SVer0) * SK + 0.3f, 0.1f, SLen * SK), mortarDark);
+            if (Resources.Load<GameObject>("Furniture/Furn_RoofEdge") != null) // 本番の部品の軒（外廊下の屋根の外側）
+            {
+                int ne = Mathf.RoundToInt(SLen * SK / 2f); float le = SLen * SK / ne;
+                Vector3 e0 = S3(0f, SVer0, FloorY(2) - 0.1f) + new Vector3(0.15f - 0.3f, 0f, 0f);
+                for (int i = 0; i < ne; i++) PlaceFurn("Furn_RoofEdge", null, e0 + new Vector3(0f, 0f, -(i + 0.5f) * le), 90f, false, new Vector3(le / 2f, 1f, 1f));
+            }
             // 柱（中庭の側）と2階の手すり
             for (float sx = 18f; sx <= 52.01f; sx += 4.25f)
             {
-                Box("Veranda_Post", S3(sx, SVer0 + 0.15f, FloorH), new Vector3(0.25f, FloorH * 2f, 0.25f), woodDark);
+                if (PlaceFurn("Furn_Pillar", null, S3(sx, SVer0 + 0.15f, 0f), 0f, false, new Vector3(0.25f / 0.4f, FloorH * 2f / 4.5f, 0.25f / 0.4f)) == null)
+                    Box("Veranda_Post", S3(sx, SVer0 + 0.15f, FloorH), new Vector3(0.25f, FloorH * 2f, 0.25f), woodDark);
                 blockers[0].Add(SR(sx - 0.2f, SVer0, sx + 0.2f, SVer0 + 0.35f));
                 blockers[1].Add(SR(sx - 0.2f, SVer0, sx + 0.2f, SVer0 + 0.35f));
             }
@@ -321,24 +328,26 @@ namespace LifeSimProto
             SPath(new Vector2(fx, fy), new Vector2(44.3f, 5.2f), 1.2f);
             // 噴水
             var c = S3(fx, fy, 0f);
-            Cyl("Fountain_Rim", c + Vector3.up * 0.25f, new Vector3(7.2f, 0.25f, 7.2f), Quaternion.identity, mortarDark);
+            bool fnt = PlaceFurn("Furn_Fountain", null, c, 0f) != null; // 本番の家具（水はこのまま）
+            if (!fnt) Cyl("Fountain_Rim", c + Vector3.up * 0.25f, new Vector3(7.2f, 0.25f, 7.2f), Quaternion.identity, mortarDark);
             Cyl("Fountain_Water", c + Vector3.up * 0.48f, new Vector3(6.5f, 0.02f, 6.5f), Quaternion.identity, waterMat);
-            Cyl("Fountain_Pillar", c + Vector3.up * 0.9f, new Vector3(0.5f, 0.9f, 0.5f), Quaternion.identity, mortarDark);
-            Cyl("Fountain_Bowl", c + Vector3.up * 1.8f, new Vector3(1.6f, 0.12f, 1.6f), Quaternion.identity, mortarDark);
+            if (!fnt) Cyl("Fountain_Pillar", c + Vector3.up * 0.9f, new Vector3(0.5f, 0.9f, 0.5f), Quaternion.identity, mortarDark);
+            if (!fnt) Cyl("Fountain_Bowl", c + Vector3.up * 1.8f, new Vector3(1.6f, 0.12f, 1.6f), Quaternion.identity, mortarDark);
             blockers[0].Add(new Rect(c.x - 3.7f, c.z - 3.7f, 7.4f, 7.4f));
             // 噴水や休憩所でくつろぐ場所は、授業のしくみを作るときに足す（今は寮から遠くへ行きすぎないように）
             // 丸い休憩所（壁なし。柱6本と丸い屋根、まわりにベンチ）
             var g = S3(46f, 3.6f, 0f);
-            Cyl("Gazebo_Floor", g + Vector3.up * 0.05f, new Vector3(5.4f, 0.05f, 5.4f), Quaternion.identity, flagstone);
+            bool gz = PlaceFurn("Furn_Gazebo", null, g, 0f) != null; // 本番の家具（柱・屋根・机も入っている）
+            if (!gz) Cyl("Gazebo_Floor", g + Vector3.up * 0.05f, new Vector3(5.4f, 0.05f, 5.4f), Quaternion.identity, flagstone);
             for (int i = 0; i < 6; i++)
             {
                 float a = i * Mathf.PI / 3f;
                 Vector3 p = g + new Vector3(Mathf.Cos(a) * 2.5f, 0f, Mathf.Sin(a) * 2.5f);
-                Cyl("Gazebo_Post", p + Vector3.up * 1.3f, new Vector3(0.18f, 1.3f, 0.18f), Quaternion.identity, woodDark);
+                if (!gz) Cyl("Gazebo_Post", p + Vector3.up * 1.3f, new Vector3(0.18f, 1.3f, 0.18f), Quaternion.identity, woodDark);
                 blockers[0].Add(new Rect(p.x - 0.15f, p.z - 0.15f, 0.3f, 0.3f));
             }
-            ceilingRenderers.Add(Cyl("Gazebo_Roof", g + Vector3.up * 2.7f, new Vector3(6.0f, 0.1f, 6.0f), Quaternion.identity, fabricRed).GetComponent<Renderer>());
-            Cyl("Gazebo_Table", g + Vector3.up * 0.4f, new Vector3(1.0f, 0.4f, 1.0f), Quaternion.identity, woodMid);
+            if (!gz) ceilingRenderers.Add(Cyl("Gazebo_Roof", g + Vector3.up * 2.7f, new Vector3(6.0f, 0.1f, 6.0f), Quaternion.identity, fabricRed).GetComponent<Renderer>());
+            if (!gz) Cyl("Gazebo_Table", g + Vector3.up * 0.4f, new Vector3(1.0f, 0.4f, 1.0f), Quaternion.identity, woodMid);
             blockers[0].Add(new Rect(g.x - 0.55f, g.z - 0.55f, 1.1f, 1.1f));
             Lamp(g + Vector3.up * 2.3f, 1.4f, 5f);
             // 木（すみ）

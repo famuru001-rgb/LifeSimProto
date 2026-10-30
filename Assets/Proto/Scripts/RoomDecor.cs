@@ -136,49 +136,76 @@ namespace LifeSimProto
             float corr = s > 0f ? r.rect.xMin : r.rect.xMax;
             float cz = r.rect.center.y, y = r.bed.position.y;
             System.Func<float, float> X = u => corr + s * u; // 廊下の壁から部屋の奥への距離 u（0〜5.4）
+            float dzD = cz + 1.25f + 0.15f * s; // 机の上（本番の机は cz+1.25。ランプの反対側。家具 2026-10-26）
 
             var holder = new GameObject("Decor_" + letter + "_" + def.slot);
             holder.transform.SetParent(root, true);
             decorObjects[key] = holder;
             var t = holder.transform;
 
+            // 本番の家具（家具_v3）があればそれを置く（家具 2026-10-26）
+            string fm = null; Vector3 fp = Vector3.zero; float fy = 0f;
+            switch (k)
+            {
+                case ItemKind.FurnPlant: fm = "Furn_DecorPlant"; fp = new Vector3(X(5.7f), y, cz + 0.7f); fy = -90f * s; break;
+                case ItemKind.FurnMoonLamp: fm = "Furn_DecorMoonLamp"; fp = new Vector3(X(5.7f), y, cz + 0.7f); fy = -90f * s; break;
+                case ItemKind.FurnLamp: fm = "Furn_DecorMagicLamp"; fp = new Vector3(X(5.55f), y + 0.76f, dzD); fy = -90f * s; break;
+                case ItemKind.FurnTeaSet: fm = "Furn_DecorTeaSet"; fp = new Vector3(X(5.55f), y + 0.76f, dzD); fy = -90f * s; break;
+                case ItemKind.FurnMusicBox: fm = "Furn_DecorMusicBox"; fp = new Vector3(X(5.55f), y + 0.76f, dzD); fy = -90f * s; break;
+                case ItemKind.FurnCookStand: fm = "Furn_DecorCookStand"; fp = new Vector3(X(5.55f), y + 0.76f, dzD); fy = -90f * s; break;
+                case ItemKind.FurnPlush: fm = "Furn_DecorPlush"; fp = new Vector3(X(5.2f), y + 0.54f, cz - 0.95f); fy = -90f * s; break;
+                case ItemKind.FurnCushion: fm = "Furn_DecorCushion"; fp = new Vector3(X(5.2f), y + 0.54f, cz - 0.35f); fy = -90f * s; break;
+                case ItemKind.FurnTapestry: fm = "Furn_DecorTapestry"; fp = new Vector3(X(4.2f), y + 1.25f, cz - 1.65f); fy = 0f; break;
+                case ItemKind.FurnToolRack: fm = "Furn_DecorToolRack"; fp = new Vector3(X(4.2f), y + 1.3f, cz - 1.65f); fy = 0f; break;
+                case ItemKind.FurnMirror: fm = "Furn_DecorMirror"; fp = new Vector3(X(0.4f), y, cz - 1.15f); fy = 90f * s; break;
+                case ItemKind.FurnBookshelf: fm = "Furn_DecorBookshelf"; fp = new Vector3(X(0.4f), y, cz - 1.15f); fy = 90f * s; break;
+                case ItemKind.FurnTreasure: fm = "Furn_DecorTreasure"; fp = new Vector3(X(0.4f), y, cz - 1.15f); fy = 90f * s; break;
+                case ItemKind.FurnStove: fm = "Furn_DecorStove"; fp = new Vector3(X(0.45f), y, cz - 1.15f); fy = 90f * s; break;
+                case ItemKind.FurnRug: fm = "Furn_DecorRug"; fp = new Vector3(X(2.3f), y + 0.005f, cz + 0.1f); fy = 0f; break;
+            }
+            if (fm != null)
+            {
+                var fgo = PlaceFurn(fm, null, fp, fy);
+                if (fgo != null) { fgo.transform.SetParent(t, true); return; }
+            }
+
             switch (k)
             {
                 case ItemKind.FurnPlant: // 鉢植えの花（窓辺）
-                    DecorPrim(PrimitiveType.Cylinder, t, new Vector3(X(5.05f), y + 0.17f, cz - 0.1f), new Vector3(0.32f, 0.17f, 0.32f), new Color(0.72f, 0.42f, 0.3f));
-                    DecorPrim(PrimitiveType.Sphere, t, new Vector3(X(5.05f), y + 0.55f, cz - 0.1f), new Vector3(0.5f, 0.5f, 0.5f), new Color(0.35f, 0.6f, 0.3f));
+                    DecorPrim(PrimitiveType.Cylinder, t, new Vector3(X(5.7f), y + 0.17f, cz + 0.7f), new Vector3(0.32f, 0.17f, 0.32f), new Color(0.72f, 0.42f, 0.3f));
+                    DecorPrim(PrimitiveType.Sphere, t, new Vector3(X(5.7f), y + 0.55f, cz + 0.7f), new Vector3(0.5f, 0.5f, 0.5f), new Color(0.35f, 0.6f, 0.3f));
                     for (int i = 0; i < 4; i++)
-                        DecorPrim(PrimitiveType.Sphere, t, new Vector3(X(5.05f) + Mathf.Cos(i * 1.6f) * 0.17f, y + 0.7f + (i % 2) * 0.08f, cz - 0.1f + Mathf.Sin(i * 1.6f) * 0.17f), Vector3.one * 0.11f, i % 2 == 0 ? new Color(0.95f, 0.55f, 0.65f) : new Color(1f, 0.85f, 0.4f));
+                        DecorPrim(PrimitiveType.Sphere, t, new Vector3(X(5.7f) + Mathf.Cos(i * 1.6f) * 0.17f, y + 0.7f + (i % 2) * 0.08f, cz + 0.7f + Mathf.Sin(i * 1.6f) * 0.17f), Vector3.one * 0.11f, i % 2 == 0 ? new Color(0.95f, 0.55f, 0.65f) : new Color(1f, 0.85f, 0.4f));
                     break;
                 case ItemKind.FurnMoonLamp: // 月の常夜灯（窓辺）
-                    DecorPrim(PrimitiveType.Cylinder, t, new Vector3(X(5.05f), y + 0.3f, cz - 0.1f), new Vector3(0.08f, 0.3f, 0.08f), new Color(0.55f, 0.5f, 0.6f));
-                    DecorGlow(t, new Vector3(X(5.05f), y + 0.72f, cz - 0.1f), 0.3f, new Color(0.8f, 0.85f, 1f), 1.8f);
+                    DecorPrim(PrimitiveType.Cylinder, t, new Vector3(X(5.7f), y + 0.3f, cz + 0.7f), new Vector3(0.08f, 0.3f, 0.08f), new Color(0.55f, 0.5f, 0.6f));
+                    DecorGlow(t, new Vector3(X(5.7f), y + 0.72f, cz + 0.7f), 0.3f, new Color(0.8f, 0.85f, 1f), 1.8f);
                     break;
                 case ItemKind.FurnLamp: // 魔法のランプ（机の上）
-                    DecorPrim(PrimitiveType.Cylinder, t, new Vector3(X(4.9f), y + 0.8f, cz + 0.95f), new Vector3(0.1f, 0.05f, 0.1f), new Color(0.6f, 0.45f, 0.25f));
-                    DecorGlow(t, new Vector3(X(4.9f), y + 0.93f, cz + 0.95f), 0.14f, new Color(0.5f, 0.9f, 1f), 2.5f);
+                    DecorPrim(PrimitiveType.Cylinder, t, new Vector3(X(5.55f), y + 0.8f, dzD), new Vector3(0.1f, 0.05f, 0.1f), new Color(0.6f, 0.45f, 0.25f));
+                    DecorGlow(t, new Vector3(X(5.55f), y + 0.93f, dzD), 0.14f, new Color(0.5f, 0.9f, 1f), 2.5f);
                     break;
                 case ItemKind.FurnTeaSet: // ティーセット（机の上）
-                    DecorPrim(PrimitiveType.Cylinder, t, new Vector3(X(4.9f), y + 0.79f, cz + 0.95f), new Vector3(0.3f, 0.01f, 0.3f), new Color(0.85f, 0.8f, 0.7f));
-                    DecorPrim(PrimitiveType.Sphere, t, new Vector3(X(4.9f), y + 0.86f, cz + 0.95f), new Vector3(0.13f, 0.11f, 0.13f), new Color(0.95f, 0.95f, 0.98f));
-                    DecorPrim(PrimitiveType.Cylinder, t, new Vector3(X(4.9f) + 0.1f, y + 0.81f, cz + 1.05f), new Vector3(0.05f, 0.03f, 0.05f), new Color(0.95f, 0.95f, 0.98f));
+                    DecorPrim(PrimitiveType.Cylinder, t, new Vector3(X(5.55f), y + 0.79f, dzD), new Vector3(0.3f, 0.01f, 0.3f), new Color(0.85f, 0.8f, 0.7f));
+                    DecorPrim(PrimitiveType.Sphere, t, new Vector3(X(5.55f), y + 0.86f, dzD), new Vector3(0.13f, 0.11f, 0.13f), new Color(0.95f, 0.95f, 0.98f));
+                    DecorPrim(PrimitiveType.Cylinder, t, new Vector3(X(5.55f) + 0.1f, y + 0.81f, dzD + 0.1f), new Vector3(0.05f, 0.03f, 0.05f), new Color(0.95f, 0.95f, 0.98f));
                     break;
                 case ItemKind.FurnMusicBox: // オルゴール（机の上）
-                    DecorPrim(PrimitiveType.Cube, t, new Vector3(X(4.9f), y + 0.82f, cz + 0.95f), new Vector3(0.18f, 0.1f, 0.13f), new Color(0.55f, 0.3f, 0.25f));
-                    DecorPrim(PrimitiveType.Cube, t, new Vector3(X(4.9f), y + 0.88f, cz + 0.95f), new Vector3(0.19f, 0.02f, 0.14f), new Color(0.9f, 0.75f, 0.35f));
+                    DecorPrim(PrimitiveType.Cube, t, new Vector3(X(5.55f), y + 0.82f, dzD), new Vector3(0.18f, 0.1f, 0.13f), new Color(0.55f, 0.3f, 0.25f));
+                    DecorPrim(PrimitiveType.Cube, t, new Vector3(X(5.55f), y + 0.88f, dzD), new Vector3(0.19f, 0.02f, 0.14f), new Color(0.9f, 0.75f, 0.35f));
                     break;
                 case ItemKind.FurnCookStand: // 料理の本立て（机の上）
                     for (int i = 0; i < 3; i++)
-                        DecorPrim(PrimitiveType.Cube, t, new Vector3(X(4.9f), y + 0.88f, cz + 0.88f + i * 0.07f), new Vector3(0.2f, 0.24f, 0.05f), i == 0 ? new Color(0.85f, 0.4f, 0.3f) : (i == 1 ? new Color(0.95f, 0.8f, 0.4f) : new Color(0.45f, 0.65f, 0.4f)));
+                        DecorPrim(PrimitiveType.Cube, t, new Vector3(X(5.55f), y + 0.88f, dzD - 0.07f + i * 0.07f), new Vector3(0.2f, 0.24f, 0.05f), i == 0 ? new Color(0.85f, 0.4f, 0.3f) : (i == 1 ? new Color(0.95f, 0.8f, 0.4f) : new Color(0.45f, 0.65f, 0.4f)));
                     break;
                 case ItemKind.FurnPlush: // ぬいぐるみ（ベッド）
-                    DecorPrim(PrimitiveType.Sphere, t, new Vector3(X(4.0f), y + 0.66f, cz - 0.85f), new Vector3(0.26f, 0.24f, 0.22f), new Color(0.92f, 0.78f, 0.6f));
-                    DecorPrim(PrimitiveType.Sphere, t, new Vector3(X(4.0f), y + 0.85f, cz - 0.85f), new Vector3(0.2f, 0.18f, 0.18f), new Color(0.92f, 0.78f, 0.6f));
-                    DecorPrim(PrimitiveType.Sphere, t, new Vector3(X(4.0f), y + 0.95f, cz - 0.93f), Vector3.one * 0.07f, new Color(0.92f, 0.78f, 0.6f));
-                    DecorPrim(PrimitiveType.Sphere, t, new Vector3(X(4.0f), y + 0.95f, cz - 0.77f), Vector3.one * 0.07f, new Color(0.92f, 0.78f, 0.6f));
+                    DecorPrim(PrimitiveType.Sphere, t, new Vector3(X(5.15f), y + 0.66f, cz - 0.95f), new Vector3(0.26f, 0.24f, 0.22f), new Color(0.92f, 0.78f, 0.6f));
+                    DecorPrim(PrimitiveType.Sphere, t, new Vector3(X(5.15f), y + 0.85f, cz - 0.95f), new Vector3(0.2f, 0.18f, 0.18f), new Color(0.92f, 0.78f, 0.6f));
+                    DecorPrim(PrimitiveType.Sphere, t, new Vector3(X(5.15f), y + 0.95f, cz - 1.03f), Vector3.one * 0.07f, new Color(0.92f, 0.78f, 0.6f));
+                    DecorPrim(PrimitiveType.Sphere, t, new Vector3(X(5.15f), y + 0.95f, cz - 0.87f), Vector3.one * 0.07f, new Color(0.92f, 0.78f, 0.6f));
                     break;
                 case ItemKind.FurnCushion: // ふわふわのクッション（ベッド）
-                    DecorPrim(PrimitiveType.Sphere, t, new Vector3(X(4.0f), y + 0.62f, cz - 0.95f), new Vector3(0.45f, 0.16f, 0.45f), new Color(0.75f, 0.7f, 0.95f));
+                    DecorPrim(PrimitiveType.Sphere, t, new Vector3(X(5.15f), y + 0.62f, cz - 0.95f), new Vector3(0.45f, 0.16f, 0.45f), new Color(0.75f, 0.7f, 0.95f));
                     break;
                 case ItemKind.FurnTapestry: // 星図のタペストリー（壁）
                     DecorPrim(PrimitiveType.Cube, t, new Vector3(X(4.2f), y + 1.65f, cz - 1.45f), new Vector3(1.1f, 0.85f, 0.02f), new Color(0.15f, 0.18f, 0.38f));

@@ -279,28 +279,34 @@ namespace LifeSimProto
                     else sit.Add(p.c);
                 }
                 Vector3 along = room.bed.forward, edge = room.bedEdge;
+                // 本番の家具のベッド（頭板は奥・足元の縁に座る）は、並ぶ向きと間かくを部屋の値で決める（家具 2026-10-26）
+                bool fb = room.bedSeatOffs != null;
+                Vector3 lieAx = room.bedAcross.sqrMagnitude > 0.01f ? room.bedAcross : edge;
+                Vector3 sitAx = room.bedSitAlong.sqrMagnitude > 0.01f ? room.bedSitAlong : along;
                 float width = 0.8f * Mathf.Clamp(room.bedSpread, 1f, 2f);
-                float gap = Mathf.Min(0.42f, width / lie.Count);
-                Vector3 center = room.bed.position - edge * 0.08f;
+                float gap = fb ? Mathf.Min(room.bedLieGap, room.bedLieWidth / lie.Count) : Mathf.Min(0.42f, width / lie.Count);
+                Vector3 center = room.bed.position - edge * (fb ? 0.15f : 0.08f);
                 for (int i = 0; i < lie.Count; i++)
                 {
-                    Vector3 pos = center + edge * ((i - (lie.Count - 1) / 2f) * gap);
+                    Vector3 pos = center + lieAx * ((i - (lie.Count - 1) / 2f) * gap);
                     lie[i].PlaceInPrivate(pos, along, false, true);
                 }
-                // 腰かける：ベッドの縁（4人まで）、5人目からはベッドの前の床
-                float[] offs = sit.Count <= 2 ? new[] { -0.45f, 0.35f } : (sit.Count == 3 ? new[] { -0.55f, -0.05f, 0.45f } : new[] { -0.72f, -0.25f, 0.22f, 0.69f });
+                // 腰かける：ベッドの縁（前のベッドは4人まで、本番の家具は座る所の数まで）、あふれた人はベッドの前の床
+                int cap = fb ? room.bedSeatOffs.Length : 4;
+                float[] offs = fb ? room.SeatOffs(Mathf.Min(sit.Count, cap)) : (sit.Count <= 2 ? new[] { -0.45f, 0.35f } : (sit.Count == 3 ? new[] { -0.55f, -0.05f, 0.45f } : new[] { -0.72f, -0.25f, 0.22f, 0.69f }));
+                float mul = fb ? 1f : room.bedSpread;
+                float[] o4 = fb ? room.bedSeatOffs : new[] { -0.72f, -0.25f, 0.22f, 0.69f };
                 for (int i = 0; i < sit.Count; i++)
                 {
-                    if (i < 4)
+                    if (i < cap)
                     {
-                        Vector3 pos = room.bed.position + along * (offs[Mathf.Min(i, offs.Length - 1)] * room.bedSpread) + edge * (room.bedEdgeDist + 0.12f);
+                        Vector3 pos = room.bed.position + sitAx * (offs[Mathf.Min(i, offs.Length - 1)] * mul) + edge * (room.bedEdgeDist + 0.12f);
                         sit[i].PlaceInPrivate(pos, edge, false, false);
                     }
                     else
                     {
-                        int row = (i - 4) / 4, col = (i - 4) % 4;
-                        float[] o4 = { -0.72f, -0.25f, 0.22f, 0.69f };
-                        Vector3 pos = room.bed.position + along * (o4[col] * room.bedSpread) + edge * (room.bedEdgeDist + 0.85f + row * 0.6f);
+                        int row = (i - cap) / o4.Length, col = (i - cap) % o4.Length;
+                        Vector3 pos = room.bed.position + sitAx * (o4[col] * mul) + edge * (room.bedEdgeDist + 0.85f + row * 0.6f);
                         sit[i].PlaceInPrivate(pos, -edge, true, false);
                     }
                 }

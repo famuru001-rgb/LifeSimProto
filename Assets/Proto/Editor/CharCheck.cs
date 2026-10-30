@@ -123,7 +123,9 @@ namespace LifeSimProto.EditorTools
             sb.AppendLine("  表情（シェイプキー）：" + string.Join(", ", keysFound.ToArray()));
             if (missingKeys.Count > 0) problems.Add("表情のシェイプキーが足りない：" + string.Join(", ", missingKeys.ToArray()));
             sb.AppendLine("  材質：" + mats.Count + "個" + (noTex.Count > 0 ? "（テクスチャなし：" + string.Join(", ", noTex.Distinct().ToArray()) + "）" : ""));
-            if (mats.Count > 8) problems.Add("材質が8個を超えている（" + mats.Count + "個）");
+            // 2026-10-26：目・口の絵の切り替え用の材質（FaceEyes・FaceMouth）は数に入れない
+            int matCount = mats.Count(m => m == null || !(m.name.Contains("FaceEyes") || m.name.Contains("FaceMouth")));
+            if (matCount > 8) problems.Add("材質が8個を超えている（目・口の絵の切り替え用を除いて " + matCount + "個）");
             if (noTex.Count > 0) problems.Add("テクスチャが見つからない材質：" + string.Join(", ", noTex.Distinct().ToArray()));
             sb.AppendLine("  1頂点あたりの骨の数（最大）：" + maxBones);
             if (maxBones > 4) problems.Add("1頂点に5本以上の骨が影響している（最大" + maxBones + "本。ゲームでは4本までに切られる）");

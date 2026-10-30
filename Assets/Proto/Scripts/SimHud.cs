@@ -289,6 +289,12 @@ namespace LifeSimProto
 
         void OnGUI()
         {
+            long tp = PerfProbe.Stamp();   // 重さを測る（PerfProbe.cs。2026-10-30 軽量化のチャット）
+            try { OnGUICore(); } finally { PerfProbe.Add(PerfProbe.Hud, tp); }
+        }
+
+        void OnGUICore()
+        {
             if (world == null || world.mainCamera == null || world.rel == null) return;
             InitStyles();
             float s = Scale;

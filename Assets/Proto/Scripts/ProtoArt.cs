@@ -51,7 +51,27 @@ namespace LifeSimProto
         public static Texture2D WoodFine { get { if (woodFineTex == null) woodFineTex = MakeWood(128, 128, 57); return woodFineTex; } }
         public static Texture2D Fabric { get { if (fabricTex == null) fabricTex = MakeFabric(128, 71); return fabricTex; } }
 
+        // 2026-10-30（軽量化のチャット）：同じ色・模様・繰り返し・つやの材質は1つを使い回す（寮と学園で材質が1600種類以上になり、描く回数が増えていた）。
+        // 使い回した材質は、あとから色などを変えないこと（変えたいときは MatNew で自分用を作る）。
+        static readonly System.Collections.Generic.Dictionary<string, Material> matCache = new System.Collections.Generic.Dictionary<string, Material>();
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ClearMatCache() { matCache.Clear(); }
+
         public static Material Mat(Color color, Texture2D tex = null, Vector2? tiling = null, float smoothness = 0.15f)
+        {
+            Vector2 tl = tiling ?? Vector2.one;
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            string key = color.r.ToString("0.####", ci) + "," + color.g.ToString("0.####", ci) + "," + color.b.ToString("0.####", ci) + "," + color.a.ToString("0.####", ci)
+                + "|" + (tex != null ? tex.GetHashCode().ToString(ci) : "-") + "|" + tl.x.ToString("0.####", ci) + "," + tl.y.ToString("0.####", ci) + "|" + smoothness.ToString("0.####", ci);
+            Material m;
+            if (matCache.TryGetValue(key, out m) && m != null) return m;
+            m = MatNew(color, tex, tiling, smoothness);
+            matCache[key] = m;
+            return m;
+        }
+
+        /// <summary>使い回さない材質（あとで色や両面などを変えるとき）。</summary>
+        public static Material MatNew(Color color, Texture2D tex = null, Vector2? tiling = null, float smoothness = 0.15f)
         {
             var m = new Material(Lit);
             if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", color);

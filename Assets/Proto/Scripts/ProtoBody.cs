@@ -84,10 +84,37 @@ namespace LifeSimProto
         // 確認用（写真を撮るときに姿勢を決め打ちする）
         [System.NonSerialized] public bool testMode;
         [System.NonSerialized] public BodyPose testPose;
+        // 床に座る（正座）ときの動き（2026-10-30 モーションのチャット）。空なら今までどおり骨を直接曲げる仮の正座。
+        // SitFloorClip＝ゲーム全体の設定（いまは空＝変えていない）。testSitFloorClip＝確認用（null ならゲーム全体の設定に従う）
+        // 2026-10-30 famuru「組み合わせ」：座る（SitFloor_Down）→正座（SitFloor）→立つ（SitFloor_Up）。空にすると仮の正座に戻る
+        public static string SitFloorClip = "SitFloor";
+        // 寝る（ベッド・床）とお風呂の動き（2026-10-30 モーション。Blender で手で付けた姿勢＋呼吸）。空にすると仮の動きに戻る
+        // 寝る動きは立った向きのまま手足の形だけを持つ（体を横に倒すのは今まで通りゲームが行う）
+        public static string LieClip = "Lie", SoakClip = "Soak";
+        enum FloorPhase { None, Down, Seated, Up }
+        FloorPhase floorPhase;
+        float floorT, dozeW;
+        BodyPose lastPose = BodyPose.Stand;
+        float upStartAt = -1f;
+        static readonly string[] TalkVariants = { "Talk", "Talk2", "Talk3", "Talk4" };
+        AnimationClip sceneClip;
+        string LetterNow() { return testMode ? testLetter : sim.Letter; }
+        string SceneNow() { return testMode ? testScene : sim.MotionScene; }
+        string StyleNow() { return MotionBook.StyleOf(LetterNow(), testMode ? false : sim.IsMale); }
+        string talkVariant;
+        bool wasTalking;
+        [System.NonSerialized] public string testSitFloorClip;
+        [System.NonSerialized] public bool testStandUp;   // 確認用：床から立ち上がる途中のつもり
+        [System.NonSerialized] public string testClip;
+        [System.NonSerialized] public string testLetter, testScene, testMood;   // 確認用：キャラの記号・生活の場面・歩くときの気分     // 確認用：姿勢に関係なくこの動きを流す（動きの候補の見比べ。2026-10-30 モーション）
+        public void TestSetClipTime(float t) { if (graph.IsValid() && mixer.GetInput(0).IsValid()) mixer.GetInput(0).SetTime(t); }
+        public AnimationClip TestFindClip(string n) { LoadClips(); var c = Clip(n); if (c == null) { clipBook = null; LoadClips(); c = Clip(n); } return c; }   // 新しく入れた動きは読み直す
         [System.NonSerialized] public bool testTalk, testEat, testDoze;
         [System.NonSerialized] public float testSpeed;
         [System.NonSerialized] public string testOutfit, testFace;
         [System.NonSerialized] public bool testEyesClosed;
+        [System.NonSerialized] public float testBow;              // 確認用：おじぎの角度（度。背骨を前へ曲げる）
+        [System.NonSerialized] public float testSkirtSit = -1f;   // 確認用：座りの補正を決め打ち（0〜100。-1 で自動）
 
         public string DebugInfo
         {
@@ -111,6 +138,7 @@ namespace LifeSimProto
         // 本番モデル（Codex 制作。Resources/Chars/（記号）/Char（記号））があればそちらを使う
         bool real;
         public bool IsRealModel { get { return real; } }
+        public int SpringCount { get { return springs.Count; } }   // 揺れの骨の数（PerfProbe の数え用）
         public Vector3 HeadPoint { get { return bones["Head"].position + transform.up * 0.07f; } }
 
         public static ProtoBody Create(GameObject owner, CharLook look, string letter = null)
@@ -190,6 +218,11 @@ namespace LifeSimProto
             hipsRest = hips.localPosition;
 
             if (real) { SetupOutfits(); ApplyToon(); } else SetupLook();
+            // 2026-10-27（取り込みのチャット）：本番モデルは表示の範囲（bounds）を毎回計算する。
+            // リアの靴が、近くから撮ると消えた（座ったとき・カメラが近いとき。範囲が実際の位置とずれていて、画面の外と判断されていた）
+            // 2026-10-30（軽量化のチャット）：毎回の計算（updateWhenOffscreen）は画面外の子の分まで重いので、
+            // 代わりに体のまわりを広めに囲んだ範囲を決めておく（靴が消えないよう、腰を中心に背の高さ＋1.2mの箱）
+            if (real) SetWideBounds();
             SetupFace();
             SetupSprings();
 
@@ -282,7 +315,7 @@ namespace LifeSimProto
         {
             Material m;
             if (cache.TryGetValue(key, out m)) return m;
-            m = ProtoArt.Mat(c, null, null, key == "Eye" ? 0.6f : 0.2f);
+            m = ProtoArt.MatNew(c, null, null, key == "Eye" ? 0.6f : 0.2f);   // あとで両面にするので使い回さない
             m.name = key;
             if (twoSided && m.HasProperty("_Cull")) { m.SetFloat("_Cull", 0f); m.doubleSidedGI = true; }
             cache[key] = m;
@@ -325,10 +358,11 @@ namespace LifeSimProto
                 var output = AnimationPlayableOutput.Create(graph, "Out", anim);
                 mixer = AnimationMixerPlayable.Create(graph, 2);
                 // 2段重ね：下の段＝全身の動き、上の段＝腕だけの身ぶり（歩きながら手を振るため）
-                layers = AnimationLayerMixerPlayable.Create(graph, 2);
+                layers = AnimationLayerMixerPlayable.Create(graph, 3);
                 graph.Connect(mixer, 0, layers, 0);
                 layers.SetInputWeight(0, 1f);
                 layers.SetLayerMaskFromAvatarMask(1, ArmsMask());
+                layers.SetLayerMaskFromAvatarMask(2, TalkUpperMask());   // 3段目：正座で話すときの上半身（2026-10-30 モーション）
                 output.SetSourcePlayable(layers);
                 graph.Play();
             }
@@ -369,6 +403,45 @@ namespace LifeSimProto
             return armsMask;
         }
 
+        // ---- 正座で話すときの上半身（3段目。腕・指・頭だけ。腰と背中は正座のまま） ----
+        AnimationClipPlayable talkPlay;
+        AnimationClip talkClip;
+        float talkW;
+        static AvatarMask talkMask;
+
+        static AvatarMask TalkUpperMask()
+        {
+            if (talkMask != null) return talkMask;
+            talkMask = new AvatarMask();
+            for (var part = AvatarMaskBodyPart.Root; part < AvatarMaskBodyPart.LastBodyPart; part++)
+            {
+                bool on = part == AvatarMaskBodyPart.LeftArm || part == AvatarMaskBodyPart.RightArm ||
+                          part == AvatarMaskBodyPart.LeftFingers || part == AvatarMaskBodyPart.RightFingers || part == AvatarMaskBodyPart.Head;
+                talkMask.SetHumanoidBodyPartActive(part, on);
+            }
+            return talkMask;
+        }
+
+        void SetTalkUpper(AnimationClip want, float dt)
+        {
+            if (!graph.IsValid()) return;
+            if (want != null && want != talkClip)
+            {
+                if (talkPlay.IsValid()) { graph.Disconnect(layers, 2); talkPlay.Destroy(); }
+                talkPlay = AnimationClipPlayable.Create(graph, want);
+                graph.Connect(talkPlay, 0, layers, 2);
+                talkClip = want;
+            }
+            talkW = Mathf.MoveTowards(talkW, want != null ? 1f : 0f, dt / 0.4f);
+            if (talkPlay.IsValid()) layers.SetInputWeight(2, talkW);
+            if (want == null && talkW <= 0f && talkPlay.IsValid())
+            {
+                graph.Disconnect(layers, 2);
+                talkPlay.Destroy();
+                talkClip = null;
+            }
+        }
+
         void SetUpper(AnimationClip want, float dt)
         {
             if (!graph.IsValid()) return;
@@ -402,6 +475,12 @@ namespace LifeSimProto
 
         // ================= 毎フレーム =================
         void LateUpdate()
+        {
+            long tp = PerfProbe.Stamp();   // 重さを測る（PerfProbe.cs。2026-10-30 軽量化のチャット）
+            try { LateUpdateCore(); } finally { PerfProbe.Add(PerfProbe.Body, tp); }
+        }
+
+        void LateUpdateCore()
         {
             if (model == null) return;
             if (sim == null && !testMode) sim = GetComponent<SimCharacter>();
@@ -441,17 +520,71 @@ namespace LifeSimProto
             AnimationClip clip = null;
             if (humanOk)
             {
-                if (pose == BodyPose.Stand)
+                // 床から立ち上がる途中（SimCharacter がその場で止めている間）：立つ動きを1回流す
+                if (testMode && !string.IsNullOrEmpty(testClip)) clip = Clip(testClip);
+                AnimationClip upC = clip != null ? null : !string.IsNullOrEmpty(SitFloorClip) && (testMode ? testStandUp : sim.StandingUpNow) ? Clip(SitFloorClip + "_Up") : null;
+                if (clip != null) { }
+                else if (pose == BodyPose.Stand && upC != null)
                 {
+                    if (floorPhase != FloorPhase.Up)
+                    {
+                        // 座る途中だったら、同じ高さに近い所から立ち始める
+                        var dn = Clip(SitFloorClip + "_Down");
+                        upStartAt = floorPhase == FloorPhase.Down && dn != null ? Mathf.Max(0f, upC.length - floorT) : 0f;
+                        floorPhase = FloorPhase.Up;
+                    }
+                    clip = upC;
+                }
+                else if (pose == BodyPose.Stand)
+                {
+                    if (floorPhase == FloorPhase.Up) floorPhase = FloorPhase.None;
                     // 手を振るのは腕だけ（上の段）。喜ぶ（ジャンプ）は全身
-                    if (gestureName != null && gestureName != "Wave" && Time.time < gestureUntil && Clip(gestureName) != null) clip = Clip(gestureName);
-                    else if (speed > 0.25f) clip = Clip("Walk");
-                    else if (talking) clip = Clip("Talk") ?? Clip("Idle");
-                    else clip = Clip("Idle");
+                    // 気持ちの身ぶりは、立ち止まっているときは全身で（歩いている間は上半身だけ。喜ぶは今まで通り全身）
+                    // 手を振る・おじぎは、立ち止まっていればキャラのらしさの全身の動き（MotionBook。2026-10-30 モーション）
+                    AnimationClip fullG = null;
+                    if (gestureName != null && Time.time < gestureUntil && speed <= 0.25f)
+                    {
+                        if (gestureName == "Wave") fullG = Clip(MotionBook.Bye(StyleNow()));
+                        else if (gestureName == "Bow") fullG = Clip(MotionBook.Bow(StyleNow()));
+                    }
+                    if (fullG != null) clip = fullG;
+                    else if (gestureName != null && gestureName != "Wave" && gestureName != "Bow" && Time.time < gestureUntil && Clip(gestureName) != null && (gestureName == "Joy" || speed <= 0.25f)) clip = Clip(gestureName);
+                    else if (speed > 0.25f) clip = Clip(MotionBook.Walk(StyleNow(), testMode ? testMood : sim.WalkMood)) ?? Clip(MotionBook.Walk(StyleNow(), null)) ?? Clip("Walk");
+                    else if (talking)
+                    {
+                        // 話す身ぶりは会話ごとに Talk・Talk2〜4 から選ぶ（2026-10-30 モーション）
+                        if (!wasTalking || talkVariant == null) talkVariant = TalkVariants[Random.Range(0, TalkVariants.Length)];
+                        clip = Clip(talkVariant) ?? Clip("Talk") ?? Clip("Idle");
+                    }
+                    else if ((sceneClip = MotionBook.StandClip(SceneNow(), LetterNow(), Clip)) != null) clip = sceneClip;   // 生活の場面（料理・魔法の練習など）
+                    else if (!testMode && sim.FaceNow == "Sad" && Clip("SadIdle") != null) clip = Clip("SadIdle");   // 気分が沈んでいるときの立ち方
+                    else clip = Clip(MotionBook.Idle(LetterNow())) ?? Clip("Idle");
                 }
                 else if (pose == BodyPose.Sit)
                 {
                     clip = talking ? (Clip("SitTalk") ?? Clip("Sit")) : Clip("Sit");
+                }
+                else if ((pose == BodyPose.Lie || pose == BodyPose.LieFloor) && !string.IsNullOrEmpty(LieClip))
+                {
+                    clip = Clip(LieClip);
+                }
+                else if (pose == BodyPose.Soak && !string.IsNullOrEmpty(SoakClip))
+                {
+                    clip = Clip(SoakClip);
+                }
+                else if (pose == BodyPose.SitFloor)
+                {
+                    if (testMode && testSitFloorClip != null) { if (testSitFloorClip != "") clip = Clip(testSitFloorClip); }
+                    else if (!string.IsNullOrEmpty(SitFloorClip) && Clip(SitFloorClip) != null)
+                    {
+                        // 座った瞬間は「座る」を1回流し、終わる少し前から正座のくり返しへ（つなぎ目は PlayClip のなめらかな切りかえ）
+                        var dn = Clip(SitFloorClip + "_Down");
+                        if (lastPose != BodyPose.SitFloor) { floorPhase = dn != null ? FloorPhase.Down : FloorPhase.Seated; floorT = 0f; }
+                        floorT += dt;
+                        if (floorPhase == FloorPhase.Down && (dn == null || floorT >= dn.length - 0.3f)) floorPhase = FloorPhase.Seated;
+                        if (floorPhase != FloorPhase.Down) floorPhase = FloorPhase.Seated;
+                        clip = floorPhase == FloorPhase.Down ? dn : Clip(SitFloorClip);
+                    }
                 }
             }
             if (clip != null)
@@ -463,20 +596,52 @@ namespace LifeSimProto
                     mixer.SetInputWeight(0, fade);
                     mixer.SetInputWeight(1, 1f - fade);
                 }
-                bool waving = pose == BodyPose.Stand && gestureName == "Wave" && Time.time < gestureUntil;
+                if (upStartAt >= 0f && clip == curClip && mixer.GetInput(0).IsValid()) { mixer.GetInput(0).SetTime(upStartAt); upStartAt = -1f; }
+                bool waving = pose == BodyPose.Stand && gestureName == "Wave" && Time.time < gestureUntil && clip != Clip(MotionBook.Bye(StyleNow()));
                 SetUpper(waving ? Clip("Wave") : null, dt);
+                // 正座で話す：Mixamo の「座って話す」の上半身（腕・頭）だけを重ねる（famuru「上半身だけ使う」）
+                bool floorTalk = pose == BodyPose.SitFloor && floorPhase == FloorPhase.Seated && talking && !dozingNow;
+                // 気持ちの身ぶりを全身で流せないとき（座っている・歩いている）は、上半身（腕・頭）だけ重ねる
+                bool gOn = gestureName != null && gestureName != "Wave" && gestureName != "Joy" && Time.time < gestureUntil && Clip(gestureName) != null;
+                bool gUpper = gOn && (pose == BodyPose.Sit || (pose == BodyPose.SitFloor && floorPhase == FloorPhase.Seated) || (pose == BodyPose.Stand && speed > 0.25f));
+                // 座って行う生活の場面（食べる・お茶・読書・勉強）は、話していなければ上半身だけ重ねる
+                AnimationClip seatedAct = null;
+                if (!talking && !dozingNow && (pose == BodyPose.Sit || (pose == BodyPose.SitFloor && floorPhase == FloorPhase.Seated)))
+                    seatedAct = MotionBook.SeatedClip(SceneNow(), LetterNow(), Clip);
+                SetTalkUpper(gUpper ? Clip(gestureName) : (floorTalk ? Clip("SitTalk") : seatedAct), dt);
             }
             else
             {
                 StopClips();
                 Procedural(pose, talking, dt, transform.rotation * frame);
             }
+            // 正座で居眠り：首を前に落とす（動きの上から。2026-10-30 モーション）
+            dozeW = Mathf.MoveTowards(dozeW, clip != null && pose == BodyPose.SitFloor && dozingNow ? 1f : 0f, dt / 0.8f);
+            if (dozeW > 0f)
+            {
+                Transform nk = B("Neck") ?? B("Head");
+                if (nk != null) nk.rotation = Quaternion.AngleAxis(28f * dozeW, transform.right) * nk.rotation;
+            }
+            if (pose != BodyPose.SitFloor && floorPhase != FloorPhase.Up) floorPhase = FloorPhase.None;
+            lastPose = pose;
+            wasTalking = talking;
+            if (testMode && Mathf.Abs(testBow) > 0.01f)   // 確認用のおじぎ（ゲームの動きには無い。背骨3本に分けて前へ曲げる）
+                foreach (var bn in new[] { "Spine", "Spine1", "Spine2" })
+                {
+                    var b = B(bn);
+                    if (b != null) b.rotation = Quaternion.AngleAxis(testBow / 3f, transform.right) * b.rotation;
+                }
             bool eyesClosed = testMode ? testEyesClosed : sim.EyesClosedNow;
             bool speaking = testMode ? testTalk : sim.IsSpeakingNow;
             string face = testMode ? testFace : sim.FaceNow;
             UpdateFace(dt, eyesClosed, speaking, face);
             UpdateCorrectives(dt, pose);
-            UpdateSprings(dt);
+            // 2026-10-30（軽量化のチャット）：揺れは画面に映っている子だけ計算する（映っていない子はそのまま止め、映ったら元の形から始める）
+            if (!PerfProbe.NoSway)
+            {
+                if (AnyVisible() && BigOnScreen()) { long ts = PerfProbe.Stamp(); UpdateSprings(dt, springsAsleep); springsAsleep = false; PerfProbe.Add(PerfProbe.Sway, ts); }
+                else springsAsleep = true;
+            }
         }
 
         // ================= トゥーン表示（本番モデル） =================
@@ -492,6 +657,31 @@ namespace LifeSimProto
         // 再生のたびに作り直す（再生終了で材質が消えるため。前回の材質を使うとピンク色になる）
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetToon() { toonCache.Clear(); toonCacheNoLine.Clear(); toonShader = null; toonLooked = false; }
+
+        // 2026-10-28 肌の質感：肌の材質だけ、影をやわらかく赤みのある色にし、境目の赤み・ふちの光・ほんのりツヤを足す。
+        // false にすると、肌も服と同じ表示に戻る。
+        public static bool SkinLookEnabled = true;
+        static readonly string[] skinWords = { "Skin", "Face", "Body", "Hands", "Thigh" };
+        static readonly string[] notSkinWords = { "Detail", "Eyes", "Mouth", "Uniform", "Hair", "Underwear", "Bra", "Shorts", "Shoes", "Expression" };
+
+        static bool IsSkinMat(string name)
+        {
+            foreach (var w in notSkinWords) if (name.Contains(w)) return false;
+            foreach (var w in skinWords) if (name.Contains(w)) return true;
+            return false;
+        }
+
+        static void SetSkinLook(Material t)
+        {
+            t.SetColor("_ShadeColor", new Color(0.90f, 0.72f, 0.72f, 1f)); // 影を赤みのある明るめの色に
+            t.SetFloat("_ShadeSoftness", 0.16f);                           // 影の境目をふんわり
+            t.SetFloat("_ScatterStrength", 0.32f);
+            t.SetFloat("_ScatterWidth", 0.38f);
+            t.SetFloat("_RimStrength", 0.22f);
+            t.SetFloat("_RimPower", 3.2f);
+            t.SetFloat("_GlossStrength", 0.05f);
+            t.SetFloat("_GlossPower", 10f);
+        }
 
         void ApplyToon()
         {
@@ -530,6 +720,7 @@ namespace LifeSimProto
                         float cull = src.HasProperty("_Cull") ? src.GetFloat("_Cull") : 2f;
                         if (src.name.Contains("DoubleSided")) cull = 0f;
                         t.SetFloat("_Cull", cull);
+                        if (SkinLookEnabled && IsSkinMat(src.name)) SetSkinLook(t);
                         toonCache[src] = t;
                     }
                     if (r.gameObject.name.StartsWith("Face_"))
@@ -632,6 +823,7 @@ namespace LifeSimProto
                 }
             }
             foreach (var key in FaceKeys) faceNow[key] = 0f;
+            SetupFaceAtlas();
             // 形の補正（Corrective_ で始まるシェイプキー）。例：座ったときのスカート
             skirtSitKeys.Clear();
             foreach (var smr in model.GetComponentsInChildren<SkinnedMeshRenderer>(true))
@@ -652,6 +844,7 @@ namespace LifeSimProto
             if (skirtSitKeys.Count == 0) return;
             float target = pose == BodyPose.Sit ? 100f : 0f;
             skirtSitNow = Mathf.MoveTowards(skirtSitNow, target, 400f * Mathf.Min(dt, 0.1f));
+            if (testMode && testSkirtSit >= 0f) skirtSitNow = testSkirtSit;
             foreach (var kv in skirtSitKeys) kv.Key.SetBlendShapeWeight(kv.Value, skirtSitNow);
         }
 
@@ -667,12 +860,77 @@ namespace LifeSimProto
             faceNow[key] = v;
             List<KeyValuePair<SkinnedMeshRenderer, int>> l;
             if (!faceKeys.TryGetValue(key, out l)) return;
-            foreach (var kv in l) kv.Key.SetBlendShapeWeight(kv.Value, v);
+            // 目・口を絵で切り替えるキャラは、その部分のシェイプキーは動かさない（二重に動かないように）
+            bool byAtlas = key == "MouthOpen" ? atlasMouth.Count > 0 : atlasEyes.Count > 0;
+            foreach (var kv in l) kv.Key.SetBlendShapeWeight(kv.Value, byAtlas ? 0f : v);
+        }
+
+        // ================= 目・口の絵の切り替え（2026-10-26 famuru 決定の案3。材質名に FaceEyes／FaceMouth があるキャラだけ） =================
+        // 表情ごとの絵を並べた1枚の画像（アトラス）を、材質の絵の位置をずらして切り替える。無いキャラは今までのシェイプキーのまま。
+        // 並び（リア_表情の make_atlas_v2.py と同じ。左上が0、右へ・下へ）：
+        //   目（3列×3段、1こま 680×456／2048×2048）：0ふつう 1閉じ 2笑い目 3半目 4悲しい 5怒り 6驚き 7悲しい閉じ 8怒り閉じ
+        //   口（4列×3段、1こま 512×384／2048×1152）：0ふつう 1口パク 2笑顔 3笑顔で開く 4悲しい 5悲しく開く 6怒り 7怒って開く 8驚き 9驚いて開く
+        // モデルの UV は左上のこま（0）に合わせてある。戻すときは材質を元に戻すだけ（このしくみは材質名が無ければ働かない）
+        class AtlasSlot { public Renderer r; public int index; public Vector4 baseST; }
+        readonly List<AtlasSlot> atlasEyes = new List<AtlasSlot>(), atlasMouth = new List<AtlasSlot>();
+        MaterialPropertyBlock atlasBlock;
+        int atlasEyeCell = -1, atlasMouthCell = -1;
+        static readonly Vector2 EyeCell = new Vector2(680f / 2048f, 456f / 2048f), MouthCell = new Vector2(512f / 2048f, 384f / 1152f);
+        const int EyeCols = 3, MouthCols = 4;
+
+        void SetupFaceAtlas()
+        {
+            atlasEyes.Clear(); atlasMouth.Clear();
+            foreach (var r in model.GetComponentsInChildren<Renderer>(true))
+            {
+                var ms = r.sharedMaterials;
+                for (int i = 0; i < ms.Length; i++)
+                {
+                    if (ms[i] == null) continue;
+                    string n = ms[i].name;
+                    bool eyes = n.Contains("FaceEyes"), mouth = n.Contains("FaceMouth");
+                    if (!eyes && !mouth) continue;
+                    Vector4 st = ms[i].HasProperty("_BaseMap_ST") ? ms[i].GetVector("_BaseMap_ST") : new Vector4(1f, 1f, 0f, 0f);
+                    (eyes ? atlasEyes : atlasMouth).Add(new AtlasSlot { r = r, index = i, baseST = st });
+                }
+            }
+            atlasEyeCell = atlasMouthCell = -1;
+        }
+
+        void SetAtlas(List<AtlasSlot> slots, int cell, int cols, Vector2 size)
+        {
+            if (atlasBlock == null) atlasBlock = new MaterialPropertyBlock();
+            float ox = (cell % cols) * size.x, oy = -(cell / cols) * size.y;
+            foreach (var a in slots)
+            {
+                if (a.r == null) continue;
+                a.r.GetPropertyBlock(atlasBlock, a.index);
+                atlasBlock.SetVector("_BaseMap_ST", new Vector4(a.baseST.x, a.baseST.y, a.baseST.z + ox, a.baseST.w + oy));
+                a.r.SetPropertyBlock(atlasBlock, a.index);
+            }
+        }
+
+        void UpdateFaceAtlas(float blink, float mouth, string f)
+        {
+            if (atlasEyes.Count == 0 && atlasMouth.Count == 0) return;
+            bool closed = blink > 50f;
+            int e;
+            if (f == "Sad") e = closed ? 7 : 4;
+            else if (f == "Angry") e = closed ? 8 : 5;
+            else if (closed) e = 1;
+            else if (f == "Smile" || f == "Shy") e = 2;
+            else if (f == "Surprised") e = 6;
+            else if (dozingNow) e = 3;
+            else e = 0;
+            int m = f == "Smile" || f == "Shy" ? 2 : f == "Sad" ? 4 : f == "Angry" ? 6 : f == "Surprised" ? 8 : 0;
+            if (mouth > 30f) m += 1;   // 話している（口パク）・食べている
+            if (e != atlasEyeCell && atlasEyes.Count > 0) { atlasEyeCell = e; SetAtlas(atlasEyes, e, EyeCols, EyeCell); }
+            if (m != atlasMouthCell && atlasMouth.Count > 0) { atlasMouthCell = m; SetAtlas(atlasMouth, m, MouthCols, MouthCell); }
         }
 
         void UpdateFace(float dt, bool eyesClosed, bool speaking, string face)
         {
-            if (faceKeys.Count == 0 && blush == null) return;
+            if (faceKeys.Count == 0 && blush == null && atlasEyes.Count == 0 && atlasMouth.Count == 0) return;
             dt = Mathf.Min(dt, 0.1f);
             // まばたき
             float blink = 0f;
@@ -701,19 +959,48 @@ namespace LifeSimProto
             SetKey("Angry", f == "Angry" ? 100f : 0f, dt, 300f);
             SetKey("Surprised", f == "Surprised" ? 100f : 0f, dt, 400f);
             if (blush != null && blush.activeSelf != shy) blush.SetActive(shy);
+            UpdateFaceAtlas(blink, mouth, f);
         }
 
         // ================= 揺れ（Spring_ で始まる骨） =================
+        // 2026-10-26（取り込みのチャット）作り直し。famuru「髪は体の動きに遅れて大きく反応し、すぐ収まる自然な揺れ。
+        // 胸は硬く小刻みではなく柔らかくもっちり、歩くだけでも揺れる」
+        // ・骨の先を「ばね＋減衰」で元の向きへ引き戻す。freq＝1秒に何回振れるか（小さいほどゆっくり大きく遅れる）、
+        //   zeta＝止まりやすさ（0.25＝何度か弾む、0.55＝1回揺り返して収まる）。参考：工程109 の胸の揺れ（2.2Hz・減衰0.26）、VRChat PhysBones
+        // ・1コマを細かく（1/120秒ごとに）分けて計算する（画面の速さで揺れ方が変わらない・小刻みに震えない）
+        // ・角度の上限・当たり判定で押し戻したときは、その分の勢いも消す（押し戻しで跳ね返って震えないように）
+        // ・air＝空気の抵抗の割合（0＝体といっしょに動く、1＝空中で止まろうとする）。髪・スカートに残して、歩くと後ろへなびく
+        // ・胸は骨の長さを少し伸び縮みさせ（横は逆に）、もっちりした形の変化を出す
         class SpringBone
         {
             public Transform bone, child, parent;
             public Quaternion restLocal;
             public Vector3 restDirLocal;   // 骨の向き（自分の座標で）
-            public float length, stiffness, drag, gravity, maxAngle = 60f;
+            public Vector3 restScale;
+            public float length, maxAngle = 60f;
+            public float freq = 1.5f, zeta = 0.5f, air = 0.3f, gravity, stretch;
             public int kind;                          // 1＝スカート、2＝胸
             public float maxIn = 90f, maxSide = 90f;  // スカートが脚の側へ入る角度・胸が左右へ振れる角度の上限
-            public Vector3 tip, prevTip;
+            public Vector3 tip, vel, goalPrev, rootPrev;
             public int depth;
+            public bool collide;                      // 髪・ネクタイ：胴・胸・腕に入らないようにする
+            public int stretchAxis = -1;              // 伸び縮みする軸（骨の向きに近い軸。0=x 1=y 2=z）
+            public float pitch, swing, k = 1f;        // 確認用：上下の角度・元の向きからの角度・伸び
+        }
+
+        // 確認用（揺れの連続写真）：胸の上下の角度（度）・伸び（%）、髪の元の向きからの平均の角度（度）
+        public string SpringDebug
+        {
+            get
+            {
+                float cp = 0f, ck = 0f, hs = 0f; int nc = 0, nh = 0;
+                foreach (var s in springs)
+                {
+                    if (s.kind == 2) { cp += s.pitch; ck += (s.k - 1f) * 100f; nc++; }
+                    else if (s.collide && s.kind == 0) { hs += s.swing; nh++; }
+                }
+                return (nc > 0 ? (cp / nc).ToString("0.0") + "," + (ck / nc).ToString("0.0") : ",") + "," + (nh > 0 ? (hs / nh).ToString("0.0") : "");
+            }
         }
         readonly List<SpringBone> springs = new List<SpringBone>();
         Vector3 lastSpringRoot;
@@ -725,6 +1012,13 @@ namespace LifeSimProto
             return k >= 0 ? n.Substring(k + 1) : n;
         }
 
+        // 骨の名前の最後の番号（根元が 1）
+        static int ChainIndex(string bn)
+        {
+            int k = bn.LastIndexOf('_'), n;
+            return (k >= 0 && int.TryParse(bn.Substring(k + 1), out n)) ? Mathf.Max(1, n) : 1;
+        }
+
         void SetupSprings()
         {
             foreach (var t in hips.GetComponentsInChildren<Transform>(true))
@@ -734,74 +1028,240 @@ namespace LifeSimProto
                 Transform child = null;
                 foreach (Transform c in t) if (BaseName(c).StartsWith("Spring_")) { child = c; break; }
                 if (child == null) continue;
-                var sb = new SpringBone { bone = t, child = child, parent = t.parent, restLocal = t.localRotation };
+                var sb = new SpringBone { bone = t, child = child, parent = t.parent, restLocal = t.localRotation, restScale = t.localScale };
                 sb.restDirLocal = t.InverseTransformDirection(child.position - t.position).normalized;
                 sb.length = (child.position - t.position).magnitude;
                 string part = bn.Substring(7);
-                // 2026-10-21 famuru：スカートが硬くてほとんど揺れない → 柔らかく。胸の揺れ（Spring_Chest）を追加（はっきり揺れる）
-                // 2026-10-21 famuru「1で」：スカートは外へ35度・脚の側へ10度まで（脚が突き抜けないように）、胸は上下20度・左右10度まで（上着の前が開かないように）
-                if (part.StartsWith("Skirt")) { sb.stiffness = 0.16f; sb.drag = 0.18f; sb.gravity = 0.35f; sb.maxAngle = 35f; sb.kind = 1; sb.maxIn = 10f; }
-                else if (part.StartsWith("Chest")) { sb.stiffness = 0.10f; sb.drag = 0.10f; sb.gravity = 0.15f; sb.maxAngle = 20f; sb.kind = 2; sb.maxSide = 10f; }
-                else if (part.StartsWith("Tail")) { sb.stiffness = 0.12f; sb.drag = 0.15f; sb.gravity = 0.15f; }
-                else if (part.StartsWith("Ear")) { sb.stiffness = 0.5f; sb.drag = 0.4f; sb.gravity = 0f; }
-                else if (part.StartsWith("Ribbon")) { sb.stiffness = 0.15f; sb.drag = 0.2f; sb.gravity = 0.5f; }
-                else { sb.stiffness = 0.18f; sb.drag = 0.2f; sb.gravity = 0.4f; } // Hair
+                // 先の骨ほど少しゆっくり（工程109 の根元1.38／中1.0／先0.9 に近い）
+                float soft = Mathf.Pow(0.88f, ChainIndex(bn) - 1);
+                // スカート：外へ35度・脚の側へ10度まで（2026-10-21 famuru「1で」）
+                if (part.StartsWith("Skirt")) { sb.freq = 2.0f * soft; sb.zeta = 0.5f; sb.air = 0.2f; sb.gravity = 0.4f; sb.maxAngle = 35f; sb.kind = 1; sb.maxIn = 10f; }
+                // 胸：上下20度・左右10度まで（2026-10-21 famuru「1で」）。ゆっくりで止まりにくく、少し伸び縮み
+                else if (part.StartsWith("Chest")) { sb.freq = 2.2f; sb.zeta = 0.22f; sb.air = 0f; sb.gravity = 0f; sb.maxAngle = 20f; sb.kind = 2; sb.maxSide = 10f; sb.stretch = 0.06f; }
+                else if (part.StartsWith("Tail")) { sb.freq = 1.3f * soft; sb.zeta = 0.4f; sb.air = 0.3f; sb.gravity = 0.3f; }
+                else if (part.StartsWith("Ear")) { sb.freq = 3.0f; sb.zeta = 0.6f; sb.air = 0.1f; }
+                else if (part.StartsWith("RibbonTie") || part.StartsWith("Tie")) { sb.freq = 1.9f * soft; sb.zeta = 0.45f; sb.air = 0.25f; sb.gravity = 0.4f; sb.maxAngle = 45f; }
+                else if (part.StartsWith("Ribbon")) { sb.freq = 1.7f * soft; sb.zeta = 0.4f; sb.air = 0.3f; sb.gravity = 0.4f; }
+                else if (part.StartsWith("HairFront") || part.StartsWith("HairSide")) { sb.freq = 2.2f * soft; sb.zeta = 0.62f; sb.air = 0.12f; sb.gravity = 0.5f; sb.maxAngle = 25f; } // 顔のまわりの短い束：少し速く・小さく（止まったときに前へ跳ね上がらないように）
+                else { sb.freq = 1.6f * soft; sb.zeta = 0.62f; sb.air = 0.12f; sb.gravity = 0.5f; sb.maxAngle = 35f; } // Hair（後ろ髪など）
+                sb.collide = part.StartsWith("Hair") || part.StartsWith("RibbonTie") || part.StartsWith("Tie");
+                if (sb.stretch > 0f)
+                {
+                    Vector3 a = new Vector3(Mathf.Abs(sb.restDirLocal.x), Mathf.Abs(sb.restDirLocal.y), Mathf.Abs(sb.restDirLocal.z));
+                    int ax = a.x > a.y ? (a.x > a.z ? 0 : 2) : (a.y > a.z ? 1 : 2);
+                    if (a[ax] > 0.9f) sb.stretchAxis = ax; else sb.stretch = 0f;   // 骨の向きが軸とずれているときは伸び縮みしない
+                }
                 int d = 0;
                 for (var p = t.parent; p != null && p != model; p = p.parent) d++;
                 sb.depth = d;
-                sb.tip = sb.prevTip = child.position;
+                sb.tip = sb.goalPrev = child.position;
+                sb.rootPrev = t.position;
+                sb.vel = Vector3.zero;
                 springs.Add(sb);
             }
             springs.Sort((a, b) => a.depth.CompareTo(b.depth));
             lastSpringRoot = transform.position;
+            SetupHitShapes();
         }
 
-        void UpdateSprings(float dt)
+        // ================= 髪の当たり判定（2026-10-26 famuru 決定：体・腕の簡単な当たり判定。セレネ・リア共通） =================
+        // 胴・胸・腕のまわりに見えない筒（両端が丸い）を置き、髪・ネクタイの揺れの骨の先がその中に入ったら外へ押し出す。
+        // 元の姿勢ですでに入っている深さまでは許す（髪が体から浮かないように）。太さは肩幅（左右の腕の付け根の間）から決める。
+        class HitShape { public Transform a, b; public float r; }
+        readonly List<HitShape> hitShapes = new List<HitShape>();
+
+        void AddHit(Transform a, Transform b, float r)
+        {
+            if (a == null) return;
+            hitShapes.Add(new HitShape { a = a, b = b ?? a, r = r });
+        }
+
+        void SetupHitShapes()
+        {
+            hitShapes.Clear();
+            Transform la = B("LeftArm"), ra = B("RightArm");
+            if (la == null || ra == null) return;
+            float w = (la.position - ra.position).magnitude;
+            if (w < 1e-4f) return;
+            Transform sp2 = B("Spine2") ?? B("Spine1") ?? B("Spine");
+            AddHit(hips, sp2, w * 0.40f);                 // 腰〜胸の下
+            AddHit(sp2, B("Neck"), w * 0.30f);            // 胸の上〜首の付け根
+            foreach (var s in springs)                    // 胸のふくらみ
+                if (BaseName(s.bone).StartsWith("Spring_Chest")) AddHit(s.bone, s.child, w * 0.24f);
+            AddHit(la, B("LeftForeArm"), w * 0.17f);      // 二の腕
+            AddHit(ra, B("RightForeArm"), w * 0.17f);
+            AddHit(B("LeftForeArm"), B("LeftHand"), w * 0.13f);   // 前腕
+            AddHit(B("RightForeArm"), B("RightHand"), w * 0.13f);
+        }
+
+        static float SegDist(Vector3 p, Vector3 a, Vector3 b, out Vector3 q)
+        {
+            Vector3 ab = b - a;
+            float t = ab.sqrMagnitude > 1e-10f ? Mathf.Clamp01(Vector3.Dot(p - a, ab) / ab.sqrMagnitude) : 0f;
+            q = a + ab * t;
+            return (p - q).magnitude;
+        }
+
+        Vector3 PushOut(Vector3 p, Vector3 rest, Vector3 root, float len)
+        {
+            for (int it = 0; it < 2; it++)
+            {
+                foreach (var h in hitShapes)
+                {
+                    if (h.a == null) continue;
+                    Vector3 a = h.a.position, b = h.b.position, q, q0;
+                    float r = Mathf.Min(h.r, SegDist(rest, a, b, out q0)); // 元の姿勢で入っている深さまでは許す
+                    float d = SegDist(p, a, b, out q);
+                    if (d >= r) continue;
+                    Vector3 n = d > 1e-5f ? (p - q) / d : (rest - q0).normalized;
+                    if (n.sqrMagnitude < 1e-8f) continue;
+                    p = q + n * r;
+                }
+                Vector3 v = p - root;
+                if (v.sqrMagnitude > 1e-10f) p = root + v.normalized * len;
+            }
+            return p;
+        }
+
+        // 骨の先の位置 p を、長さ・角度の上限・当たり判定に合わせる
+        Vector3 Constrain(SpringBone s, Vector3 p, Vector3 root, Vector3 goal)
+        {
+            Vector3 restDir = (goal - root) / Mathf.Max(s.length, 1e-6f);
+            Vector3 d = p - root;
+            float L = d.magnitude;
+            Vector3 dir = L > 1e-6f ? d / L : restDir;
+            if (s.kind == 1) // スカート：体の中心（脚）へ向かう向きには maxIn 度まで
+            {
+                Vector3 radial = Vector3.ProjectOnPlane(root - hips.position, transform.up);
+                if (radial.sqrMagnitude > 1e-6f)
+                {
+                    radial.Normalize();
+                    float lim = Mathf.Sin(s.maxIn * Mathf.Deg2Rad);
+                    float inward = -Vector3.Dot(dir - restDir, radial);
+                    if (inward > lim) dir = (dir + radial * (inward - lim)).normalized;
+                }
+            }
+            else if (s.kind == 2) // 胸：左右へは maxSide 度まで
+            {
+                Vector3 side = transform.right;
+                float lim = Mathf.Sin(s.maxSide * Mathf.Deg2Rad);
+                float lat = Vector3.Dot(dir - restDir, side);
+                if (Mathf.Abs(lat) > lim) dir = (dir - side * (lat - Mathf.Sign(lat) * lim)).normalized;
+            }
+            float len = s.stretch > 0f ? Mathf.Clamp(L, s.length * (1f - s.stretch), s.length * (1f + s.stretch)) : s.length;
+            if (s.stretch > 0f && L > 1e-6f) len = Mathf.Lerp(s.length, len, Mathf.Abs(Vector3.Dot(dir, restDir)));
+            // 当たり判定で押し出してから角度の上限をかける（押し出しで上限を超えて跳ね上がらないように）
+            if (s.collide && hitShapes.Count > 0)
+            {
+                Vector3 q = PushOut(root + dir * len, goal, root, len) - root;
+                if (q.sqrMagnitude > 1e-10f) dir = q.normalized;
+            }
+            dir = Vector3.RotateTowards(restDir, dir, s.maxAngle * Mathf.Deg2Rad, 0f);
+            return root + dir * len;
+        }
+
+        void ApplyBone(SpringBone s, Vector3 root, Vector3 restDir)
+        {
+            Vector3 d = s.tip - root;
+            s.swing = Vector3.Angle(restDir, d);
+            s.pitch = Vector3.SignedAngle(restDir, d, transform.right);
+            s.k = 1f;
+            if (d.sqrMagnitude > 1e-10f) s.bone.rotation = Quaternion.FromToRotation(restDir, d) * s.bone.rotation;
+            if (s.stretchAxis >= 0)
+            {
+                // 骨の向きの分だけで伸び縮みを決める（横へ振れただけでは伸びない）
+                float k = Mathf.Clamp(Vector3.Dot(d, restDir) / Mathf.Max(s.length, 1e-6f), 1f - s.stretch, 1f + s.stretch);
+                s.k = k;
+                Vector3 sc = s.restScale * (1f / Mathf.Sqrt(k));   // 伸びると細く、縮むと太く（もっちり）
+                sc[s.stretchAxis] = s.restScale[s.stretchAxis] * k;
+                s.bone.localScale = sc;
+            }
+        }
+
+        // ---- 2026-10-30（軽量化のチャット）：映っているかどうか・表示の範囲 ----
+        bool springsAsleep = true;
+        [System.NonSerialized] public bool perfClone;   // PerfProbe の見本（確認用の写真と違い、ふつうのキャラと同じ決まりで揺らす）
+        public static float SwayMinPixels = 90f;        // 画面での背の高さがこれより小さい子は揺らさない（遠くて揺れが見えないため）
+        bool BigOnScreen()
+        {
+            if (testMode && !perfClone) return true;   // 確認用の写真（別のカメラで近くから撮る）はいつも揺らす
+            var w = LoungeWorld.Instance;
+            var cam = w != null && w.mainCamera != null ? w.mainCamera : Camera.main;
+            if (cam == null) return true;
+            float h = (measuredHeight < 0.5f || measuredHeight > 3f) ? height : measuredHeight;
+            float view;
+            if (cam.orthographic) view = cam.orthographicSize * 2f;
+            else view = 2f * Vector3.Distance(cam.transform.position, hips.position) * Mathf.Tan(cam.fieldOfView * 0.5f * Mathf.Deg2Rad);
+            return h / Mathf.Max(0.01f, view) * Screen.height >= SwayMinPixels;
+        }
+        SkinnedMeshRenderer[] visRends;
+        bool AnyVisible()
+        {
+            if (visRends == null) visRends = model.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            foreach (var r in visRends) if (r != null && r.enabled && r.isVisible) return true;
+            return false;
+        }
+
+        void SetWideBounds()
+        {
+            float h = (measuredHeight < 0.5f || measuredHeight > 3f) ? height : measuredHeight;
+            float side = Mathf.Max(2.4f, h + 1.2f);
+            foreach (var smr in model.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                Transform rb = smr.rootBone != null ? smr.rootBone : smr.transform;
+                float s = Mathf.Max(1e-5f, Mathf.Abs(rb.lossyScale.x));
+                smr.localBounds = new Bounds(rb.InverseTransformPoint(hips.position), Vector3.one * (side / s));
+                smr.updateWhenOffscreen = false;
+            }
+        }
+
+        void UpdateSprings(float dt, bool forceReset = false)
         {
             if (springs.Count == 0) return;
-            bool reset = dt > 0.1f || (transform.position - lastSpringRoot).sqrMagnitude > 0.25f;
+            bool reset = forceReset || dt > 0.1f || (transform.position - lastSpringRoot).sqrMagnitude > 0.25f;
             lastSpringRoot = transform.position;
-            float step = Mathf.Min(dt, 1f / 30f) * 60f; // 60fps を基準にした強さ
+            int n = Mathf.Clamp(Mathf.CeilToInt(dt * 120f), 1, 12);  // 1/120秒ごとに分けて計算
+            float h = dt / n;
             foreach (var s in springs)
             {
                 s.bone.localRotation = s.restLocal;
+                if (s.stretchAxis >= 0) s.bone.localScale = s.restScale;
+                Vector3 root = s.bone.position;
                 Vector3 restDir = s.bone.TransformDirection(s.restDirLocal);
-                Vector3 target = s.bone.position + restDir * s.length;
-                if (reset) { s.tip = s.prevTip = target; continue; }
-                Vector3 vel = (s.tip - s.prevTip) * Mathf.Pow(1f - s.drag, step);
-                s.prevTip = s.tip;
-                Vector3 next = s.tip + vel + Vector3.down * s.gravity * 0.0008f * step * step;
-                next = Vector3.Lerp(next, target, 1f - Mathf.Pow(1f - s.stiffness, step));
-                Vector3 dir = next - s.bone.position;
-                if (dir.sqrMagnitude < 1e-8f) dir = restDir;
-                dir.Normalize();
-                if (s.kind == 1) // スカート：体の中心（脚）へ向かう向きには maxIn 度まで
+                Vector3 goal = root + restDir * s.length;
+                if (reset)
                 {
-                    Vector3 radial = Vector3.ProjectOnPlane(s.bone.position - hips.position, transform.up);
-                    if (radial.sqrMagnitude > 1e-6f)
+                    s.tip = goal; s.vel = Vector3.zero;
+                }
+                else
+                {
+                    Vector3 gv = (goal - s.goalPrev) / dt;      // 体（目標）の速さ
+                    float w = 2f * Mathf.PI * s.freq;
+                    for (int i = 1; i <= n; i++)
                     {
-                        radial.Normalize();
-                        float lim = Mathf.Sin(s.maxIn * Mathf.Deg2Rad);
-                        float inward = -Vector3.Dot(dir - restDir, radial);
-                        if (inward > lim) dir = (dir + radial * (inward - lim)).normalized;
+                        float a = (float)i / n;
+                        Vector3 r = Vector3.Lerp(s.rootPrev, root, a);
+                        Vector3 g = Vector3.Lerp(s.goalPrev, goal, a);
+                        Vector3 start = s.tip;
+                        Vector3 relV = s.vel - gv * (1f - s.air);
+                        Vector3 acc = w * w * (g - s.tip) - 2f * s.zeta * w * relV + Vector3.down * s.gravity;
+                        s.vel += acc * h;
+                        Vector3 free = s.tip + s.vel * h;
+                        Vector3 p = Constrain(s, free, r, g);
+                        // 押し戻した分は勢いに半分だけ入れる（全部入れると、腕や胸に押されたときに髪が弾き飛ばされる）
+                        s.vel += (p - free) / h * 0.5f;
+                        s.tip = p;
                     }
                 }
-                else if (s.kind == 2) // 胸：左右へは maxSide 度まで
-                {
-                    Vector3 side = transform.right;
-                    float lim = Mathf.Sin(s.maxSide * Mathf.Deg2Rad);
-                    float lat = Vector3.Dot(dir - restDir, side);
-                    if (Mathf.Abs(lat) > lim) dir = (dir - side * (lat - Mathf.Sign(lat) * lim)).normalized;
-                }
-                dir = Vector3.RotateTowards(restDir, dir, s.maxAngle * Mathf.Deg2Rad, 0f); // 揺れすぎて体や服に刺さらないように
-                next = s.bone.position + dir.normalized * s.length;
-                s.tip = next;
-                s.bone.rotation = Quaternion.FromToRotation(restDir, next - s.bone.position) * s.bone.rotation;
+                s.rootPrev = root;
+                s.goalPrev = goal;
+                ApplyBone(s, root, restDir);
             }
         }
 
         // ================= 骨を直接曲げる簡単な動き =================
         Transform B(string n) { Transform t; return bones.TryGetValue(n, out t) ? t : null; }
+        public Transform Bone(string n) { return B(n); }   // 確認用の写真から骨の位置を見る
 
         void Aim(string boneName, string childName, Quaternion frame, Vector3 dir)
         {

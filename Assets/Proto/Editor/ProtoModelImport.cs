@@ -16,7 +16,7 @@ namespace LifeSimProto.EditorTools
         const string MotionDir = "Assets/Proto/Resources/Motions";
         const string CharDir = "Assets/Proto/Resources/Chars";   // 本番キャラ（Codex 制作）
 
-        public override uint GetVersion() { return 10; }
+        public override uint GetVersion() { return 11; }
 
         static bool IsModel(string p) { p = p.Replace('\\', '/'); return p.StartsWith(ModelDir) || p.StartsWith(CharDir); }
         static bool IsMotion(string p) { return p.Replace('\\', '/').StartsWith(MotionDir); }
@@ -35,6 +35,12 @@ namespace LifeSimProto.EditorTools
                 mi.materialImportMode = ModelImporterMaterialImportMode.ImportStandard;
                 mi.importBlendShapes = true;   // 表情（シェイプキー）
                 mi.importAnimation = false;
+                // 2026-10-26 famuru：リア（I）は顔の影をなめらかにした法線を、表情の分もモデルのまま使う（自動で作り直すと硬い影が戻る）
+                if (Path.GetFileNameWithoutExtension(assetPath) == "CharI")
+                {
+                    mi.importNormals = ModelImporterNormals.Import;
+                    mi.importBlendShapeNormals = ModelImporterNormals.Import;
+                }
             }
             else
             {
@@ -75,7 +81,8 @@ namespace LifeSimProto.EditorTools
             foreach (var c in clips)
             {
                 c.name = file;
-                c.loopTime = true;
+                // 「_Down」「_Up」で終わる動き（座る・立つ）は1回だけ。ほかはくり返し（2026-10-30 モーション）
+                c.loopTime = !(file.EndsWith("_Down") || file.EndsWith("_Up"));
                 c.lockRootRotation = true;      // 向きはゲーム側で決める
                 c.lockRootHeightY = true;       // 高さは元の動きのまま（座る動きで腰が下がる）
                 c.lockRootPositionXZ = false;   // 前に進む動きは体に焼き込まない（ゲーム側で移動するので、その場で動く）

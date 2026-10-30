@@ -68,6 +68,12 @@ namespace LifeSimProto.EditorTools
                 case "ftalk":
                 case "fmove":
                 case "hstat":
+                case "perf":
+                case "floorshots":
+                case "motionshots":
+                case "gestureshots":
+                case "motionvideo":
+                case "usagevideo":
                     break;
                 default:
                     return false;
@@ -213,6 +219,51 @@ namespace LifeSimProto.EditorTools
                         var f = w.RomanceTarget;
                         f.OrderMove(new Vector3(float.Parse(a[1], ci), 0f, float.Parse(a[2], ci)));
                         log.AppendLine("fmove: " + f.StateName());
+                        break;
+                    }
+                    case "perf":
+                    {
+                        // 重さを測る（PerfProbe.cs。2026-10-30 軽量化のチャット）：perf（秒）（名前）／perf sway on|off／perf offscreen on|off／perf clones（人数）／perf clear
+                        string s1 = a.Length > 1 ? a[1] : "5";
+                        if (s1 == "sway") { LifeSimProto.PerfProbe.NoSway = a.Length > 2 && a[2] == "off"; log.AppendLine("perf sway: " + (LifeSimProto.PerfProbe.NoSway ? "off" : "on")); }
+                        else if (s1 == "offscreen") log.AppendLine(LifeSimProto.PerfProbe.SetOffscreen(!(a.Length > 2 && a[2] == "off")));
+                        else if (s1 == "clones") log.AppendLine(LifeSimProto.PerfProbe.AddClones(w, a.Length > 2 ? int.Parse(a[2]) : 22));
+                        else if (s1 == "swaypx") { if (a.Length > 2) LifeSimProto.ProtoBody.SwayMinPixels = float.Parse(a[2], System.Globalization.CultureInfo.InvariantCulture); log.AppendLine("perf swaypx: " + LifeSimProto.ProtoBody.SwayMinPixels); }
+                        else if (s1 == "render") log.AppendLine(LifeSimProto.PerfProbe.Render(a.Length > 2 ? a[2] : "reset", a.Length > 3 ? a[3] : ""));
+                        else if (s1 == "clear") log.AppendLine(LifeSimProto.PerfProbe.Clear());
+                        else log.AppendLine(LifeSimProto.PerfProbe.Begin(a.Length > 2 ? a[2] : "測定", float.Parse(s1, System.Globalization.CultureInfo.InvariantCulture)));
+                        break;
+                    }
+                    case "usagevideo":
+                    {
+                        new GameObject("UsageVideo").AddComponent<LifeSimProto.UsageVideo>();
+                        log.AppendLine("usagevideo: started");
+                        break;
+                    }
+                    case "motionvideo":
+                    {
+                        new GameObject("MotionVideo").AddComponent<LifeSimProto.MotionVideo>();
+                        log.AppendLine("motionvideo: started");
+                        break;
+                    }
+                    case "gestureshots":
+                    {
+                        new GameObject("GestureShots").AddComponent<LifeSimProto.GestureShots>();
+                        log.AppendLine("gestureshots: started");
+                        break;
+                    }
+                    case "motionshots":
+                    {
+                        // 動きの候補の見比べ（2026-10-30 モーション）：Logs\\motionshots_list.txt（カテゴリ|動きの名前）→ 仮モデル\\Unity確認\\動き候補\\
+                        new GameObject("MotionShots").AddComponent<LifeSimProto.MotionShots>();
+                        log.AppendLine("motionshots: started");
+                        break;
+                    }
+                    case "floorshots":
+                    {
+                        // 床に座る動きの見比べ（2026-10-30 モーションのチャット）：仮モデル\\Unity確認\\床座り_比較\\
+                        new GameObject("FloorShots").AddComponent<LifeSimProto.FloorShots>();
+                        log.AppendLine("floorshots: started");
                         break;
                     }
                     case "shot":

@@ -1,5 +1,6 @@
 // LifeSim のキャラ用トゥーン表示（アニメ調の2段の陰影＋輪郭線）
 // Universal Render Pipeline 用。Claude 作成（2026-10-20）
+// 2026-10-28 肌の質感（影の境目の赤み・ふちの光・ほんのりツヤ）を追加。強さ0なら今までと同じ見た目
 Shader "LifeSim/Toon"
 {
     Properties
@@ -14,6 +15,15 @@ Shader "LifeSim/Toon"
         _OutlineColor ("輪郭線の色", Color) = (0.22,0.16,0.16,1)
         _OutlineWidth ("輪郭線の太さ", Range(0,0.01)) = 0.0018
         [Enum(UnityEngine.Rendering.CullMode)] _Cull ("裏面", Float) = 2
+        [Header(Skin)]
+        _ScatterColor ("肌：影の境目の赤みの色", Color) = (1,0.42,0.32,1)
+        _ScatterStrength ("肌：影の境目の赤みの強さ", Range(0,1)) = 0
+        _ScatterWidth ("肌：赤みの幅", Range(0.05,1)) = 0.35
+        _RimColor ("肌：ふちの光の色", Color) = (1,0.9,0.85,1)
+        _RimStrength ("肌：ふちの光の強さ", Range(0,1)) = 0
+        _RimPower ("肌：ふちの光の細さ", Range(1,8)) = 3
+        _GlossStrength ("肌：ツヤの強さ", Range(0,0.5)) = 0
+        _GlossPower ("肌：ツヤの広さ（小さいほど広い）", Range(2,64)) = 12
     }
 
     SubShader
@@ -33,6 +43,14 @@ Shader "LifeSim/Toon"
             half4 _OutlineColor;
             float _OutlineWidth;
             float _Cull;
+            half4 _ScatterColor;
+            half _ScatterStrength;
+            half _ScatterWidth;
+            half4 _RimColor;
+            half _RimStrength;
+            half _RimPower;
+            half _GlossStrength;
+            half _GlossPower;
         CBUFFER_END
         TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
         ENDHLSL
@@ -95,8 +113,22 @@ Shader "LifeSim/Toon"
                 // 太陽・月の光（2段の陰影）
                 float4 sc = TransformWorldToShadowCoord(i.positionWS);
                 Light ml = GetMainLight(sc);
-                half lm = Ramp(dot(n, ml.direction)) * ml.shadowAttenuation;
+                half ndl = dot(n, ml.direction);
+                half lm = Ramp(ndl) * ml.shadowAttenuation;
                 col += lerp(shade, baseCol.rgb, lm) * ml.color * _LightStrength * max(lm, 0.25h);
+
+                // 肌：影の境目にほんのり赤み（光が肌の中で散って赤く見える感じ）
+                half band = saturate(1.0h - abs(ndl - _ShadeStep) / _ScatterWidth);
+                band *= band * max(ml.shadowAttenuation, 0.5h);
+                col += baseCol.rgb * _ScatterColor.rgb * band * _ScatterStrength * ml.color * _LightStrength;
+
+                // 肌：ふちの光とほんのりツヤ
+                float3 v = normalize(GetWorldSpaceViewDir(i.positionWS));
+                half rim = pow(1.0h - saturate(dot(n, v)), _RimPower);
+                col += baseCol.rgb * _RimColor.rgb * rim * _RimStrength * (ml.color * _LightStrength * max(lm, 0.35h) + ambient * 0.5h);
+                float3 hv = normalize(ml.direction + v);
+                half gloss = pow(saturate(dot(n, hv)), _GlossPower) * _GlossStrength * lm;
+                col += ml.color * _LightStrength * gloss;
 
                 // ランプなどの光
                 InputData inputData = (InputData)0;

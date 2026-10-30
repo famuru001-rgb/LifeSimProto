@@ -571,13 +571,25 @@ namespace LifeSimProto
 
         void Update()
         {
+            long tp = PerfProbe.Stamp();   // 重さを測る（PerfProbe.cs。2026-10-30 軽量化のチャット）
+            try { UpdateCore(); } finally { PerfProbe.Add(PerfProbe.Sim, tp); }
+        }
+
+        void UpdateCore()
+        {
             float dt = Time.deltaTime;
             if (dt <= 0f) return;
             stateTime += dt;
 
             UpdateNeeds(dt);
             if (Present) Watchdog(dt);
-            if (Present)
+            // 床から立ち上がる間はその場に止め、終わったら座席の前へ出る（2026-10-30 モーション）
+            if (standUpUntil > 0f)
+            {
+                if (Time.time < standUpUntil) { transform.position = standUpPos; transform.rotation = standUpRot; }
+                else { transform.position = standUpAfter; standUpUntil = -1f; }
+            }
+            if (Present && !StandingUpNow)
             {
                 int n = Mathf.Clamp(Mathf.CeilToInt(dt / MaxMoveStep), 1, 24);
                 float sdt = dt / n;
@@ -607,6 +619,12 @@ namespace LifeSimProto
                     if (chatCooldown <= 0f) { chatCooldown = Random.Range(6f, 14f); TryAmbientChat(); }
                 }
                 if (chatting) { chatTime += dt; if (chatTime > 20f) EndChat(); } // 念のための安全装置
+                // 相手が話している間は、ときどきうなずく（2026-10-30 モーション）
+                if ((state == State.Talking || chatting) && !IsSpeakingNow)
+                {
+                    nodTimer -= dt;
+                    if (nodTimer <= 0f) { nodTimer = Random.Range(2.5f, 5f); Gest("Nod", 1.9f, 0.6f); }
+                }
                 greetTimer -= dt;
                 if (greetTimer <= 0f) { greetTimer = 0.4f; TryGreet(); }
             }
@@ -1053,6 +1071,7 @@ namespace LifeSimProto
         /// <summary>そのキャラらしいせりふ（決まっていなければ fallback）。{0} は相手の名前。</summary>
         public string Say(string key, string fallback, string other = null)
         {
+            lastSayKey = key; lastSayAt = Time.time;   // 身ぶりの選び分け用（断る→首を振る）
             string[] v;
             string line = fallback;
             if (profile != null && profile.lines.TryGetValue(key, out v) && v.Length > 0) line = v[Random.Range(0, v.Length)];
@@ -3122,6 +3141,7 @@ namespace LifeSimProto
             if (focus) bonus += 0.15f; // お守り：話すと楽しくなりやすい
             TalkResult result = world.rel.Roll(id, partner.id, bonus);
             if (focus && result != TalkResult.Awkward) world.rel.Add(id, partner.id, result == TalkResult.Fun ? 1.5f : 0.5f, world.simTime); // 仲よくなりやすい
+            if (result == TalkResult.Awkward) { Gest("Troubled", 3f, 0.7f); partner.Gest("Troubled", 3f, 0.5f); }   // 気まずい会話は困る身ぶり
             if (result == TalkResult.Fun) { GrowAbility(Abilities.Charm, 0.15f); partner.GrowAbility(Abilities.Charm, 0.15f); }
             string icon = result == TalkResult.Fun ? "♪ ♥" : (result == TalkResult.Normal ? "…" : "（汗）");
             ShowBubble(icon, 2.2f);
@@ -3302,7 +3322,7 @@ namespace LifeSimProto
             string hk = m < 600f ? "hello_m" : (m >= 1260f ? "hello_n" : "hello_d");
             string hello = Say(hk, m < 600f ? "おはよう" : (m >= 1260f ? "おやすみ" : "やあ"));
             string a, b;
-            if (aff < 25f) { a = "（会釈）"; b = "（会釈）"; }
+            if (aff < 25f) { a = "（会釈）"; b = "（会釈）"; Gest("Bow", 2.2f, 0.7f); o.Gest("Bow", 2.2f, 0.7f); }   // 会釈＝キャラのらしさのおじぎ
             else if (aff < 60f) { a = hello; b = o.Say(hk, "おつかれ"); }
             else if (aff >= 80f && Random.value < 0.6f) { a = SayTo("hello_s", o, hello); b = o.SayTo("reply", this, "ふふっ"); }
             else { a = SayTo("close", o, "あ、{0}！"); b = o.SayTo("reply", this, Random.value < 0.5f ? "あとで話そ♪" : "ふふっ"); }
@@ -3455,17 +3475,22 @@ namespace LifeSimProto
                 var res = new List<Place>();
                 if (room != null)
                 {
-                    // 個室：ベッドの縁に並んで座る（最大4人）
+                    // 個室：ベッドの縁に並んで座る（前のベッドは最大4人、本番の家具のベッドは座る所の数まで）
                     Vector3 along = room.bed.forward;
                     Vector3 edgeOut = room.bedEdge;
-                    float[] offs = n <= 2 ? new[] { -0.3f, 0.2f } : (n == 3 ? new[] { -0.55f, -0.05f, 0.45f } : new[] { -0.72f, -0.25f, 0.22f, 0.69f });
-                    if (n > 4) offs = new[] { -0.72f, -0.25f, 0.22f, 0.69f };
-                    foreach (var o in offs) res.Add(new Place { pos = room.bed.position + along * (o * room.bedSpread) + edgeOut * room.bedEdgeDist, facing = edgeOut, floor = false });
-                    // 5人目からは、ベッドの前の床に並んで座る（ベッドを向く）
-                    for (int i = 4; i < n; i++)
+                    bool fb = room.bedSeatOffs != null;
+                    Vector3 sitAx = room.bedSitAlong.sqrMagnitude > 0.01f ? room.bedSitAlong : along;
+                    float mul = fb ? 1f : room.bedSpread;
+                    int cap = fb ? room.bedSeatOffs.Length : 4;
+                    float[] offs = fb ? room.SeatOffs(Mathf.Min(n, cap)) : (n <= 2 ? new[] { -0.3f, 0.2f } : (n == 3 ? new[] { -0.55f, -0.05f, 0.45f } : new[] { -0.72f, -0.25f, 0.22f, 0.69f }));
+                    if (!fb && n > 4) offs = new[] { -0.72f, -0.25f, 0.22f, 0.69f };
+                    foreach (var o in offs) res.Add(new Place { pos = room.bed.position + sitAx * (o * mul) + edgeOut * room.bedEdgeDist, facing = edgeOut, floor = false });
+                    // あふれた人は、ベッドの前の床に並んで座る（ベッドを向く）
+                    float[] o4 = fb ? room.bedSeatOffs : offs;
+                    for (int i = cap; i < n; i++)
                     {
-                        int row = (i - 4) / 4, col = (i - 4) % 4;
-                        res.Add(new Place { pos = room.bed.position + along * (offs[col] * room.bedSpread) + edgeOut * (room.bedEdgeDist + 0.75f + row * 0.6f), facing = -edgeOut, floor = true });
+                        int row = (i - cap) / o4.Length, col = (i - cap) % o4.Length;
+                        res.Add(new Place { pos = room.bed.position + sitAx * (o4[col] * mul) + edgeOut * (room.bedEdgeDist + 0.75f + row * 0.6f), facing = -edgeOut, floor = true });
                     }
                 }
                 else foreach (var s in seatList) res.Add(new Place { pos = s.position, facing = s.forward, floor = s.floorSeat });
@@ -3641,6 +3666,38 @@ namespace LifeSimProto
         {
             bubble = SpeechStyle.Apply(this, text); // 状態で言い方が変わる（SpeechStyle.cs）
             bubbleTimer = seconds;
+            BubbleGesture(text + " " + bubble);
+        }
+
+        // ================= 気持ちの身ぶり（2026-10-30 モーション。famuru「おすすめで」） =================
+        // 吹き出しの言葉・会話の結果に合わせて、短い動き（Resources\Motions の Nod・HeadShake など）を流す。
+        // 動きのファイルが無ければ何もしない。座っているときは ProtoBody が上半身だけ重ねる
+        string lastSayKey; float lastSayAt = -1f;
+        float nodTimer = 3f;
+        void Gest(string clip, float seconds, float chance = 1f)
+        {
+            if (Random.value > chance) return;
+            var pb = GetComponent<ProtoBody>();
+            if (pb != null) pb.Gesture(clip, seconds);
+        }
+        bool BubbleExtraGesture(string t)
+        {
+            foreach (var kv in MotionBook.BubbleExtra)
+                if (t.Contains(kv.Key)) { Gest(kv.Value, 3f, 0.6f); return true; }
+            return false;
+        }
+        void BubbleGesture(string t)
+        {
+            if (string.IsNullOrEmpty(t)) return;
+            if (lastSayKey == "refuse" && Mathf.Approximately(lastSayAt, Time.time)) Gest("HeadShake", 1.8f);
+            else if (t.Contains("えっ") || t.Contains("！？")) Gest(Random.value < 0.5f ? "Surprised" : "Surprised2", 2.5f, 0.8f);
+            else if (t.Contains("ありがとう")) Gest("Thanks", 2.5f, 0.6f);
+            else if (t.Contains("涙")) Gest("Cry", 4f);
+            else if (t.Contains("ごめん")) Gest("Troubled", 3f, 0.7f);
+            else if (t.Contains("うーん")) Gest("Think", 3f, 0.6f);
+            else if (BubbleExtraGesture(t)) { }
+            else if (GetStage(StatusLine.Shy) > 0) Gest("Shy", 3.5f, 0.3f);
+            else if (GetStage(StatusLine.Jealousy) > 0 || GetStage(StatusLine.Frustration) > 0) Gest("Angry", 2.2f, 0.3f);
         }
 
         // ================= 移動 =================
@@ -3916,11 +3973,25 @@ namespace LifeSimProto
             transform.rotation = Quaternion.LookRotation(seat.forward);
         }
 
+        // 床（正座）から立ち上がる間は、その場で止まる（2026-10-30 モーション。famuru「ア：3秒待つ、後で直す」）
+        public static float StandUpSeconds = 3f;
+        float standUpUntil = -1f;
+        Vector3 standUpPos, standUpAfter;
+        Quaternion standUpRot;
+        public bool StandingUpNow { get { return Time.time < standUpUntil; } }
+
         void LeaveCurrentSpot()
         {
+            bool wasFloor = CurrentPose() == Pose.SitFloor && !string.IsNullOrEmpty(ProtoBody.SitFloorClip);
             EndChat();
             bool atSeat = seat != null && (state == State.Sitting || state == State.Eating || state == State.Bathing || state == State.Sleeping);
-            if (atSeat) transform.position = world.NearestFree(seat.approach);
+            if (atSeat && wasFloor && seat.floorSeat)
+            {
+                standUpPos = transform.position; standUpRot = transform.rotation;
+                standUpAfter = world.NearestFree(seat.approach);
+                standUpUntil = Time.time + StandUpSeconds;
+            }
+            else if (atSeat) transform.position = world.NearestFree(seat.approach);
             ReleaseSeatAndPoi();
             if (goal != Goal.MoveTo) goal = Goal.None;
             mealPending = false;
@@ -3955,6 +4026,37 @@ namespace LifeSimProto
 
         // 仮モデル（ProtoBody）に渡す今の姿勢
         public BodyPose BodyPoseNow { get { return (BodyPose)(int)CurrentPose(); } }
+        // ---- 動きの使い分け（MotionBook。2026-10-30 モーション）----
+        public string Letter { get { return profile != null ? profile.letter : ""; } }
+        public bool IsMale { get { return male; } }
+        /// <summary>生活の場面：立って行う所は場所の名前、座って行う所は #食べる・#お茶・#読書・#勉強</summary>
+        public string MotionScene
+        {
+            get
+            {
+                if (state == State.Activity && poi != null) return poi.label;
+                if (state == State.Eating) return act == Act.Tea ? "#お茶" : "#食べる";
+                if (state == State.Sitting)
+                {
+                    if (act == Act.Study) return "#勉強";
+                    if (act == Act.Meal || act == Act.Snack) return "#食べる";
+                    if (act == Act.Tea) return "#お茶";
+                    if (act == Act.Hobby) return hobby == HobbyKind.Tea ? "#お茶" : "#読書";
+                }
+                return null;
+            }
+        }
+        /// <summary>歩くときの気分（sad・tired・happy。無ければ null＝キャラのらしさのまま）</summary>
+        public string WalkMood
+        {
+            get
+            {
+                if (GetStage(StatusLine.MoodDown) > 0) return "sad";
+                if (tired > 80f) return "tired";
+                if (GetStage(StatusLine.MoodUp) > 0) return "happy";
+                return null;
+            }
+        }
         public bool IsTalkingNow { get { return state == State.Talking || chatting; } }
         public bool IsEatingNow { get { return state == State.Eating; } }
         public bool IsDozingNow { get { var p = CurrentPose(); return dozing && (p == Pose.Sit || p == Pose.SitFloor); } }
@@ -3999,6 +4101,8 @@ namespace LifeSimProto
             if (state == State.Bathing) return Pose.Soak;
             if (state == State.Sitting || state == State.Eating) return onFloor ? Pose.SitFloor : Pose.Sit;
             if (state == State.Talking && seat != null && seat.kind == SeatKind.Sit && Flat(transform.position - seat.position).magnitude < 0.3f) return onFloor ? Pose.SitFloor : Pose.Sit;
+            // 椅子のある場所（机など）では座って行う（2026-10-30 モーション。famuru「机で勉強は座って書く」）
+            if (state == State.Activity && poi != null && poi.seated && poiSlot >= 0 && poiSlot < poi.slots.Length && Flat(transform.position - poi.slots[poiSlot]).magnitude < 0.3f) return Pose.Sit;
             return Pose.Stand;
         }
 

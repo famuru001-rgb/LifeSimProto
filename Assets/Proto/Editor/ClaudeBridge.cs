@@ -211,6 +211,35 @@ namespace LifeSimProto.EditorTools
                         CharCheck.Run();
                         log.AppendLine("checkchars: ok");
                         break;
+                    case "sway": case "sway before": case "sway after": case "sway after2": case "sway after3": case "sway after4": case "sway after5":
+                        // 2026-10-26：揺れの連続写真（仮モデル\\Unity確認\\揺れ_（名前）\\）
+                        if (EditorApplication.isPlaying)
+                        {
+                            LifeSimProto.SwayShots.Tag = cmd.Length > 5 ? cmd.Substring(5) : "now";
+                            new GameObject("SwayShots").AddComponent<LifeSimProto.SwayShots>();
+                            log.AppendLine("sway: started " + LifeSimProto.SwayShots.Tag);
+                        }
+                        else log.AppendLine("sway: not playing");
+                        break;
+                    case "sitshots": case "sitshots i": case "sitshots i2":
+                        // 2026-10-27：座ったときのスカートの写真（仮モデル\\Unity確認\\座り_（名前）\\）
+                        if (EditorApplication.isPlaying)
+                        {
+                            LifeSimProto.SitShots.Tag = cmd == "sitshots i2" ? "i2" : "i"; LifeSimProto.SitShots.Letters = "I";
+                            new GameObject("SitShots").AddComponent<LifeSimProto.SitShots>();
+                            log.AppendLine("sitshots: started");
+                        }
+                        else log.AppendLine("sitshots: not playing");
+                        break;
+                    case "armshots":
+                        // 2026-10-27：喜ぶ・手を振る・話すの脇の写真（仮モデル\\Unity確認\\脇_i\\）
+                        if (EditorApplication.isPlaying)
+                        {
+                            new GameObject("ArmShots").AddComponent<LifeSimProto.ArmShots>();
+                            log.AppendLine("armshots: started");
+                        }
+                        else log.AppendLine("armshots: not playing");
+                        break;
                     case "photos":
                         if (EditorApplication.isPlaying)
                         {
