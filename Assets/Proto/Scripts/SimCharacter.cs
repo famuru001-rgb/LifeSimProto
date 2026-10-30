@@ -3634,6 +3634,9 @@ namespace LifeSimProto
             }
             actionText = "ぼんやりしている";
             SetState(State.Idle);
+            hasOrder = false; // 篤が誘った指示はここで終わり（残っていると、そのあと何もしなくなっていた。2026-10-31）
+            target = null;
+            intent = Intent.Talk;
             thinkTimer = Random.Range(0.5f, 2f);
             if (IsMob) MobAfterPrivate();
             if (pendingOrder != null)

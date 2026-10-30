@@ -59,6 +59,20 @@ namespace LifeSimProto
             ClampMenu();
         }
 
+        /// <summary>試験用：右クリックの「エッチに誘う ▶」を開いた形にする（ClaudeBridge の ui invite 番号 1/2）。</summary>
+        void DebugInvite(string idText, int page)
+        {
+            int id;
+            if (!int.TryParse(idText, out id) || id < 0 || id >= world.characters.Count) return;
+            menuChar = world.characters[id];
+            menuSelected = null;
+            menuGift = false;
+            menuPos = new Vector2(Screen.width / Scale * 0.5f - 200f, 60f);
+            OpenInvite();
+            if (page == 2 && invitePlaces != null && invitePlaces.Count > 0) { invitePlan.placeKey = invitePlaces[0].key; invitePlan.placeName = invitePlaces[0].name; menuInvite = 2; }
+            ClampMenu();
+        }
+
         void ClampMenu()
         {
             float vw = Screen.width / Scale, vh = Screen.height / Scale;

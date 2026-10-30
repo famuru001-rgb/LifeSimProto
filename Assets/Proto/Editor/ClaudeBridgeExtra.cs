@@ -155,10 +155,11 @@ namespace LifeSimProto.EditorTools
                         var hud = SimHud.Instance;
                         if (hud == null) { log.AppendLine("ui: no hud"); break; }
                         string what = a.Length > 1 ? a[1] : "close";
-                        string letter = what == "detail" && a.Length > 2 ? a[2].ToUpperInvariant() : null;
+                        bool withWho = what == "detail" || what == "invite"; // invite 番号 1/2（エッチに誘う：場所・内容の画面）
+                        string letter = withWho && a.Length > 2 ? a[2].ToUpperInvariant() : null;
                         int tab = 0;
-                        if (what == "detail" && a.Length > 3) tab = int.Parse(a[3]);
-                        else if (what != "detail" && a.Length > 2) tab = int.Parse(a[2]);
+                        if (withWho && a.Length > 3) tab = int.Parse(a[3]);
+                        else if (!withWho && a.Length > 2) tab = int.Parse(a[2]);
                         hud.DebugOpen(what, letter, tab);
                         log.AppendLine("ui: " + what + " " + letter + " " + tab);
                         break;
@@ -197,7 +198,23 @@ namespace LifeSimProto.EditorTools
                     case "ftalk":
                     {
                         // 試験用：finvite 番号／ftalk 番号（篤がその子をエッチに誘う／話しかける。右クリックの選択肢と同じ）
+                        // finvite 番号 場所の名前の一部 [どこまで0-2] [二人きり0/1] [フィニッシュ0-2] [体位]（2026-10-31 場所と内容を選ぶ誘い方）／finvite 番号 list（場所の一覧）
                         var f = w.RomanceTarget; var g = w.characters[int.Parse(a[1])];
+                        if (a[0] == "finvite" && a.Length > 2)
+                        {
+                            var places = f.InvitePlaces(g);
+                            if (a[2] == "list") { foreach (var h in places) log.AppendLine("  " + h.key + "｜" + h.name + "｜" + Mathf.RoundToInt(h.dist) + "m｜" + h.people + "人"); break; }
+                            var plan = new HPlan();
+                            var hit = places.Find(h => h.name.Contains(a[2]));
+                            if (hit != null) { plan.placeKey = hit.key; plan.placeName = hit.name; }
+                            if (a.Length > 3) plan.depth = int.Parse(a[3]);
+                            if (a.Length > 4) plan.solo = a[4] == "1";
+                            if (a.Length > 5) plan.finish = int.Parse(a[5]);
+                            if (a.Length > 6) plan.pose = a[6];
+                            f.OrderInvite(g, plan);
+                            log.AppendLine("finvite: " + g.displayName + "｜" + (plan.placeName ?? "場所おまかせ") + "｜" + plan.Summary());
+                            break;
+                        }
                         if (a[0] == "finvite") f.OrderInvite(g); else f.OrderTalk(g);
                         log.AppendLine(a[0] + ": " + g.displayName + " / 篤の状態 " + f.StateName() + " 性欲" + Mathf.RoundToInt(g.desire));
                         break;

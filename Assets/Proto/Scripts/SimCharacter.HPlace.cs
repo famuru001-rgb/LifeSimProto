@@ -63,7 +63,7 @@ namespace LifeSimProto
             {
                 var d = pos - gp;
                 float dist = new Vector2(d.x, d.z).magnitude + Mathf.Abs(d.y) * 3f;
-                res.Add(new HPlaceInfo { key = key, name = name, dist = dist, people = world.PeopleIn(name, pos) });
+                res.Add(new HPlaceInfo { key = key, name = name, dist = dist, people = world.PeopleIn(name, pos, girl) });
             };
             if (girl.room != null) add("room:" + girl.id, girl.room.AreaName + "（" + girl.displayName + "）", girl.room.bed.position);
             var f = world.RomanceTarget;
@@ -79,7 +79,7 @@ namespace LifeSimProto
             for (int i = 0; i < rooms.Count; i++)
             {
                 var a = rooms[i];
-                add("school:" + i, LoungeWorld.SchoolRoomTitle(a), new Vector3(a.rect.center.x, LoungeWorld.FloorY(a.floor), a.rect.center.y));
+                add("school:" + i, world.SchoolRoomTitle(a), new Vector3(a.rect.center.x, LoungeWorld.FloorY(a.floor), a.rect.center.y));
             }
             res.Sort((x, y) => x.dist.CompareTo(y.dist));
             return res;
@@ -120,7 +120,7 @@ namespace LifeSimProto
                 int idx;
                 var rooms = world.HSchoolRooms();
                 if (!int.TryParse(key.Substring(7), out idx) || idx < 0 || idx >= rooms.Count) return null;
-                return AreaSpot(rooms[idx], LoungeWorld.SchoolRoomTitle(rooms[idx]), n);
+                return AreaSpot(rooms[idx], world.SchoolRoomTitle(rooms[idx]), n);
             }
             return null;
         }
@@ -180,7 +180,7 @@ namespace LifeSimProto
                 float d = (new Vector2(a.rect.center.x, a.rect.center.y) - new Vector2(gp.x, gp.z)).magnitude;
                 if (d < bd) { bd = d; best = a; }
             }
-            return best != null ? AreaSpot(best, LoungeWorld.SchoolRoomTitle(best), n) : null;
+            return best != null ? AreaSpot(best, world.SchoolRoomTitle(best), n) : null;
         }
     }
 
@@ -206,23 +206,47 @@ namespace LifeSimProto
             return hSchoolRooms;
         }
 
-        /// <summary>学校の部屋の表示名（同じ名前の部屋があるので階を付ける）。</summary>
-        public static string SchoolRoomTitle(AreaInfo a)
+        Dictionary<AreaInfo, string> hSchoolTitles;
+
+        /// <summary>学校の部屋の表示名（同じ名前の部屋があるので階を付け、同じ階に同じ名前が2つ以上あれば「西から何番目」を付ける）。</summary>
+        public string SchoolRoomTitle(AreaInfo a)
+        {
+            if (hSchoolTitles == null)
+            {
+                hSchoolTitles = new Dictionary<AreaInfo, string>();
+                var rooms = HSchoolRooms();
+                foreach (var r in rooms)
+                {
+                    string t = BaseSchoolTitle(r);
+                    var same = rooms.FindAll(x => BaseSchoolTitle(x) == t);
+                    if (same.Count > 1)
+                    {
+                        same.Sort((x, y) => y.rect.center.y.CompareTo(x.rect.center.y)); // 西（z が大きい）から
+                        t += "（西から" + (same.IndexOf(r) + 1) + "つ目）";
+                    }
+                    hSchoolTitles[r] = t;
+                }
+            }
+            string s;
+            return hSchoolTitles.TryGetValue(a, out s) ? s : BaseSchoolTitle(a);
+        }
+
+        static string BaseSchoolTitle(AreaInfo a)
         {
             if (a.name.StartsWith("本館")) return a.name;
             if (a.name == "体育館" || a.name == "大講堂" || a.name.EndsWith("の2階席")) return a.name;
             return a.name + "（本館" + (a.floor + 1) + "階）";
         }
 
-        /// <summary>その場所にいま何人いるか（篤は数えない）。</summary>
-        public int PeopleIn(string placeName, Vector3 pos)
+        /// <summary>その場所にいま何人いるか（篤と、誘う相手は数えない）。</summary>
+        public int PeopleIn(string placeName, Vector3 pos, SimCharacter except = null)
         {
             var a = AreaAt(pos);
             if (a == null) return 0;
             int n = 0;
             foreach (var c in characters)
             {
-                if (c.IsTarget || !c.Present) continue;
+                if (c.IsTarget || c == except || !c.Present) continue;
                 if (FloorOf(c.transform.position.y) != a.floor) continue;
                 if (a.rect.Contains(new Vector2(c.transform.position.x, c.transform.position.z))) n++;
             }
