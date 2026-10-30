@@ -105,10 +105,13 @@ namespace LifeSimProto
                     break;
             }
             if (chatting || privatePending || hasOrder) return; // 篤に誘われて動いている
-            if (state == State.Walking || state == State.Approaching || state == State.Waiting) return;
+            if (state == State.Approaching || state == State.Waiting) return;
+            // 歩いている途中でも、ひまつぶし・昼食へ向かう途中なら授業を優先する（授業へ・寮へ向かう途中はそのまま）
+            bool walkingFree = state == State.Walking && goal != Goal.Exit;
+            if (state == State.Walking && !walkingFree) return;
 
             // 帰る時間（授業の途中でなければ）
-            if (now >= mobHomeAt) { MobGoHome(); return; }
+            if (now >= mobHomeAt && !walkingFree) { MobGoHome(); return; }
 
             // 授業（取っている科目のコマ）・昼食
             foreach (var it in schedule)
@@ -122,6 +125,7 @@ namespace LifeSimProto
                     MobGoClass(it);
                     return;
                 }
+                if (walkingFree) continue; // 昼食などは、着いてから
                 if (it.kind == TaskKind.Lunch)
                 {
                     it.done = true;
@@ -133,6 +137,7 @@ namespace LifeSimProto
                 }
                 it.done = true; // 朝食・夕食・お風呂・就寝は自分の寮で
             }
+            if (walkingFree) return;
 
             if (now < mobUntil) return;
             MobFinishActivity();
@@ -196,7 +201,19 @@ namespace LifeSimProto
             if (!MobClassPoint(exam, s0, out p)) { MobVanish(); return; }
             goal = Goal.Exit;
             actionText = (IsTeacher ? "授業をしに行く" : (exam ? "試験を受けに行く" : SubjectName(s0) + "の授業へ"));
-            if (!GoTo(p, State.Walking)) MobVanish();
+            // 学校は広いので（ゲームの1分で1.4mほどしか歩けない）、教室が遠いときは歩かずに教室へ入ったことにする（寮生が授業で見えなくなるのと同じ）
+            if (!GoTo(p, State.Walking) || PathLength() > MobWalkLimit) { path.Clear(); transform.position = p; MobVanish(); }
+        }
+
+        /// <summary>歩いて行く上限（m）。授業の15分前に出るので、約15分で歩ける距離。</summary>
+        const float MobWalkLimit = 22f;
+
+        float PathLength()
+        {
+            float len = 0f;
+            Vector3 c = transform.position;
+            foreach (var q in path) { len += (q - c).magnitude; c = q; }
+            return len;
         }
 
         /// <summary>授業の場所：その科目の教室（なければ空いている教室か大講堂）。試験は大講堂。</summary>
@@ -206,10 +223,10 @@ namespace LifeSimProto
             if (!exam && subject >= 0)
             {
                 string key = Academics.Names[subject];
-                a = world.areaList.Find(x => x.name.StartsWith("本館") && (x.name.EndsWith(key + "の教室") || x.name.EndsWith(key + "の準備室")));
+                a = world.MobAreas(x => x.name.EndsWith(key + "の教室") || x.name.EndsWith(key + "の準備室")).Find(x => true);
                 if (a == null)
                 {
-                    var rooms = world.MobAreas(x => x.name.StartsWith("本館") && (x.name.Contains("教室") || x.name.Contains("実習室") || x.name.Contains("調合室")));
+                    var rooms = world.MobAreas(x => x.name.EndsWith("の教室") || x.name.EndsWith("実習室") || x.name.EndsWith("調合室"));
                     if (rooms.Count > 0) a = rooms[(id + subject) % rooms.Count];
                 }
             }
@@ -246,7 +263,7 @@ namespace LifeSimProto
             seat.occupant = this;
             goal = Goal.DiningSeat;
             actionText = "学食へ";
-            if (!GoTo(seat.approach, State.Walking)) { seat.occupant = null; seat = null; goal = Goal.None; return false; }
+            if (!GoTo(seat.approach, State.Walking) || PathLength() > 40f) { path.Clear(); seat.occupant = null; seat = null; goal = Goal.None; SetState(State.Idle); return false; } // 学食が遠いときは食べない（自分の寮で食べた）
             return true;
         }
 
@@ -266,7 +283,7 @@ namespace LifeSimProto
             else
             {
                 bool lateStudy = world.MinuteOfDay >= 16f * 60f;
-                plans.Add(new MobPlan { label = "教室で勉強している", where = a => a.name.StartsWith("本館") && a.name.EndsWith("の教室"), weight = 1f + profile.diligence * 3f, subject = study, minMin = 25f, maxMin = 60f });
+                plans.Add(new MobPlan { label = "教室で勉強している", where = a => a.name.EndsWith("の教室"), weight = 1f + profile.diligence * 3f, subject = study, minMin = 25f, maxMin = 60f });
                 plans.Add(new MobPlan { label = "廊下にいる", where = a => a.name.EndsWith("大廊下"), weight = 2f, minMin = 8f, maxMin = 25f });
                 plans.Add(new MobPlan { label = "外廊下でぼんやりしている", where = a => a.name == "外廊下", weight = 1.2f, minMin = 8f, maxMin = 25f });
                 plans.Add(new MobPlan { label = "学食でひと休みしている", where = a => a.name.EndsWith("学食・購買部"), weight = 1.5f });
@@ -278,7 +295,7 @@ namespace LifeSimProto
                 }
                 plans.Add(new MobPlan { label = "体育館で体を動かしている", where = a => a.name == "体育館" && a.floor == 0, weight = profile.mobDorm == 1 ? 2.5f : 1f, ability = Abilities.Body, subject = profile.mobDorm == 1 ? Academics.Sword : -1 });
                 plans.Add(new MobPlan { label = "魔法実習室で練習している", where = a => a.name.EndsWith("魔法実習室"), weight = profile.mobDorm == 2 ? 2.5f : 0.8f, ability = Abilities.Magic, subject = Academics.MagicArts });
-                plans.Add(new MobPlan { label = "部室にいる", where = a => a.name.StartsWith("本館3階") && a.name.EndsWith("部室"), weight = lateStudy ? 2.5f : 0.8f, minMin = 30f, maxMin = 70f });
+                plans.Add(new MobPlan { label = "部室にいる", where = a => a.floor == 2 && a.name.Contains("部室"), weight = lateStudy ? 2.5f : 0.8f, minMin = 30f, maxMin = 70f });
             }
             float total = 0f;
             foreach (var pl in plans) total += pl.weight;

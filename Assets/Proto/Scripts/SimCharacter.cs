@@ -3438,13 +3438,16 @@ namespace LifeSimProto
             for (int i = 0; i < group.Count; i++) group[i].GoPrivate(spot.walkTo[i % spot.walkTo.Count], spot.name);
 
             float t = 0f, moveTalk = 2f;
+            // 待つ長さ：ふつうは60秒。遠くから来る子（学校にいる寮生以外の学生など）がいるときは、道のりに合わせて長く（2026-10-30）
+            float waitLimit = 60f;
+            foreach (var c in group) waitLimit = Mathf.Max(waitLimit, 20f + c.PathLength() / Mathf.Max(0.5f, c.baseSpeed) * 1.6f); // 道のりを歩く時間の1.6倍
             while (true)
             {
                 bool all = true;
                 foreach (var c in group) if (!c.privateArrived) { all = false; break; }
                 if (all) break;
                 t += Time.deltaTime;
-                if (t > 60f) break;
+                if (t > waitLimit) break;
                 moveTalk -= Time.deltaTime;
                 if (moveTalk <= 0f)
                 {

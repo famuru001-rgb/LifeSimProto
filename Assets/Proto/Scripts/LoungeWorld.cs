@@ -548,10 +548,10 @@ namespace LifeSimProto
                 schoolAreas = new List<AreaInfo>();
                 foreach (var a in areaList)
                 {
-                    bool school = a.name.StartsWith("本館") || a.name == "玄関ホール" || a.name == "外廊下" || a.name == "体育館" || a.name == "大講堂"
-                        || a.name.StartsWith("体育館の") || a.name.StartsWith("大講堂の") || (a.name == "前庭" && a.floor == 0);
+                    // 本館の区画は寮より南（z が −24.5 より小さい）。部屋の名前には「本館○階・」が付かない物もあるので、場所で見分ける
+                    bool school = a.rect.yMax <= -24.3f || (a.name == "前庭" && a.floor == 0);
                     if (!school) continue;
-                    if (a.name.EndsWith("トイレ") || a.name.EndsWith("シャワー") || a.name.EndsWith("更衣室") || a.name.EndsWith("階段") || a.name.EndsWith("宿直室") || a.name.EndsWith("用具室")) continue;
+                    if (a.name.EndsWith("トイレ") || a.name.EndsWith("シャワー") || a.name.EndsWith("更衣室") || a.name.EndsWith("階段") || a.name.EndsWith("宿直室") || a.name.EndsWith("用具室") || a.name.EndsWith("保健室") || a.name.EndsWith("通路")) continue;
                     schoolAreas.Add(a);
                 }
             }
