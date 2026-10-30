@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace LifeSimProto
@@ -230,6 +231,29 @@ namespace LifeSimProto
             else FBlock(x0, sy0, f, u - su / 2f, v - sv / 2f, u + su / 2f, v + sv / 2f);
         }
 
+        /// <summary>寮生以外の学生・先生が座る席（学食の長いす）。寮生の席さがし（seats）には入れない。</summary>
+        public readonly List<Seat> mobSeats = new List<Seat>();
+
+        /// <summary>長机（u の向きに長い）の両側の長いすに、0.7m おきに座る席を作る。</summary>
+        void BenchSeats(float x0, float sy0, int f, float u, float v, float su, float sv, string area)
+        {
+            float y = FloorY(f);
+            for (int k = -1; k <= 1; k += 2)
+            {
+                float bv = v + k * (sv / 2f + 0.35f);
+                for (float du = -su / 2f + 0.35f; du <= su / 2f - 0.35f + 0.01f; du += 0.7f)
+                {
+                    Vector3 pos = RU(x0, sy0, u + du, bv, y);
+                    mobSeats.Add(new Seat
+                    {
+                        kind = SeatKind.Sit, label = area + "の長いす", area = area,
+                        position = pos, forward = SDir(0f, -k),
+                        approach = RU(x0, sy0, u + du, v + k * (sv / 2f + 0.95f), y),
+                    });
+                }
+            }
+        }
+
         void FCircle(float x0, float sy0, int f, float u, float v, float r, Color c)
         {
             var mc = FFurn("Furn_MagicCircle", x0, sy0, f, u, v, 0.005f, 0f, new Vector3(r, 1f, r)); // 直径2m を合わせる
@@ -376,7 +400,10 @@ namespace LifeSimProto
                     FShelf(x0, sy0, f, W, D, 1, D / 2f, 5f, 2.0f, fabricWhite, terraMat, seed + 1);
                     for (float u = 7.0f; u <= W - 6.0f; u += 4.2f)
                         for (float v = 2.6f; v <= D - 3.0f; v += 3.2f)
+                        {
                             FTable(x0, sy0, f, u, v, 2.8f, 0.9f, true, "Furn_CafeteriaTable");
+                            BenchSeats(x0, sy0, f, u, v, 2.8f, 0.9f, "学食"); // 寮生以外の学生・先生が座る（2026-10-30）
+                        }
                     Label(RU(x0, sy0, 3.0f, D / 2f, FloorY(f) + 2.2f), "購買部");
                     break;
                 }

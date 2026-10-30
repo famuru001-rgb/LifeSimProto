@@ -127,7 +127,7 @@ namespace LifeSimProto
             if (selected != null && !selected.Present) Select(null);
             UpdateSlides();
 
-            if (world != null) foreach (var ch in world.characters) NeedRates(ch, NeedValues(ch)); // 欲求の変化を測っておく
+            if (world != null) foreach (var ch in world.residents) NeedRates(ch, NeedValues(ch)); // 欲求の変化を測っておく
             var kb = Keyboard.current;
             // 物語の場面のあいだは、スペースかエンターで次へ（ほかの操作はしない）
             if (Story.IsActive)
@@ -376,7 +376,7 @@ namespace LifeSimProto
 
                 Rect r;
                 Color old = GUI.color;
-                if (!ShowNameTags && !c.selected)
+                if ((!ShowNameTags || c.IsMob) && !c.selected) // 寮生以外の学生・先生の名前は、選んだときだけ
                 {
                     // 名前と行動を出さない（選んだキャラだけ出す）。吹き出しの位置だけ決める
                     r = new Rect(g.x, g.y - 24f, 0f, 24f);
@@ -473,7 +473,7 @@ namespace LifeSimProto
             parts.Add(Calendar.DateText(world.Day, world.holidayWeekdays));
             if (world.todayNotes.Count > 0) parts.Add("今日：" + string.Join("／", world.todayNotes.ToArray()));
             int withA = 0, doneA = 0;
-            foreach (var c in world.characters) if (c.hasAssignment) { withA++; if (c.assignProgress >= 100f) doneA++; }
+            foreach (var c in world.residents) if (c.hasAssignment) { withA++; if (c.assignProgress >= 100f) doneA++; }
             if (withA > 0) parts.Add("課題：" + doneA + "/" + withA + "人が終了");
             parts.Add("寮の評判 " + world.dormReputation);
             if (world.Blackout) parts.Add("停電中");
@@ -483,7 +483,7 @@ namespace LifeSimProto
             var priv = new List<string>();
             foreach (var c in world.characters)
             {
-                if (c.state == SimCharacter.State.Away) away.Add(c.displayName);
+                if (c.state == SimCharacter.State.Away) { if (!c.IsMob) away.Add(c.displayName); }
                 else if (c.state == SimCharacter.State.Private) priv.Add(c.displayName);
             }
             if (away.Count > 0) parts.Add("外出中：" + string.Join("・", away.ToArray()));
@@ -494,22 +494,51 @@ namespace LifeSimProto
             GUI.Label(new Rect(r.x + 14, r.y + 5, size.x + 10, 24), text, small);
         }
 
+        // 関係表と気持ちの欄は、課程ごとに見出しで切り替える（2026-10-30 ヒロインが34人になったため）
+        static readonly string[] GroupTabs = { "冒険者", "騎士", "魔法師", "先生", "全員" };
+        int groupTab;
+
+        /// <summary>見出しのヒロイン（篤は withF のとき先頭）。</summary>
+        List<SimCharacter> GroupMembers(int g, bool withF)
+        {
+            var l = new List<SimCharacter>();
+            foreach (var c in world.residents)
+            {
+                if (c.IsTarget) { if (withF) l.Insert(0, c); continue; }
+                string course = c.profile != null ? (c.profile.teacher ? "先生" : c.profile.course) : "冒険者";
+                if (g >= GroupTabs.Length - 1 || course == GroupTabs[g]) l.Add(c);
+            }
+            return l;
+        }
+
+        void DrawGroupTabs(Rect r)
+        {
+            float tw = 62f;
+            float tx = r.xMax - 12 - GroupTabs.Length * tw;
+            for (int i = 0; i < GroupTabs.Length; i++)
+                if (GUI.Button(new Rect(tx + i * tw, r.y + 8, tw - 3, 26), GroupTabs[i], groupTab == i ? buttonOn : smallButton)) groupTab = i;
+        }
+
         void DrawTable()
         {
             Rect r = TablePanel;
             GUI.Box(r, GUIContent.none, panel);
-            GUI.Label(new Rect(r.x + 14, r.y + 8, 300, 30), "関係表（好感度）", title);
-            int n = world.characters.Count;
-            float cw = n <= 6 ? 62 : 42, ch = n <= 6 ? 38 : 28;
+            GUI.Label(new Rect(r.x + 14, r.y + 8, 180, 30), "関係表（好感度）", title);
+            DrawGroupTabs(r);
+            var members = GroupMembers(groupTab, true);
+            int n = members.Count;
+            float cw = Mathf.Min(n <= 6 ? 62 : 42, (r.width - 32f) / (n + 1)), ch = Mathf.Min(n <= 6 ? 38 : 28, (r.height - 46f - 40f) / (n + 1));
+            bool tinyCells = cw < 26f || ch < 16f;
             float ox = r.x + 16, oy = r.y + 46;
             Color old = GUI.color;
             for (int i = 0; i < n; i++)
             {
-                var ci = world.characters[i];
+                var ci = members[i];
                 GUI.color = ci.color;
-                GUI.DrawTexture(new Rect(ox + cw * (i + 1) + 4, oy + 2, cw - 8, 4), ProtoArt.White);
-                GUI.DrawTexture(new Rect(ox + 4, oy + ch * (i + 1) + 4, 4, ch - 8), ProtoArt.White);
+                GUI.DrawTexture(new Rect(ox + cw * (i + 1) + 1, oy + 1, cw - 2, Mathf.Min(4f, ch * 0.3f)), ProtoArt.White);
+                GUI.DrawTexture(new Rect(ox + 1, oy + ch * (i + 1) + 1, Mathf.Min(4f, cw * 0.3f), ch - 2), ProtoArt.White);
                 GUI.color = old;
+                if (tinyCells) continue;
                 var fi = Portrait(ci, "face");
                 if (fi != null)
                 {
@@ -527,7 +556,8 @@ namespace LifeSimProto
             {
                 for (int j = 0; j < n; j++)
                 {
-                    Rect cr = new Rect(ox + cw * (j + 1) + 2, oy + ch * (i + 1) + 2, cw - 4, ch - 4);
+                    float pad = tinyCells ? 0.5f : 2f;
+                    Rect cr = new Rect(ox + cw * (j + 1) + pad, oy + ch * (i + 1) + pad, cw - pad * 2f, ch - pad * 2f);
                     if (i == j)
                     {
                         GUI.color = new Color(1f, 1f, 1f, 0.06f);
@@ -535,7 +565,7 @@ namespace LifeSimProto
                         GUI.color = old;
                         continue;
                     }
-                    int a = world.characters[i].id, b = world.characters[j].id;
+                    int a = members[i].id, b = members[j].id;
                     float v = world.rel.Get(a, b);
                     int stage = Relationships.StageOf(v);
                     Color bg = stage == 2 ? new Color(0.75f, 0.3f, 0.5f) : (stage == 1 ? new Color(0.25f, 0.52f, 0.3f) : new Color(0.32f, 0.32f, 0.34f));
@@ -544,7 +574,7 @@ namespace LifeSimProto
                     GUI.color = bg;
                     GUI.DrawTexture(cr, ProtoArt.White);
                     GUI.color = old;
-                    GUI.Label(cr, Mathf.RoundToInt(v).ToString(), cell);
+                    if (!tinyCells) GUI.Label(cr, Mathf.RoundToInt(v).ToString(), cell);
                 }
             }
             float ly = oy + ch * (n + 1) + 10;
@@ -560,21 +590,24 @@ namespace LifeSimProto
             if (rom == null || f == null) return;
             Rect r = RomancePanel;
             GUI.Box(r, GUIContent.none, panel);
-            GUI.Label(new Rect(r.x + 14, r.y + 8, 400, 30), f.displayName + "への気持ち", title);
+            GUI.Label(new Rect(r.x + 14, r.y + 8, 180, 30), f.displayName + "への気持ち", title);
+            DrawGroupTabs(r);
+            var members = GroupMembers(groupTab, false);
+            float rowH = Mathf.Clamp((r.height - 52f) / Mathf.Max(1, members.Count), 8f, 26f);
+            bool compact = rowH < 20f;
             float y = r.y + 44;
             Color old = GUI.color;
-            foreach (var c in world.characters)
+            foreach (var c in members)
             {
-                if (c.IsTarget) continue;
                 int st = rom.Stage(c.id);
                 float v = rom.love[c.id];
                 GUI.color = c.color;
-                GUI.DrawTexture(new Rect(r.x + 14, y + 4, 4, 18), ProtoArt.White);
+                GUI.DrawTexture(new Rect(r.x + 14, y + 2, 4, rowH - 4), ProtoArt.White);
                 GUI.color = old;
-                var rf = Portrait(c, "face");
-                if (rf != null) GUI.DrawTexture(new Rect(r.x + 22, y, 26, 26), rf, ScaleMode.ScaleToFit, true);
-                else GUI.Label(new Rect(r.x + 22, y, 40, 26), string.IsNullOrEmpty(c.shortName) ? c.displayName : c.shortName, tiny);
-                Rect bar = new Rect(r.x + 60, y + 6, 240, 14);
+                var rf = compact ? null : Portrait(c, "face");
+                if (rf != null) GUI.DrawTexture(new Rect(r.x + 22, y, rowH, rowH), rf, ScaleMode.ScaleToFit, true);
+                else GUI.Label(new Rect(r.x + 22, y - (compact ? 3 : 0), 60, rowH + 6), string.IsNullOrEmpty(c.shortName) ? c.displayName : c.shortName, tiny);
+                Rect bar = new Rect(r.x + 84, y + rowH * 0.25f, 216, Mathf.Max(3f, rowH * 0.5f));
                 GUI.DrawTexture(bar, barBg);
                 Color bc = st == 3 ? new Color(1f, 0.35f, 0.55f) : (st == 2 ? new Color(0.95f, 0.5f, 0.65f) : (st == 1 ? new Color(0.85f, 0.65f, 0.75f) : new Color(0.55f, 0.55f, 0.6f)));
                 float since = world.simTime - rom.flashTime[c.id];
@@ -586,8 +619,8 @@ namespace LifeSimProto
                 GUI.color = old;
                 string lab = (st == 3 ? "♥ " : "") + Romance.StageName(st) + "（" + Mathf.RoundToInt(v) + "）";
                 if (st < 3 && world.Now < rom.cooldownUntil[c.id]) lab += " 告白後";
-                GUI.Label(new Rect(r.x + 310, y, 160, 26), lab, small);
-                y += 26;
+                GUI.Label(new Rect(r.x + 310, y - (compact ? 3 : 0), 160, rowH + 6), lab, compact ? tiny : small);
+                y += rowH;
             }
         }
 
@@ -626,17 +659,20 @@ namespace LifeSimProto
             if (logTab == GameLog.HeroineTab)
             {
                 var girls = new List<SimCharacter>();
-                foreach (var c in world.characters) if (c != null && c != F && !string.IsNullOrEmpty(c.letter)) girls.Add(c);
-                float bw = (r.width - 28f) / (girls.Count + 1);
-                if (GUI.Button(new Rect(r.x + 14, y, bw - 3, 26), "全員", logHeroine == null ? buttonOn : smallButton) && logHeroine != null) { logHeroine = null; logAtBottom = true; }
+                foreach (var c in world.residents) if (c != null && c != F && !string.IsNullOrEmpty(c.letter)) girls.Add(c);
+                // 34人になったので、1行12人までで折り返す（2026-10-30）
+                int perRow = 12;
+                float bw = (r.width - 28f) / (perRow + 1);
+                if (GUI.Button(new Rect(r.x + 14, y, bw - 3, 24), "全員", logHeroine == null ? buttonOn : smallButton) && logHeroine != null) { logHeroine = null; logAtBottom = true; }
                 for (int i = 0; i < girls.Count; i++)
                 {
                     var g = girls[i];
                     string nm = string.IsNullOrEmpty(g.shortName) ? g.displayName : g.shortName;
-                    if (GUI.Button(new Rect(r.x + 14 + (i + 1) * bw, y, bw - 3, 26), nm, logHeroine == g.letter ? buttonOn : smallButton) && logHeroine != g.letter)
+                    float bx = r.x + 14 + (i % perRow + 1) * bw, by = y + (i / perRow) * 26;
+                    if (GUI.Button(new Rect(bx, by, bw - 3, 24), nm, logHeroine == g.letter ? buttonOn : smallButton) && logHeroine != g.letter)
                     { logHeroine = g.letter; logAtBottom = true; }
                 }
-                y += 32;
+                y += 26 * ((girls.Count + perRow - 1) / perRow) + 4;
             }
 
             // 見出しに合う行を集める
@@ -788,14 +824,22 @@ namespace LifeSimProto
             GUI.Label(new Rect(r.x + 14, r.y + 8, r.width - 120, 30), "成績表" + when, title);
             if (GUI.Button(new Rect(r.xMax - 92, r.y + 8, 80, 30), "閉じる", smallButton)) examOpen = false;
             float y = r.y + 46;
+            // 31人になったので、上位10人と篤の順位だけ出す（2026-10-30）
+            const int Top = 10;
+            var fz = F;
             if (Academics.LastOverall.Count > 0)
             {
                 var tot = new List<string>();
                 for (int i = 0; i < Academics.LastOverall.Count; i++)
-                    tot.Add((i + 1) + "位 " + Academics.LastOverall[i].Key.displayName + "（" + Mathf.RoundToInt(Academics.LastOverall[i].Value) + "）");
-                GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "総合：" + string.Join("　", tot.ToArray()), tiny);
+                {
+                    var who = Academics.LastOverall[i].Key;
+                    if (i >= Top && who != fz) continue;
+                    tot.Add((i + 1) + "位 " + (string.IsNullOrEmpty(who.shortName) ? who.displayName : who.shortName) + "（" + Mathf.RoundToInt(Academics.LastOverall[i].Value) + "）");
+                }
+                GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "総合：" + string.Join("　", tot.ToArray()) + "（" + Academics.LastOverall.Count + "人）", tiny);
             }
             y += 30;
+            if (!string.IsNullOrEmpty(Academics.LastDormRanking)) { GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "寮ごとの平均点：" + Academics.LastDormRanking, tiny); y += 30; }
             for (int s = 0; s < Academics.Count; s++)
             {
                 if (!Academics.IsActive(s)) continue; // 予備の枠は出さない
@@ -803,7 +847,10 @@ namespace LifeSimProto
                 var list = Academics.LastExam[s];
                 var parts = new List<string>();
                 for (int i = 0; i < list.Count; i++)
-                    parts.Add((i + 1) + "位 " + list[i].who.displayName + list[i].mark + Mathf.RoundToInt(list[i].score));
+                {
+                    if (i >= Top && list[i].who != fz) continue;
+                    parts.Add((i + 1) + "位 " + (string.IsNullOrEmpty(list[i].who.shortName) ? list[i].who.displayName : list[i].who.shortName) + list[i].mark + Mathf.RoundToInt(list[i].score));
+                }
                 GUI.Label(new Rect(r.x + 116, y + 2, r.width - 130, 26), parts.Count > 0 ? string.Join("　", parts.ToArray()) : "―", tiny);
                 y += 30;
             }

@@ -14,6 +14,7 @@ namespace LifeSimProto
         public int owner = -1;
         public int floor;                                 // 何階か（0＝1階）
         public bool vacant;                               // 空き部屋（家具なし・扉は閉まっている）
+        public bool shared;                               // 何人かで使う部屋（先生の部屋。ベッドと机はひとりずつ。2026-10-30）
         public Vector3 bedEdge = new Vector3(0f, 0f, 1f); // ベッドの縁から部屋の中を向く向き（並んで座るとき）
         public float bedSpread = 1f;                      // 並んで座るときの間かく（大きいベッドほど広い）
         public float bedEdgeDist = 0.15f;                 // ベッドの真ん中から、座る縁までの距離
@@ -123,7 +124,8 @@ namespace LifeSimProto
             BuildWing(-1, 0); // 南の棟の1階：個室5部屋（rooms[0〜4]。今の左の棟の5人）
             BuildFRoom();     // 篤の部屋（rooms[5]。2階）
             BuildWing(1, 0);  // 北の棟の1階：個室5部屋（rooms[6〜10]。今の右の棟の5人）
-            for (int f = 1; f <= 2; f++) { BuildWing(-1, f); BuildWing(1, f); } // 2・3階は空き部屋（rooms[11〜30]）
+            for (int f = 1; f <= 2; f++) { BuildWing(-1, f); BuildWing(1, f); } // 2階＝騎士課程・3階＝魔法師課程のヒロイン（rooms[11〜30]。2026-10-30 家具を置いた）
+            BuildTeacherRoom(); // 先生の部屋（1階の寮母さんの部屋。rooms[31〜33]）
             BuildBackRooms();
             BuildFrontRooms();
             BuildOuterWalls();
@@ -816,7 +818,7 @@ namespace LifeSimProto
             for (int i = 0; i < 5; i++)
             {
                 float cz = FrontZ + RoomW * (i + 0.5f);
-                var room = new RoomInfo { name = prefix + wingName + (i + 1), floor = floor, vacant = floor > 0 };
+                var room = new RoomInfo { name = prefix + wingName + (i + 1), floor = floor, vacant = false }; // 2026-10-30：2・3階も追加のヒロインの部屋
                 room.rect = MinMax(s * WingCorr, cz - RoomW / 2f, s * WingOut, cz + RoomW / 2f);
                 room.labelPos = new Vector3(s * (WingCorr + RoomDepth - 2.4f), y + 2.0f, cz);
                 if (room.vacant)
@@ -931,6 +933,89 @@ namespace LifeSimProto
                 Box("Wardrobe", new Vector3(X(0.35f), y + 0.9f, cz + 1.15f), new Vector3(0.5f, 1.8f, 0.7f), woodDark);
             blockers[room.floor].Add(Rect.MinMaxRect(Mathf.Min(X(0.1f), X(0.6f)), cz + 0.8f, Mathf.Max(X(0.1f), X(0.6f)), cz + 1.5f));
             Lamp(new Vector3(X(RoomDepth - 2.5f), y + 2.3f, cz), 1.5f, 4.5f, false, 0.03f);
+        }
+
+        // ================= 先生の部屋（1階の手前・北。もとの寮母さんの部屋。x 8.6〜17、z −18〜−9） =================
+        /// <summary>
+        /// 先生3人（AF ウィスティ・AG ジゼル・AH クラリス）の部屋（2026-10-30 famuru「寮母の部屋を使う」）。
+        /// ベッドは外壁（x 17）に頭を向けて3台、机は手前の外壁（z −18）ぞいに3つ。来客用の布団と座布団はみんなで使う。
+        /// 扉は奥の壁（z −9）の x 9.8。
+        /// </summary>
+        void BuildTeacherRoom()
+        {
+            float y = 0f, cz = (FrontZ + FrontOut) / 2f;
+            var rect = Rect.MinMaxRect(WingIn, FrontOut, WingOut, FrontZ);
+            Label(new Vector3((WingIn + WingOut) / 2f, 2.2f, cz), "先生の部屋");
+            AddArea("先生の部屋", rect, 0);
+            Lamp(new Vector3((WingIn + WingOut) / 2f, 2.4f, cz), 1.8f, 7f);
+            // みんなで使う物：来客用の布団・座布団2枚と小さなテーブル
+            var shared = new List<Seat>();
+            Vector3 futonP = new Vector3(10.6f, y, -12.6f);
+            if (PlaceFurn("Furn_GuestFuton", null, futonP, 90f) == null)
+                Box("GuestFuton", futonP + Vector3.up * 0.05f, new Vector3(0.75f, 0.1f, 1.7f), fabricWhite);
+            var futon = new Seat { kind = SeatKind.Bed, floorSeat = true, label = "来客用の布団", area = "先生", position = futonP, forward = new Vector3(0f, 0f, 1f), approach = new Vector3(11.4f, y, -12.6f) };
+            seats.Add(futon);
+            Vector3 tableP = new Vector3(12.2f, y, -14.6f);
+            if (PlaceFurn("Furn_LowTableSmall", null, tableP, 0f) == null)
+                Box("LowTable_Room", tableP + Vector3.up * 0.15f, new Vector3(0.5f, 0.3f, 0.5f), woodMid);
+            blockers[0].Add(Rect.MinMaxRect(tableP.x - 0.25f, tableP.z - 0.25f, tableP.x + 0.25f, tableP.z + 0.25f));
+            for (int k = 0; k < 2; k++)
+            {
+                Vector3 cp = tableP + new Vector3(k == 0 ? -0.75f : 0.75f, 0f, 0f);
+                if (PlaceFurn("Furn_Cushion", null, cp, 0f) == null)
+                    Box("Cushion", cp + Vector3.up * 0.04f, new Vector3(0.5f, 0.08f, 0.5f), fabricGreen);
+                var cu = new Seat { kind = SeatKind.Sit, floorSeat = true, label = "先生の部屋", area = "先生", position = cp, forward = new Vector3(k == 0 ? 1f : -1f, 0f, 0f), approach = cp + new Vector3(0f, 0f, 0.65f) };
+                shared.Add(cu);
+                seats.Add(cu);
+            }
+            float bD = 2.1f, bW = 2.2f;
+            float bcx = WingOut - 0.05f - bD / 2f;
+            float[] bzs = { -16.8f, -13.5f, -10.2f };
+            float[] dxs = { 9.6f, 11.0f, 12.4f };
+            for (int i = 0; i < 3; i++)
+            {
+                var room = new RoomInfo { name = "先生", floor = 0, shared = true, rect = rect, labelPos = new Vector3((WingIn + WingOut) / 2f, 2.0f, cz) };
+                float bcz = bzs[i];
+                if (PlaceFurn("Furn_Bed", null, new Vector3(bcx, y, bcz), -90f) == null)
+                {
+                    Box("Bed_Frame", new Vector3(bcx, y + 0.2f, bcz), new Vector3(bD, 0.4f, bW), woodDark);
+                    Box("Bed_Mattress", new Vector3(bcx, y + 0.47f, bcz), new Vector3(bD - 0.1f, 0.14f, bW - 0.1f), fabricWhite);
+                    Box("Bed_Blanket", new Vector3(bcx - 0.3f, y + 0.55f, bcz), new Vector3(bD * 0.65f, 0.04f, bW - 0.08f), fabricRed);
+                    Box("Bed_Head", new Vector3(WingOut - 0.1f, y + 0.55f, bcz), new Vector3(0.08f, 1.1f, bW), woodDark);
+                }
+                blockers[0].Add(Rect.MinMaxRect(bcx - bD / 2f, bcz - bW / 2f, bcx + bD / 2f, bcz + bW / 2f));
+                room.bed = new Seat
+                {
+                    kind = SeatKind.Bed, label = "ベッド", area = room.name, room = room,
+                    position = new Vector3(bcx, y, bcz), forward = new Vector3(1f, 0f, 0f),
+                    approach = new Vector3(bcx - bD / 2f - 0.45f, y, bcz),
+                };
+                seats.Add(room.bed);
+                room.bedEdge = new Vector3(-1f, 0f, 0f);
+                room.bedAcross = Vector3.forward;
+                room.bedSitAlong = Vector3.forward;
+                room.bedEdgeDist = bD / 2f - 0.3f;
+                room.bedLieGap = 0.73f;
+                room.bedLieWidth = bW - 0.1f;
+                room.bedSeatOffs = new[] { -0.825f, -0.275f, 0.275f, 0.825f };
+                foreach (var cu in shared) room.cushions.Add(cu);
+                room.futon = futon;
+                // 机（手前の外壁ぞい。部屋の中＝+z を向く）と椅子
+                float dx = dxs[i], dz = FrontOut + 0.4f;
+                if (PlaceFurn("Furn_Desk", null, new Vector3(dx, y, dz), 0f) == null)
+                {
+                    Box("Desk", new Vector3(dx, y + 0.73f, dz), new Vector3(0.8f, 0.05f, 0.6f), woodMid);
+                    Box("Desk_Body", new Vector3(dx, y + 0.36f, dz), new Vector3(0.75f, 0.72f, 0.55f), woodDark);
+                }
+                blockers[0].Add(Rect.MinMaxRect(dx - 0.42f, FrontOut, dx + 0.42f, dz + 0.35f));
+                Vector3 chairP = new Vector3(dx, y, dz + 0.62f);
+                PlaceFurn("Furn_Chair", null, chairP, 180f);
+                room.desk = new Poi { label = "机で勉強している", lookAt = new Vector3(dx, y + 0.8f, dz), slots = new[] { chairP }, occupants = new SimCharacter[1], seated = true };
+                pois.Add(room.desk);
+                rooms.Add(room);
+            }
+            foreach (var cu in shared) cu.room = rooms[rooms.Count - 3];
+            futon.room = rooms[rooms.Count - 3];
         }
 
         // ================= 篤の部屋（2階・もとの玄関ホールの所） =================
@@ -1207,8 +1292,7 @@ namespace LifeSimProto
 
             float cn = (WingIn + WingOut) / 2f, cs = -cn, cz = (FrontZ + FrontOut) / 2f;
             // 1階
-            Label(new Vector3(cn, 2.2f, cz), "寮母さんの部屋");
-            AddArea("寮母さんの部屋", Rect.MinMaxRect(WingIn, FrontOut, WingOut, FrontZ), 0);
+            // 寮母さんの部屋は、先生3人の部屋にした（2026-10-30 famuru「寮母の部屋を使う」。家具は BuildTeacherRoom）
             Lamp(new Vector3(cn, 2.4f, cz), 1.8f, 6f);
             Label(new Vector3(cs, 2.2f, cz), "倉庫");
             AddArea("倉庫", Rect.MinMaxRect(-WingOut, FrontOut, -WingIn, FrontZ), 0);
@@ -1583,7 +1667,7 @@ namespace LifeSimProto
             n0.Open(DoorNav(-0.9f, BackZ, true, 1.2f));     // 食堂の扉
             n0.Open(DoorNav(-2.75f, BackZ, true, 0.9f));    // 脱衣所の扉
             n0.Open(DoorNav(-6f, 13.5f, false, 0.9f));      // 浴場の扉
-            n0.Open(In(WingIn, FrontOut, WingOut, FrontZ)); // 寮母さんの部屋
+            n0.Open(In(WingIn, FrontOut, WingOut, FrontZ)); // 先生の部屋（もとの寮母さんの部屋）
             n0.Open(In(-WingOut, FrontOut, -WingIn, FrontZ)); // 倉庫
             n0.Open(DoorNav(9.8f, FrontZ, true));
             n0.Open(DoorNav(-9.8f, FrontZ, true));
@@ -1629,6 +1713,14 @@ namespace LifeSimProto
                     n.Open(In(0f, BackZ, WingOut, BackOut));                                                  // 勉強部屋
                     n.Open(DoorNav(9.8f, BackZ, true));
                 }
+                // 個室（2026-10-30：2・3階も住む部屋に）
+                for (int sd = -1; sd <= 1; sd += 2)
+                    for (int i = 0; i < 5; i++)
+                    {
+                        float rz = FrontZ + RoomW * (i + 0.5f);
+                        n.Open(In(sd * WingCorr, rz - RoomW / 2f, sd * WingOut, rz + RoomW / 2f));
+                        n.Open(DoorNav(sd * WingCorr, rz, false, 1.2f));
+                    }
                 if (f == 2) OpenPlacesNav2F();
                 OpenSchoolNav(f);
                 foreach (var r in blockers[f]) n.Block(Rect.MinMaxRect(r.xMin - inflate, r.yMin - inflate, r.xMax + inflate, r.yMax + inflate));

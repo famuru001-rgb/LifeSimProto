@@ -67,9 +67,25 @@ namespace LifeSimProto
             // 行動のボタンは欄の左から14の位置を基準に並んでいるので、スクロールの中では左へ10ずらした枠を渡す
             Rect rr = new Rect(-10f, 0f, tcontent.width + 20f, tcontent.height);
             float ty = 2f;
+            if (c.IsMob)
+            {
+                // 寮生以外の学生・先生（名前は番号だけ。関係・会話なし。エッチに誘える）
+                GUI.Label(new Rect(rr.x + 14, ty, rr.width - 28, 22), (c.IsTeacher ? "学園の先生" : c.MobDormName + "の学生・" + c.profile.grade + "年") + "　学力 " + Mathf.RoundToInt(c.academic)
+                    + (c.lastExamAverage >= 0f ? "　前の試験の平均 " + Mathf.RoundToInt(c.lastExamAverage) + "点" : ""), tiny); ty += 24;
+                var fm = F;
+                GUI.enabled = fm != null && c.Present && !c.InPrivate;
+                if (GUI.Button(new Rect(rr.x + 14, ty, 220, 32), "エッチに誘う", smallButton) && fm != null) { fm.OrderInvite(c); world.Log("篤への指示：" + c.displayName + "をエッチに誘う"); }
+                GUI.enabled = true;
+                ty += 38;
+                detailTopH = ty + 6f;
+                GUI.EndScrollView();
+                DrawMobDetailBottom(c, bottom);
+                small.clipping = oldSmall; tiny.clipping = oldTiny;
+                return;
+            }
             if (!c.IsTarget)
             {
-                string roomName = c.room != null ? (c.room.floor + 1) + "階・" + c.room.AreaName : "なし";
+                string roomName = c.room != null ? (c.room.name.Contains("階") ? c.room.AreaName : (c.room.floor + 1) + "階・" + c.room.AreaName) : "なし";
                 string loveText = "篤への気持ち：" + Romance.StageName(world.romance.Stage(c.id)) + "（" + Mathf.RoundToInt(world.romance.love[c.id]) + "）";
                 var f = F;
                 string relF = f != null ? "　篤との仲：" + Relationships.StageName(world.rel.Stage(c.id, f.id)) + "（" + Mathf.RoundToInt(world.rel.Get(c.id, f.id)) + "）" : "";
@@ -116,6 +132,26 @@ namespace LifeSimProto
             GUI.EndScrollView();
 
             small.clipping = oldSmall; tiny.clipping = oldTiny;
+        }
+
+        /// <summary>寮生以外の学生・先生の下の欄：能力・成績と、エッチの記録だけ。</summary>
+        void DrawMobDetailBottom(SimCharacter c, Rect bottom)
+        {
+            GUI.Box(bottom, GUIContent.none, panel);
+            float y = bottom.y + 8;
+            int[] tabs = { TabAbility, TabLog };
+            if (detailTab != TabAbility && detailTab != TabLog) detailTab = TabAbility;
+            float tw = (bottom.width - 28f) / DetailTabs.Length;
+            for (int i = 0; i < tabs.Length; i++)
+                if (GUI.Button(new Rect(bottom.x + 14 + i * tw, y, tw - 4, 30), DetailTabs[tabs[i]], detailTab == tabs[i] ? buttonOn : smallButton)) { detailTab = tabs[i]; detailScroll = Vector2.zero; }
+            y += 36;
+            Rect view = new Rect(bottom.x + 10, y, bottom.width - 20, bottom.yMax - y - 8);
+            Rect content = new Rect(0, 0, view.width - 20, Mathf.Max(view.height, detailContentH));
+            detailScroll = GUI.BeginScrollView(view, detailScroll, content);
+            float cy = 2f, w = content.width - 8f;
+            if (detailTab == TabAbility) TabAbilityGui(c, w, ref cy); else TabLogGui(c, w, ref cy);
+            detailContentH = cy + 10f;
+            GUI.EndScrollView();
         }
 
         void DrawFActions(Rect r, ref float y)
@@ -264,7 +300,7 @@ namespace LifeSimProto
             y += 8;
             GUI.Label(new Rect(4, y, w, 22), c.IsTarget ? "みんなとの仲と、篤への気持ち" : "ほかの子との仲（好感度の高い順）", small); y += 24;
             var others = new List<SimCharacter>();
-            foreach (var o in world.characters) if (o != c) others.Add(o);
+            foreach (var o in world.residents) if (o != c) others.Add(o);
             others.Sort((a, b) => world.rel.Get(c.id, b.id).CompareTo(world.rel.Get(c.id, a.id)));
             Color old = GUI.color;
             foreach (var o in others)
@@ -416,7 +452,7 @@ namespace LifeSimProto
                 GUI.Label(new Rect(4, y, w, 22), "エッチの記録（通算・この周）　一覧は「記録」ボタン（L）", small); y += 26;
                 foreach (var o in world.characters)
                 {
-                    if (o.IsTarget) continue;
+                    if (o.IsTarget || (o.IsMob && HLog.TotalOf(o.letter) == 0)) continue; // 寮生以外は記録のある人だけ
                     var last = HLog.LastOf(o.letter);
                     GUI.Label(new Rect(14, y, w - 10, 20), o.displayName + "：通算 " + HLog.TotalOf(o.letter) + "回・この周 " + HLog.LoopCountOf(o.letter, Loop.Count) + "回" + (last != null ? "　最後：" + HLog.WhenText(last) : ""), tiny);
                     y += 20;
@@ -505,7 +541,7 @@ namespace LifeSimProto
             if (c.IsTarget)
             {
                 GUI.Label(new Rect(4, y, w, 24), "止まった針：" + Story.GirlHands(world) + " / " + Story.GirlCount(world) + (Story.Hands.Contains("F") ? "　篤の針も止まった（ループを抜けられる）" : "　みんなの針が止まると、篤の最後の物語"), small); y += 28;
-                foreach (var o in world.characters)
+                foreach (var o in world.residents)
                 {
                     if (o.IsTarget || StoryText.Get(o.letter) == null) continue;
                     GUI.Label(new Rect(14, y, w - 10, 20), o.displayName + "：" + Story.StatusText(o), tiny);
@@ -583,7 +619,7 @@ namespace LifeSimProto
         void MemZukan(float w, ref float y)
         {
             GUI.Label(new Rect(4, y, w, 22), "キャラ図鑑（会話と物語で埋まる）", small); y += 28;
-            foreach (var c in world.characters)
+            foreach (var c in world.residents)
             {
                 if (c.IsTarget || c.profile == null) continue;
                 var face = Portrait(c, "face");
@@ -606,7 +642,7 @@ namespace LifeSimProto
             int hands = Story.GirlHands(world), total = Story.GirlCount(world);
             GUI.Label(new Rect(4, y, w, 24), "地下の古い時計：止まった針 " + hands + " / " + total + (Story.Hands.Contains("F") ? "　＋ 篤の針（ループを抜けられる）" : "　＋ 篤の針（みんなの針が止まると、最後の物語）"), small); y += 30;
             Color old = GUI.color;
-            foreach (var c in world.characters)
+            foreach (var c in world.residents)
             {
                 if (c.IsTarget) continue;
                 var d = StoryText.Get(c.letter);
@@ -664,7 +700,7 @@ namespace LifeSimProto
             var parts = new List<string>();
             foreach (var c in world.characters)
             {
-                if (c.IsTarget) continue;
+                if (c.IsTarget || (c.IsMob && HLog.TotalOf(c.letter) == 0)) continue; // 寮生以外は記録のある人だけ
                 parts.Add(c.displayName + " " + HLog.LoopCountOf(c.letter, hLoopView) + "／" + HLog.TotalOf(c.letter));
             }
             GUI.Label(new Rect(4, y, w, 22), "キャラごとの回数（この周／通算）", small); y += 24;

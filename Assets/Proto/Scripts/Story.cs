@@ -171,7 +171,7 @@ namespace LifeSimProto
         {
             var f = w.RomanceTarget;
             if (f == null || IsActive) return;
-            foreach (var c in w.characters)
+            foreach (var c in w.residents)
             {
                 if (c.IsTarget || StoryText.Get(c.letter) == null) continue;
                 int done = DoneOf(c.letter);
@@ -197,14 +197,14 @@ namespace LifeSimProto
         public static int GirlCount(LoungeWorld w)
         {
             int n = 0;
-            foreach (var c in w.characters) if (!c.IsTarget && StoryText.Get(c.letter) != null) n++;
+            foreach (var c in w.residents) if (!c.IsTarget && StoryText.Get(c.letter) != null) n++;
             return n;
         }
 
         public static int GirlHands(LoungeWorld w)
         {
             int n = 0;
-            foreach (var c in w.characters) if (!c.IsTarget && Hands.Contains(c.letter)) n++;
+            foreach (var c in w.residents) if (!c.IsTarget && Hands.Contains(c.letter)) n++;
             return n;
         }
 
@@ -316,7 +316,7 @@ namespace LifeSimProto
             if (Loop.Count <= 1) return;
             var f = w.RomanceTarget;
             if (f == null) return;
-            foreach (var c in w.characters)
+            foreach (var c in w.residents)
             {
                 if (c.IsTarget || DoneOf(c.letter) < 2) continue;
                 float v = w.rel.Get(c.id, f.id);

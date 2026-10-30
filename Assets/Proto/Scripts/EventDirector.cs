@@ -57,7 +57,7 @@ namespace LifeSimProto
             blackoutTime = rnd.NextDouble() < 0.15 ? 20.25f * 60f : -1f;
             creatureTime = rnd.NextDouble() < 0.25 ? (10f + (float)rnd.NextDouble() * 9f) * 60f : -1f;
             bakeTimes.Clear();
-            foreach (var c in world.characters)
+            foreach (var c in world.residents)
                 if (!c.IsTarget && c.LoveStage >= 2 && rnd.NextDouble() < 0.25) bakeTimes[c] = (16.5f + (float)rnd.NextDouble()) * 60f;
 
             if (Calendar.IsHoliday(day, hol) && !Calendar.IsFestival(day)) world.todayNotes.Add("お茶会 15:00");
@@ -71,7 +71,7 @@ namespace LifeSimProto
             if (Calendar.Weekday(day) == 5) world.todayNotes.Add("課題が出る 9:00（光の日 23:00 まで）");
             if (Calendar.IsClassDay(day, hol)) world.todayNotes.Add("授業の日");
             if (Calendar.IsFullMoon(day)) world.todayNotes.Add("満月の夜");
-            foreach (var c in world.characters)
+            foreach (var c in world.residents)
             {
                 if (!Calendar.IsBirthday(c.id, day)) continue;
                 c.PositiveEvent(1f);
@@ -107,7 +107,7 @@ namespace LifeSimProto
             // ---- 誕生日会 ----
             if (m >= 1185f && m < 1245f && Once("birthday"))
             {
-                foreach (var c in world.characters)
+                foreach (var c in world.residents)
                 {
                     if (!Calendar.IsBirthday(c.id, day)) continue;
                     world.gatherings.Add(new Gathering
@@ -124,7 +124,7 @@ namespace LifeSimProto
             if (Calendar.Weekday(day) == 5 && m >= 540f && Once("assign"))
             {
                 double deadline = ScheduleMaker.DayStart(day + 2) + 23 * 60;
-                foreach (var c in world.characters) c.GiveAssignment(deadline);
+                foreach (var c in world.residents) if (!c.IsTeacher) c.GiveAssignment(deadline); // 先生には出ない
                 world.Log("課題が出た！（光の日 23:00 まで）");
             }
 
@@ -139,7 +139,7 @@ namespace LifeSimProto
                 float bestScore = 0f;
                 if (f != null && f.AvailableForTalk)
                 {
-                    foreach (var c in world.characters)
+                    foreach (var c in world.residents)
                     {
                         if (c.IsTarget || c.LoveStage < 2 || !c.AvailableForTalk) continue;
                         float s = world.romance.love[c.id] + (c.IsLover ? 30f : 0f) + Random.Range(0f, 20f);
@@ -208,9 +208,9 @@ namespace LifeSimProto
             Academics.ClearExam();
             Academics.lastExamDay = day;
             var avg = new Dictionary<SimCharacter, float>();
-            foreach (var c in world.characters)
+            foreach (var c in world.residents)
             {
-                if (c.profile == null || c.profile.enrolled.Length == 0) continue;
+                if (c.profile == null || c.profile.enrolled.Length == 0 || c.IsTeacher) continue; // 先生は試験を受けない
                 float sum = 0f;
                 foreach (int s in c.profile.enrolled)
                 {
@@ -256,6 +256,8 @@ namespace LifeSimProto
                 if (yearEnd) Album.Add(world, "年度末の試験。総合1位は" + Academics.LastOverall[0].Key.displayName);
             }
 
+            DormExamRanking(avg);
+
             // 科目ごとの1位（同じ子は1回だけご機嫌に）
             var top = new HashSet<SimCharacter>();
             var tops = new List<string>();
@@ -270,6 +272,42 @@ namespace LifeSimProto
                 if (top.Add(best.who)) { best.who.PositiveEvent(0.6f); best.who.ShowBubble(best.who.Say("rank1", "一番！"), 2.2f); }
             }
             if (tops.Count > 0) world.Log("★ 科目の1位　" + string.Join("／", tops.ToArray()));
+        }
+
+        /// <summary>試験の点（寮生と同じ計算。寮生以外の学生にも使う）。</summary>
+        public static float ExamScore(SimCharacter c, int s)
+        {
+            float score = c.skill[s] * 0.8f + Mathf.Min(25f, c.weekSubject[s] * 0.4f) + Random.Range(0f, 15f) - c.GetStage(StatusLine.Sleep) * 5f
+                + (c.Ab(Abilities.ForSubject(s)) - 50f) * 0.1f;
+            return Mathf.Clamp(score, 0f, 100f);
+        }
+
+        /// <summary>寮ごとの平均点（この寮と、冒険者寮・騎士寮・魔法師寮）。順位で寮の評判が少し変わる（2026-10-30 famuru「寮ごとに評価」）。</summary>
+        void DormExamRanking(Dictionary<SimCharacter, float> ours)
+        {
+            var sums = new float[3]; var counts = new int[3];
+            foreach (var c in world.mobs)
+            {
+                if (c.IsTeacher || c.profile.mobDorm < 0 || c.profile.mobDorm > 2 || c.profile.enrolled.Length == 0) continue;
+                float sum = 0f;
+                foreach (int s in c.profile.enrolled) sum += ExamScore(c, s);
+                c.lastExamAverage = sum / c.profile.enrolled.Length;
+                sums[c.profile.mobDorm] += c.lastExamAverage; counts[c.profile.mobDorm]++;
+            }
+            if (ours.Count == 0) return;
+            float our = 0f;
+            foreach (var kv in ours) our += kv.Value;
+            our /= ours.Count;
+            var list = new List<KeyValuePair<string, float>> { new KeyValuePair<string, float>("この寮", our) };
+            for (int g = 0; g < 3; g++) if (counts[g] > 0) list.Add(new KeyValuePair<string, float>(CharProfiles.MobDormNames[g], sums[g] / counts[g]));
+            list.Sort((a, b) => b.Value.CompareTo(a.Value));
+            int place = list.FindIndex(x => x.Key == "この寮") + 1;
+            var parts = new List<string>();
+            for (int i = 0; i < list.Count; i++) parts.Add((i + 1) + "位 " + list[i].Key + "（" + Mathf.RoundToInt(list[i].Value) + "点）");
+            int rep = place == 1 ? 3 : (place == 2 ? 1 : 0);
+            world.dormReputation += rep;
+            Academics.LastDormRanking = string.Join("　", parts.ToArray());
+            world.Log("寮ごとの平均点：" + Academics.LastDormRanking + (rep > 0 ? "（寮の評判 +" + rep + "）" : ""));
         }
 
         /// <summary>終わった集まりの効果（ご機嫌・仲の良さ・恋の気持ち）。</summary>

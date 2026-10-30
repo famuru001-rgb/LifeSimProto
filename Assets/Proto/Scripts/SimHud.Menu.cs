@@ -101,7 +101,13 @@ namespace LifeSimProto
             }
             // 篤を右クリック：選んでいるヒロインと話す・誘う
             SimCharacter girl = c.IsTarget ? (menuSelected != null && !menuSelected.IsTarget ? menuSelected : null) : c;
-            if (girl != null)
+            if (girl != null && girl.IsMob)
+            {
+                // 寮生以外の学生・先生：会話なし。エッチに誘うだけ（famuru 2026-10-30）
+                var g = girl;
+                items.Add(new MenuItem { label = g.displayName + "をエッチに誘う", enabled = !g.InPrivate, act = () => { f.OrderInvite(g); world.Log("篤への指示：" + g.displayName + "をエッチに誘う"); CloseMenu(); } });
+            }
+            else if (girl != null)
             {
                 var g = girl;
                 items.Add(new MenuItem { label = Story.Pending.Contains(g.letter) ? g.displayName + "に話しかける ★" : g.displayName + "に話しかける", enabled = true, act = () => { f.OrderTalk(g); world.Log("篤への指示：「" + g.displayName + "と話す」"); CloseMenu(); } });
@@ -110,7 +116,7 @@ namespace LifeSimProto
             }
             // ヒロインを選んでいるときに別のキャラを右クリック：篤が「〇〇に会いに行って」とお願いしに行く
             var s = menuSelected;
-            if (s != null && !s.IsTarget && s != c && !c.IsTarget)
+            if (s != null && !s.IsTarget && s != c && !c.IsTarget && !s.IsMob && !c.IsMob)
             {
                 items.Add(new MenuItem { label = s.displayName + "に「" + c.displayName + "に会いに行って」とお願い", enabled = true, act = () => { world.Log("篤への指示：" + s.displayName + "に「" + c.displayName + "に会いに行って」とお願いする"); s.Order(c); CloseMenu(); } });
             }

@@ -84,6 +84,8 @@ namespace LifeSimProto
         // ---- 試験の結果（いちばん新しい回）----
         public class ExamEntry { public SimCharacter who; public float score; public string mark; }
         public static int lastExamDay = -1;
+        /// <summary>いちばん新しい試験の、寮ごとの平均点の順位（表示用。2026-10-30）。</summary>
+        public static string LastDormRanking = "";
         public static readonly List<ExamEntry>[] LastExam = NewTable();
         public static readonly List<KeyValuePair<SimCharacter, float>> LastOverall = new List<KeyValuePair<SimCharacter, float>>();
 

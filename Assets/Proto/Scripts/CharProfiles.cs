@@ -40,6 +40,19 @@ namespace LifeSimProto
         public int[] enrolled = new int[0]; // 取っている科目（座学4・実技4の8つ。篤は座学のみ）
         public Affiliation affiliation;     // 騎士団・魔法師団（所属の子は優先科目を必ず取る。今の10人は所属なし）
         public string callF = "篤くん";      // 篤の呼び方
+        public string callFClose;           // 仲が進んだときの篤の呼び方（null なら変わらない。2026-10-30 追加のヒロイン）
+        public int callFCloseStage = 2;     // その呼び方になる篤への気持ちの段階（2＝好き、3＝恋人）
+        // ---- 追加のヒロイン・寮生以外の学生（2026-10-30 famuru「ヒロインとNPCをゲームに追加して」）----
+        public string course = "冒険者";     // 課程（冒険者・騎士・魔法師。先生は「先生」）
+        public int grade;                   // 学年（1〜3。先生は 0）
+        public bool teacher;                // 先生（授業は教える側。試験・課題なし）
+        public float heightCm;              // 身長（0 なら仮モデルのまま）
+        public CharLook look;               // 仮モデルの見た目（null なら CharLook.Get の決まり）
+        public float[] initAbility;         // 最初の能力値（体力・魅力・器用さ・魔力・知力。null なら Abilities.Initial）
+        public float initSex = -1f;         // 最初の性技（-1 なら Abilities.InitialSex）
+        public bool mob;                    // 寮生以外の学生・先生（名前は番号だけ。欲求・関係・会話なし、エッチはできる）
+        public int mobDorm = -1;            // 0＝冒険者寮・1＝騎士寮・2＝魔法師寮・3＝先生
+        public int mobNo;                   // 番号
         public readonly Dictionary<string, string[]> lines = new Dictionary<string, string[]>();
 
         public CharProfile L(string key, params string[] v) { lines[key] = v; return this; }
@@ -87,7 +100,7 @@ namespace LifeSimProto
         public TalkTopic(string t, params string[] g) { text = t; tags = g; }
     }
 
-    public static class CharProfiles
+    public static partial class CharProfiles
     {
         // 科目の番号（Academics.Names と同じ並び）
         const int Theory = Academics.Theory, Ancient = Academics.Ancient, Tools = Academics.Tools, Herb = Academics.Herb, History = Academics.History, Monster = Academics.Monster;
@@ -395,7 +408,9 @@ namespace LifeSimProto
             .L("thanks", "ありがと〜").L("accept", "うん、いいよ〜").L("refuse", "いまは…ねむいの")
             .L("night", "おやすみ…わたしはもう少し起きてるね").L("surprise", "ふぇっ？").L("hurt", "あれ…失敗しちゃった")
             .L("rank1", "わたしが一番？ ふしぎ〜").L("examGood", "お月さまのおかげかな").L("examBad", "古代語、ねむくなっちゃう…"));
+            AddNewHeroines();     // 追加のヒロイン（L〜AH。CharProfiles.New.cs）
             CharLines.Apply(All); // せりふの追加分（CharLines.cs）
+            AddMobs();            // 寮生以外の学生90人と先生7人（CharProfiles.New.cs）
         }
 
         /// <summary>
@@ -408,9 +423,18 @@ namespace LifeSimProto
             int n = Mathf.Min(rel.count, All.Count);
             for (int i = 0; i < n; i++)
             {
+                if (All[i].mob) continue; // 寮生以外の学生・先生は関係なし
                 for (int j = i + 1; j < n; j++)
                 {
                     var a = All[i]; var b = All[j];
+                    if (b.mob) continue;
+                    float na; float nc;
+                    if (NewPair(a, b, out na, out nc))
+                    {
+                        foreach (var t in a.likes) { if (b.Likes(t)) nc += 0.1f; if (b.Dislikes(t)) nc -= 0.08f; }
+                        rel.SetInitial(i, j, na, Mathf.Clamp(nc, -0.6f, 0.8f));
+                        continue;
+                    }
                     float aff = 20f;
                     float c = (float)(rnd.NextDouble() * 0.8 - 0.3);
                     if (IsPair(a, b, "A", "I") || IsPair(a, b, "B", "D") || IsPair(a, b, "B", "C") || IsPair(a, b, "C", "H") || IsPair(a, b, "D", "H") || IsPair(a, b, "G", "J") || IsPair(a, b, "D", "K") || IsPair(a, b, "H", "K"))

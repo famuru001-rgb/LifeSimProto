@@ -24,6 +24,8 @@ namespace LifeSimProto
 
         /// <summary>本館の真ん中（授業へ出かけるときの行き先：2階の大廊下）。</summary>
         public static readonly Vector3 SchoolCorridor2F = new Vector3(SXN - SK * 35.5f, Floor2Y, SZ0 - SK * 35f);
+        /// <summary>正門（本館の南。寮生以外の学生・先生はここから来て、ここから自分の寮へ帰る。2026-10-30）。</summary>
+        public static Vector3 SchoolGate { get { return S3(35f, 51f, 0f); } }
 
         static Vector2 SP(float sx, float sy) { return new Vector2(SXN - SK * sy, SZ0 - SK * sx); }
         static Vector3 S3(float sx, float sy, float y) { return new Vector3(SXN - SK * sy, y, SZ0 - SK * sx); }

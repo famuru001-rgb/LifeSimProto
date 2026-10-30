@@ -143,7 +143,7 @@ namespace LifeSimProto
                 start = world.Now, end = ScheduleMaker.DayStart(world.Day) + (e.startHour + e.hours) * 60.0,
                 joinChance = e.school ? 1f : 0.9f,
             };
-            if (e.school || e.honorF) g.invited = new List<SimCharacter>(world.characters);
+            if (e.school || e.honorF) g.invited = new List<SimCharacter>(world.residents);
             if (e.invited != null)
             {
                 g.invited = new List<SimCharacter>();
@@ -236,8 +236,25 @@ namespace LifeSimProto
                         if (best > mvpV && !c.IsTarget) { mvpV = best; mvp = c; }
                     }
                     float ours = members.Count > 0 ? sum / members.Count + Random.Range(0f, 20f) : 0f;
+                    // ほかの3つの寮の力（寮生以外の学生の実技と能力。2026-10-30。前はくじの数字）
                     int place = 1;
-                    for (int i = 0; i < 3; i++) if (Random.Range(45f, 75f) > ours) place++;
+                    var rivalParts = new List<string>();
+                    for (int dg = 0; dg < 3; dg++)
+                    {
+                        float rs = 0f; int rn = 0;
+                        foreach (var mc in world.mobs)
+                        {
+                            if (mc.IsTeacher || mc.profile.mobDorm != dg) continue;
+                            float b2 = 0f;
+                            for (int s2 = 0; s2 < Academics.Count; s2++) if (Academics.IsPractical(s2) && Academics.IsActive(s2)) b2 = Mathf.Max(b2, mc.SkillOf(s2));
+                            rs += b2 + mc.Ab(Abilities.Magic) * 0.2f + mc.Ab(Abilities.Body) * 0.1f - 15f;
+                            rn++;
+                        }
+                        float theirs = rn > 0 ? rs / rn + Random.Range(0f, 20f) : Random.Range(45f, 75f);
+                        if (theirs > ours) place++;
+                        rivalParts.Add(CharProfiles.MobDormNames[dg] + " " + Mathf.RoundToInt(theirs));
+                    }
+                    world.Log("魔法競技会の点：この寮 " + Mathf.RoundToInt(ours) + "・" + string.Join("・", rivalParts.ToArray()));
                     world.dormReputation += place == 1 ? 10 : (place == 2 ? 5 : 2);
                     foreach (var c in members) { if (place == 1) c.PositiveEvent(0.8f); else if (place == 4) c.NegativeEvent(0.5f); }
                     world.Log("★ 魔法競技会（寮対抗）：この寮は " + place + "位！" + (mvp != null ? "　活躍：" + mvp.displayName : "") + "（寮の評判 " + world.dormReputation + "）");
@@ -416,7 +433,7 @@ namespace LifeSimProto
         // ================= 道具 =================
         SimCharacter ByLetter(string l)
         {
-            foreach (var c in world.characters) if (c.letter == l) return c;
+            foreach (var c in world.residents) if (c.letter == l) return c;
             return null;
         }
 

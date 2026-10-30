@@ -190,7 +190,7 @@ namespace LifeSimProto
             {
                 case Academics.MagicArts:
                     f.ShowBubble("（指先に火を灯す）", 2f);
-                    foreach (var c in w.characters)
+                    foreach (var c in w.residents)
                         if (c != f && c.Present && w.AreaName(c.transform.position) == "談話室") { c.bored = Mathf.Max(0f, c.bored - 15f); c.PositiveEvent(0.3f); }
                     w.Log("篤が魔法で暖炉に火をつけた。談話室がぽかぽかになった");
                     break;

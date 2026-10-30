@@ -125,7 +125,7 @@ namespace LifeSimProto
         {
             var def = RoomDecor.Get(k);
             var c = characters.Find(x => x.letter == letter);
-            if (def == null || c == null || c.room == null || c.room.bed == null) return;
+            if (def == null || c == null || c.room == null || c.room.bed == null || c.room.shared) return; // 先生の部屋（3人で使う）には置かない
             string key = letter + ":" + def.slot;
             GameObject old;
             if (decorObjects.TryGetValue(key, out old) && old != null) Destroy(old);

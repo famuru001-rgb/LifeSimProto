@@ -25,7 +25,7 @@ namespace LifeSimProto
         static int Girls(LoungeWorld w, System.Func<SimCharacter, bool> pred)
         {
             int n = 0;
-            foreach (var c in w.characters) if (!c.IsTarget && pred(c)) n++;
+            foreach (var c in w.residents) if (!c.IsTarget && pred(c)) n++;
             return n;
         }
 

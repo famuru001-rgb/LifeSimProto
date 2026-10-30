@@ -29,7 +29,7 @@ namespace LifeSimProto
             var e = new LogEntry { text = stamp + message, dayHeader = message.StartsWith("――") };
             if (w == null) return e;
             var f = w.RomanceTarget;
-            foreach (var c in w.characters)
+            foreach (var c in w.residents)
             {
                 if (c == null || string.IsNullOrEmpty(c.displayName)) continue;
                 string m = message.Replace(c.displayName + "のお守り", "");

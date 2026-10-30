@@ -710,7 +710,7 @@ namespace LifeSimProto
                 if (Random.value > HBook.JoinChance || ps.Count + 1 + joining.Count >= MaxPrivateGroup || phase == "after") return;
                 bool night = world.MinuteOfDay >= 21f * 60f || LoungeWorld.IsNight(world.MinuteOfDay);
                 var cands = new List<SimCharacter>();
-                foreach (var c in world.characters)
+                foreach (var c in world.residents)
                 {
                     if (c.IsTarget || c.hs != null || joining.Contains(c) || !c.Present || c.privatePending || c.sickRest) continue;
                     if (!c.AvailableForTalk) continue;

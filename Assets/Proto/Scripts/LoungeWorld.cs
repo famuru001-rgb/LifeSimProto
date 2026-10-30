@@ -131,6 +131,10 @@ namespace LifeSimProto
         public Relationships rel;
         public Romance romance;
         public readonly List<SimCharacter> characters = new List<SimCharacter>();
+        /// <summary>寮に住む人（篤とヒロイン）。寮生以外の学生・先生（mobs）は入らない（2026-10-30）。</summary>
+        public readonly List<SimCharacter> residents = new List<SimCharacter>();
+        /// <summary>寮生以外の学生（冒険者寮・騎士寮・魔法師寮）と先生。</summary>
+        public readonly List<SimCharacter> mobs = new List<SimCharacter>();
         public readonly List<Seat> seats = new List<Seat>();
         public readonly List<Poi> pois = new List<Poi>();
         public readonly List<Stair> stairs = new List<Stair>();
@@ -250,7 +254,7 @@ namespace LifeSimProto
         void UpdateSpeed()
         {
             bool allAsleep = characters.Count > 0;
-            foreach (var c in characters) if (c.state != SimCharacter.State.Sleeping) { allAsleep = false; break; }
+            foreach (var c in characters) if (c.state != SimCharacter.State.Sleeping && !(c.IsMob && c.state == SimCharacter.State.Away)) { allAsleep = false; break; }
             autoFast = allAsleep && userSpeed > 0f && allAsleepSpeed > userSpeed;
             float ts = userSpeed <= 0f ? 0f : (autoFast ? allAsleepSpeed : userSpeed);
             Time.timeScale = Mathf.Clamp(ts, 0f, 100f);
@@ -391,10 +395,10 @@ namespace LifeSimProto
         public bool GreetReady(int a, int b)
         {
             double t;
-            int key = Mathf.Min(a, b) * 100 + Mathf.Max(a, b);
+            int key = Mathf.Min(a, b) * 1000 + Mathf.Max(a, b);
             return !greetTimes.TryGetValue(key, out t) || Now - t > 60.0;
         }
-        public void MarkGreet(int a, int b) { greetTimes[Mathf.Min(a, b) * 100 + Mathf.Max(a, b)] = Now; }
+        public void MarkGreet(int a, int b) { greetTimes[Mathf.Min(a, b) * 1000 + Mathf.Max(a, b)] = Now; }
 
         public void ReportTalk(SimCharacter a, SimCharacter b, TalkResult result, bool koibana = false, string place = null)
         {
@@ -451,10 +455,11 @@ namespace LifeSimProto
         void SpawnCharacters()
         {
             Academics.ClearExam();
-            rel = new Relationships(11, 12345);
-            romance = new Romance(11, 5, 777);
-            // 名前・性格・好き嫌い・科目・口調は CharProfiles（企画\ゲーム内容_たたき台.md のとおり）
-            for (int i = 0; i < CharProfiles.All.Count && i < 11; i++) AddCharacter(i, CharProfiles.All[i]);
+            int n = CharProfiles.All.Count; // 篤とヒロイン34人＋寮生以外の学生90人・先生7人（2026-10-30）
+            rel = new Relationships(n, 12345);
+            romance = new Romance(n, 5, 777);
+            // 名前・性格・好き嫌い・科目・口調は CharProfiles（企画\ゲーム内容_たたき台.md のとおり。追加の子は CharProfiles.New.cs）
+            for (int i = 0; i < n; i++) AddCharacter(i, CharProfiles.All[i]);
             CharProfiles.ApplyInitialRelations(rel, 12345);
         }
 
@@ -482,11 +487,18 @@ namespace LifeSimProto
             // 選んだキャラの足元の黄色い印は出さない（famuru 決定 2026-10-24）
 
             // 仮モデル（Blenderで作った人型）があれば使い、仮の人形は見えなくする（クリック用の当たり判定は残す）
-            var look = CharLook.Get(letter, male, color);
-            if (ProtoBody.Create(go, look, letter) != null)
+            var look = p.look ?? CharLook.Get(letter, male, color);
+            var pb = ProtoBody.Create(go, look, letter);
+            if (pb != null)
             {
                 body.GetComponent<Renderer>().enabled = false;
                 face.GetComponent<Renderer>().enabled = false;
+                // 身長に合わせて仮モデルを縮める・伸ばす（本番のモデルはそのまま。仮モデルは 170cm。2026-10-30 追加の子）
+                if (!pb.IsRealModel && p.heightCm > 0f)
+                {
+                    var model = go.transform.Find("Model");
+                    if (model != null) model.localScale *= Mathf.Clamp(p.heightCm / 170f, 0.75f, 1.15f);
+                }
             }
 
             var c = go.AddComponent<SimCharacter>();
@@ -502,8 +514,16 @@ namespace LifeSimProto
             c.male = male;
             c.diligence = p.diligence;
             c.hobby = p.hobby;
-            c.room = id < rooms.Count ? rooms[id] : null;
-            if (c.room != null)
+            c.room = !p.mob && id < rooms.Count ? rooms[id] : null;
+            if (c.room != null && c.room.shared)
+            {
+                // 先生の部屋（3人で使う。ベッドと机はひとりずつ）
+                c.room.owner = id;
+                c.room.bed.owner = id;
+                c.room.desk.owner = id;
+                c.room.bed.label = name + "のベッド";
+            }
+            else if (c.room != null)
             {
                 c.room.owner = id;
                 c.room.bed.owner = id;
@@ -514,6 +534,37 @@ namespace LifeSimProto
             }
             c.Init(this, body.transform, null);
             characters.Add(c);
+            if (p.mob) mobs.Add(c); else residents.Add(c);
+        }
+
+        // ================= 寮生以外の学生・先生の行き先（SimCharacter.Mob.cs） =================
+        List<AreaInfo> schoolAreas;
+
+        /// <summary>学校の本館・前庭の区画のうち、条件に合うもの（寮の中には入らない）。</summary>
+        public List<AreaInfo> MobAreas(System.Predicate<AreaInfo> pred)
+        {
+            if (schoolAreas == null)
+            {
+                schoolAreas = new List<AreaInfo>();
+                foreach (var a in areaList)
+                {
+                    bool school = a.name.StartsWith("本館") || a.name == "玄関ホール" || a.name == "外廊下" || a.name == "体育館" || a.name == "大講堂"
+                        || a.name.StartsWith("体育館の") || a.name.StartsWith("大講堂の") || (a.name == "前庭" && a.floor == 0);
+                    if (!school) continue;
+                    if (a.name.EndsWith("トイレ") || a.name.EndsWith("シャワー") || a.name.EndsWith("更衣室") || a.name.EndsWith("階段") || a.name.EndsWith("宿直室") || a.name.EndsWith("用具室")) continue;
+                    schoolAreas.Add(a);
+                }
+            }
+            return schoolAreas.FindAll(pred);
+        }
+
+        /// <summary>区画の中の歩ける所を1つ（壁ぎわは避ける）。</summary>
+        public Vector3 RandomPointIn(AreaInfo a)
+        {
+            var r = a.rect;
+            float m = Mathf.Min(0.8f, Mathf.Min(r.width, r.height) * 0.25f);
+            var p = new Vector3(Random.Range(r.xMin + m, r.xMax - m), FloorY(a.floor), Random.Range(r.yMin + m, r.yMax - m));
+            return Nav(a.floor).NearestFreePoint(p);
         }
 
         // ================= カメラ =================
