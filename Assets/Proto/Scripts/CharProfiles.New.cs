@@ -959,7 +959,7 @@ namespace LifeSimProto
                 likes = new[] { "旅の話", "焚き火の料理", "地図" }, dislikes = new[] { "書類仕事", "じっと座っていること" },
                 traits = CharTrait.None, traitText = "",
                 strongStudy = -1, weakStudy = -1, strongPractical = Sword, weakPractical = -1,
-                enrolled = new[] { Dungeon, Monster, Herb, Fly }, affiliation = Affiliation.None, callF = "篤",
+                enrolled = new[] { Dungeon, Sword, Monster, Herb }, affiliation = Affiliation.None, callF = "篤",
                 course = "先生", grade = 0, teacher = true, heightCm = 168f,
                 initAbility = new float[] { 75, 75, 75, 62, 62 }, initSex = 6f,
                 look = HeroLook(new Color(0.910f, 0.706f, 0.627f), "Hair_Pony", "Acc_ElfEars"),
