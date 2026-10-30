@@ -16,7 +16,7 @@ namespace LifeSimProto.EditorTools
         const string MotionDir = "Assets/Proto/Resources/Motions";
         const string CharDir = "Assets/Proto/Resources/Chars";   // 本番キャラ（Codex 制作）
 
-        public override uint GetVersion() { return 11; }
+        public override uint GetVersion() { return 12; }
 
         static bool IsModel(string p) { p = p.Replace('\\', '/'); return p.StartsWith(ModelDir) || p.StartsWith(CharDir); }
         static bool IsMotion(string p) { return p.Replace('\\', '/').StartsWith(MotionDir); }
@@ -89,6 +89,13 @@ namespace LifeSimProto.EditorTools
                 c.keepOriginalOrientation = true;
                 c.keepOriginalPositionY = true;
                 c.keepOriginalPositionXZ = true;
+                // 二人きりの時間・自慰（Motions/H、名前が H_）：2人の位置関係を保つため、前後左右の位置も体に焼き込む。
+                // 「_Finish_」を含むものは1回だけ（2026-10-31 モーション）
+                if (file.StartsWith("H_"))
+                {
+                    c.lockRootPositionXZ = true;
+                    c.loopTime = !file.Contains("_Finish_");
+                }
             }
             mi.clipAnimations = clips;
         }
