@@ -139,10 +139,60 @@ namespace LifeSimProto
                     FastLog.AppendLine(LifeSimProto.ScheduleMaker.Clock(LoungeWorld.Instance != null ? LoungeWorld.Instance.Now : 0) + "｜" + sim.displayName + "｜腰 " + fwDist.ToString("0.00") + "m／" + (fwT * 1000f).ToString("0") + "ms（体の位置は " + fwRootDist.ToString("0.00") + "m）｜始め：" + fwStart + "｜終わり：" + FwInfo());
             }
             fwHips = h; fwRoot = r;
+            // 立ち姿のまま滑る：体が歩く速さで動いているのに、歩く動きになっていない
+            float rv = dr.magnitude / dt;
+            bool walkClip = curClip != null && (curClip.name.Contains("walk") || curClip.name.Contains("Walk"));
+            bool sliding = rv > 0.25f && !walkClip && sim.BodyPoseNow == BodyPose.Stand;
+            if (sliding)
+            {
+                if (!slIn) { slIn = true; slT = 0f; slDist = 0f; slStart = FwInfo() + "・推定の速さ" + speed.ToString("0.00") + "・身ぶり" + (gestureName ?? "なし") + (Time.time < gestureUntil ? "（中）" : ""); }
+                slT += dt; slDist += dr.magnitude;
+            }
+            else if (slIn)
+            {
+                slIn = false;
+                if (slT > 0.3f && FastLog.Length < 400000)
+                    FastLog.AppendLine("【滑る】" + LifeSimProto.ScheduleMaker.Clock(LoungeWorld.Instance != null ? LoungeWorld.Instance.Now : 0) + "｜" + sim.displayName + "｜" + slDist.ToString("0.00") + "m／" + (slT * 1000f).ToString("0") + "ms｜始め：" + slStart + "｜終わり：" + FwInfo());
+            }
         }
+        bool slIn; float slT, slDist; string slStart;
 
         /// <summary>試験用：今の全身の動きの名前と、何秒目か（animdump 命令）。</summary>
-        public string DebugClipNow() { if (!graph.IsValid() || curClip == null || !mixer.GetInput(0).IsValid()) return "なし"; double t = mixer.GetInput(0).GetTime(); return curClip.name + " " + t.ToString("0.00") + "秒（長さ " + curClip.length.ToString("0.00") + "・くり返し " + curClip.isLooping + "）"; }
+        public string DebugClipNow() { if (!graph.IsValid() || curClip == null || !mixer.GetInput(0).IsValid()) return "なし"; double t = mixer.GetInput(0).GetTime(); return (real ? "本番" : "仮") + "｜" + curClip.name + " " + t.ToString("0.00") + "秒（長さ " + curClip.length.ToString("0.00") + "・くり返し " + curClip.isLooping + "）｜足の向き 左" + FootYaw("Left").ToString("0") + "度・右" + FootYaw("Right").ToString("0") + "度"; }
+
+        /// <summary>
+        /// 立っている・歩いているときの足先の向きを、体の正面から −15〜＋30度（＋は外向き）に収める。
+        /// 歩く動き BN_walk_feminine などは右足だけ外へ60〜90度ねじれていて、足首が横を向いて見えた（2026-10-31 famuru「一部のキャラの足首の向きがよこを向いている」）。
+        /// </summary>
+        void StraightenFeet()
+        {
+            foreach (var side in FeetSides)
+            {
+                var f = B(side + "Foot"); var t = B(side + "ToeBase");
+                if (f == null || t == null) continue;
+                Vector3 d = t.position - f.position;
+                Vector3 h = d - transform.up * Vector3.Dot(d, transform.up);
+                if (h.magnitude < d.magnitude * 0.35f) continue;   // つま先が下・上を向いている（歩くけり出し）ときは向きがはっきりしないのでそのまま
+                float a = Vector3.SignedAngle(transform.forward, h, transform.up);   // ＋は右回り
+                float outA = side == "Right" ? a : -a;
+                float want = Mathf.Clamp(outA, -15f, 30f);
+                if (Mathf.Abs(want - outA) < 0.5f) continue;
+                float turn = side == "Right" ? want - outA : outA - want;
+                f.rotation = Quaternion.AngleAxis(turn, transform.up) * f.rotation;
+            }
+        }
+        static readonly string[] FeetSides = { "Left", "Right" };
+
+        /// <summary>試験用：足先が体の正面から何度ずれているか（＋は外向き）。</summary>
+        public float FootYaw(string side)
+        {
+            var f = B(side + "Foot"); var t = B(side + "ToeBase");
+            if (f == null || t == null) return 999f;
+            Vector3 d = transform.InverseTransformDirection(t.position - f.position); d.y = 0f;
+            if (d.sqrMagnitude < 0.000001f) return 999f;
+            float a = Mathf.Atan2(d.x, d.z) * Mathf.Rad2Deg;
+            return side == "Left" ? -a : a;
+        }
         public void TestSetClipTime(float t) { if (graph.IsValid() && mixer.GetInput(0).IsValid()) mixer.GetInput(0).SetTime(t); }
         public AnimationClip TestFindClip(string n) { LoadClips(); var c = Clip(n); if (c == null) { clipBook = null; LoadClips(); c = Clip(n); } return c; }   // 新しく入れた動きは読み直す
         [System.NonSerialized] public bool testTalk, testEat, testDoze;
@@ -544,9 +594,13 @@ namespace LifeSimProto
             // 座る・立つ・ベッドに入るときの一瞬の位置の移動（0.3〜2.5m）は、見た目だけ少しずつ追いつかせる（2026-10-31 famuru「椅子に座る直前に高速移動」）
             bool appeared = sim != null && sim.Present && !snapWasPresent;   // 見えなかった子が出てきた（登校・授業から戻る）
             snapWasPresent = sim == null || sim.Present;
+            // 立った姿勢での移動（席を立つ・ベッドから出る）は、滑って見えないように：1m までは歩く動きで追いつき、それより遠い（ベッドから出る）ときはそのまま
+            // （2026-10-31 famuru「歩いているときに立ち姿のままスライドすることがある」）
+            BodyPose snapPose = testMode ? testPose : sim.BodyPoseNow;
             bool snapped = !appeared && d.magnitude > 0.3f && d.magnitude < 2.5f && d.magnitude / dt > 4f;
-            if (snapped) { snapStart = snapOff - d; snapT = 0f; snapDur = Mathf.Max(SnapTime, snapStart.magnitude * 0.7f); }
-            else if (appeared || d.magnitude >= 2.5f) { snapStart = Vector3.zero; snapT = snapDur; } // 遠くへの移動（見えなくなる・出てくる）はそのまま
+            bool standJump = snapped && snapPose == BodyPose.Stand && d.magnitude > 1.0f;
+            if (snapped && !standJump) { snapStart = snapOff - d; snapT = 0f; snapDur = Mathf.Max(SnapTime, snapStart.magnitude * 0.7f); }
+            else if (appeared || standJump || d.magnitude >= 2.5f) { snapStart = Vector3.zero; snapT = snapDur; } // 遠くへの移動（見えなくなる・出てくる）はそのまま
             snapT = Mathf.Min(snapDur, snapT + dt);
             float sk = snapT / snapDur;
             snapOff = snapStart * (1f - sk * sk * (3f - 2f * sk)); // なめらかに（始めと終わりはゆっくり）
@@ -609,7 +663,7 @@ namespace LifeSimProto
                     }
                     if (fullG != null) clip = fullG;
                     else if (gestureName != null && gestureName != "Wave" && gestureName != "Bow" && Time.time < gestureUntil && Clip(gestureName) != null && (gestureName == "Joy" || speed <= 0.25f)) clip = Clip(gestureName);
-                    else if (speed > 0.25f) clip = Clip(MotionBook.Walk(StyleNow(), testMode ? testMood : sim.WalkMood)) ?? Clip(MotionBook.Walk(StyleNow(), null)) ?? Clip("Walk");
+                    else if (speed > 0.25f || snapOff.magnitude > 0.08f) clip = Clip(MotionBook.Walk(StyleNow(), testMode ? testMood : sim.WalkMood)) ?? Clip(MotionBook.Walk(StyleNow(), null)) ?? Clip("Walk");
                     else if (talking)
                     {
                         // 話す身ぶりは会話ごとに Talk・Talk2〜4 から選ぶ（2026-10-30 モーション）
@@ -696,6 +750,7 @@ namespace LifeSimProto
             string face = testMode ? testFace : sim.FaceNow;
             UpdateFace(dt, eyesClosed, speaking, face);
             UpdateCorrectives(dt, pose);
+            if (clip != null && pose == BodyPose.Stand) StraightenFeet();
             if (FastWatch) FastWatchStep(dt);
             if (TraceWho == sim && sim != null && Time.time < TraceUntil && hips != null && TraceLog.Length < 2000000)
             {

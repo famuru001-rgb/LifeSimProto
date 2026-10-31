@@ -70,6 +70,7 @@ namespace LifeSimProto.EditorTools
                 case "jumpwatch":
                 case "fastwatch":
                 case "hipstrace":
+                case "camfollow":
                 case "animdump":
                 case "hstat":
                 case "perf":
@@ -233,6 +234,22 @@ namespace LifeSimProto.EditorTools
                         ProtoBody.TraceWho = w.characters[int.Parse(a[1])];
                         ProtoBody.TraceUntil = Time.time + (a.Length > 2 ? float.Parse(a[2]) : 10f);
                         log.AppendLine("hipstrace: " + ProtoBody.TraceWho.displayName);
+                        break;
+                    }
+                    case "camfollow":
+                    {
+                        // 試験用：camfollow 番号 距離 角度 向き（その子を追いかけて見る。足もとの確認用。2026-10-31）
+                        var rig = w.mainCamera != null ? w.mainCamera.GetComponent<CameraRig>() : null;
+                        var c = w.characters[int.Parse(a[1])];
+                        var ci = System.Globalization.CultureInfo.InvariantCulture;
+                        if (rig == null) { log.AppendLine("camfollow: ng"); break; }
+                        rig.follow = c.transform;
+                        rig.pivot = c.transform.position + Vector3.up * 0.4f;
+                        if (a.Length > 2) rig.distance = float.Parse(a[2], ci);
+                        if (a.Length > 3) rig.pitch = float.Parse(a[3], ci);
+                        if (a.Length > 4) rig.yaw = float.Parse(a[4], ci);
+                        w.wallMode = WallMode.Low;
+                        log.AppendLine("camfollow: " + c.displayName + "（" + c.StateName() + "）");
                         break;
                     }
                     case "animdump":
