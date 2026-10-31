@@ -107,6 +107,8 @@ namespace LifeSimProto
         [System.NonSerialized] public bool testStandUp;   // 確認用：床から立ち上がる途中のつもり
         [System.NonSerialized] public string testClip;
         [System.NonSerialized] public string testLetter, testScene, testMood;   // 確認用：キャラの記号・生活の場面・歩くときの気分     // 確認用：姿勢に関係なくこの動きを流す（動きの候補の見比べ。2026-10-30 モーション）
+        /// <summary>試験用：今の全身の動きの名前と、何秒目か（animdump 命令）。</summary>
+        public string DebugClipNow() { if (!graph.IsValid() || curClip == null || !mixer.GetInput(0).IsValid()) return "なし"; double t = mixer.GetInput(0).GetTime(); return curClip.name + " " + t.ToString("0.00") + "秒（長さ " + curClip.length.ToString("0.00") + "・くり返し " + curClip.isLooping + "）"; }
         public void TestSetClipTime(float t) { if (graph.IsValid() && mixer.GetInput(0).IsValid()) mixer.GetInput(0).SetTime(t); }
         public AnimationClip TestFindClip(string n) { LoadClips(); var c = Clip(n); if (c == null) { clipBook = null; LoadClips(); c = Clip(n); } return c; }   // 新しく入れた動きは読み直す
         [System.NonSerialized] public bool testTalk, testEat, testDoze;
@@ -374,6 +376,7 @@ namespace LifeSimProto
             graph.Disconnect(mixer, 1);
             if (olderIn.IsValid()) olderIn.Destroy();
             var p = AnimationClipPlayable.Create(graph, c);
+            RandomStart(p, c);
             graph.Connect(p, 0, mixer, 0);
             if (oldIn.IsValid() && curClip != null) graph.Connect(oldIn, 0, mixer, 1);
             else if (oldIn.IsValid()) oldIn.Destroy();
@@ -381,6 +384,17 @@ namespace LifeSimProto
             mixer.SetInputWeight(1, curClip == null ? 0f : 1f);
             fade = curClip == null ? 1f : 0f;
             curClip = c;
+        }
+
+        /// <summary>
+        /// くり返しの動き（歩く・立つ・座る・場面の動き）は、始める位置をばらばらにする。
+        /// 0秒目から始めると、同じ時に始めた子どうしの動きがそろって見えた（2026-10-31 famuru「モーションが同期している」）。
+        /// 1回だけの動き（座る・立ち上がる・身ぶり）と、2人で合わせる二人きりの時間の動き（H_）は0秒目から。
+        /// </summary>
+        static void RandomStart(AnimationClipPlayable p, AnimationClip c)
+        {
+            if (c == null || !c.isLooping || c.length < 0.5f || c.name.StartsWith("H_")) return;
+            p.SetTime(Random.Range(0f, c.length));
         }
 
         // ---- 腕だけの身ぶり（上の段） ----
@@ -429,6 +443,7 @@ namespace LifeSimProto
             {
                 if (talkPlay.IsValid()) { graph.Disconnect(layers, 2); talkPlay.Destroy(); }
                 talkPlay = AnimationClipPlayable.Create(graph, want);
+                RandomStart(talkPlay, want);
                 graph.Connect(talkPlay, 0, layers, 2);
                 talkClip = want;
             }
@@ -449,6 +464,7 @@ namespace LifeSimProto
             {
                 if (upperPlay.IsValid()) { graph.Disconnect(layers, 1); upperPlay.Destroy(); }
                 upperPlay = AnimationClipPlayable.Create(graph, want);
+                RandomStart(upperPlay, want);
                 graph.Connect(upperPlay, 0, layers, 1);
                 upperClip = want;
             }

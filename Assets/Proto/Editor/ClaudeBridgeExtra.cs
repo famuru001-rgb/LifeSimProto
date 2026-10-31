@@ -67,6 +67,8 @@ namespace LifeSimProto.EditorTools
                 case "finvite":
                 case "ftalk":
                 case "fmove":
+                case "jumpwatch":
+                case "animdump":
                 case "hstat":
                 case "perf":
                 case "floorshots":
@@ -194,6 +196,31 @@ namespace LifeSimProto.EditorTools
                         if (a.Length > 6) rig.yaw = float.Parse(a[6], ci);
                         w.wallMode = WallMode.Low;
                         log.AppendLine("campos: ok");
+                        break;
+                    }
+                    case "jumpwatch":
+                    {
+                        // 試験用：jumpwatch on／off／dump（1コマで大きく動いたキャラを Logs\jump_log.txt に書く。2026-10-31）
+                        string m = a.Length > 1 ? a[1] : "dump";
+                        if (m == "on") { SimCharacter.JumpLog.Length = 0; SimCharacter.JumpWatch = true; }
+                        else if (m == "off") SimCharacter.JumpWatch = false;
+                        System.IO.File.WriteAllText(System.IO.Path.Combine(Application.dataPath, "../Logs/jump_log.txt"), SimCharacter.JumpLog.ToString(), new UTF8Encoding(false));
+                        log.AppendLine("jumpwatch: " + m + "（" + SimCharacter.JumpLog.Length + "文字）");
+                        break;
+                    }
+                    case "animdump":
+                    {
+                        // 試験用：見えている全員の、今の動きと何秒目か（Logs\anim_dump.txt に追記。2026-10-31）
+                        var sb = new StringBuilder();
+                        sb.AppendLine("== " + w.Day + "日目 " + LifeSimProto.ScheduleMaker.Clock(w.Now) + "（Time.time " + Time.time.ToString("0.00") + "）");
+                        foreach (var c in w.characters)
+                        {
+                            if (!c.Present) continue;
+                            var b = c.GetComponent<ProtoBody>();
+                            sb.AppendLine(c.displayName + "｜" + c.StateName() + "｜" + (b != null ? b.DebugClipNow() : "体なし"));
+                        }
+                        System.IO.File.AppendAllText(System.IO.Path.Combine(Application.dataPath, "../Logs/anim_dump.txt"), sb.ToString(), new UTF8Encoding(false));
+                        log.AppendLine("animdump: ok");
                         break;
                     }
                     case "finvite":

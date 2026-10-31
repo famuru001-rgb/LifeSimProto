@@ -577,11 +577,40 @@ namespace LifeSimProto
             try { UpdateCore(); } finally { PerfProbe.Add(PerfProbe.Sim, tp); }
         }
 
+        // ---- 試験用：1コマで歩く速さより大きく位置が変わった（瞬間移動・高速移動）を書き留める（2026-10-31 famuru「移動中に高速移動が入る」）----
+        public static bool JumpWatch;
+        public static readonly System.Text.StringBuilder JumpLog = new System.Text.StringBuilder();
+        bool jumpWasPresent;
+        string warpNote; // そのコマで位置をずらした理由（試験用の記録に出す）
+
         void UpdateCore()
         {
             float dt = Time.deltaTime;
             if (dt <= 0f) return;
             stateTime += dt;
+            Vector3 jumpFrom = transform.position;
+            State jumpState = state;
+            string jumpAct = actionText;
+            warpNote = null;
+            try { UpdateCore2(dt); }
+            finally
+            {
+                if (JumpWatch && Present && jumpWasPresent)
+                {
+                    Vector3 dd = transform.position - jumpFrom;
+                    float flat = new Vector2(dd.x, dd.z).magnitude;
+                    float limit = baseSpeed * 1.25f * dt + 0.3f;
+                    if (flat > limit && JumpLog.Length < 400000)
+                        JumpLog.AppendLine(ScheduleMaker.Clock(world.Now) + "｜" + displayName + "｜" + Mathf.Round(flat * 100f) / 100f + "m（1コマ " + Mathf.Round(dt * 1000f) + "ms・上限 " + Mathf.Round(limit * 100f) / 100f + "）｜" + jumpState + "→" + state + "｜" + jumpAct + " → " + actionText + "｜" + Fmt(jumpFrom) + " → " + Fmt(transform.position) + "｜道の残り " + path.Count + (warpNote != null ? "｜" + warpNote : ""));
+                }
+                jumpWasPresent = Present;
+            }
+        }
+
+        static string Fmt(Vector3 p) { return "(" + p.x.ToString("0.0") + "," + p.y.ToString("0.0") + "," + p.z.ToString("0.0") + ")"; }
+
+        void UpdateCore2(float dt)
+        {
 
             UpdateNeeds(dt);
             if (Present) Watchdog(dt);
@@ -3799,13 +3828,45 @@ namespace LifeSimProto
             watchPos = p;
             bool wantsMove = state == State.Walking || state == State.Approaching;
             bool offFloor = !LoungeWorld.OnFloorLevel(p) && state != State.Sleeping && state != State.Bathing && state != State.Private;
+            if (offFloor && !wantsMove)
+            {
+                // 階段の途中で立ち止まっている（話している・ぼんやり）：話している間はそのまま。
+                // ぼんやりしていたら、近いほうの端まで歩いて上る／降りる（前は瞬間移動させていた。2026-10-31 famuru「移動中に高速移動が入る」）
+                watchStill = 0;
+                if (state == State.Idle && !chatting && !hasOrder && !StepOffStairs()) Unstick(true);
+                return;
+            }
             if ((wantsMove || offFloor) && moved < 0.2f) watchStill++; else watchStill = 0;
             if (watchStill >= WatchStillTimes) { watchStill = 0; Unstick(offFloor); }
+        }
+
+        /// <summary>階段の途中から、近いほうの端（上か下）へ歩いて出る。階段が見つからなければ false。</summary>
+        bool StepOffStairs()
+        {
+            Vector3 p = transform.position;
+            Stair best = null; float bd = float.MaxValue, bt = 0f;
+            foreach (var st in world.stairs)
+            {
+                Vector3 ab = st.top - st.bottom;
+                float t = Mathf.Clamp01(Vector3.Dot(p - st.bottom, ab) / Mathf.Max(0.0001f, ab.sqrMagnitude));
+                float d = (st.bottom + ab * t - p).sqrMagnitude;
+                if (d < bd) { bd = d; best = st; bt = t; }
+            }
+            if (best == null || bd > 4f) return false;
+            LeaveCurrentSpot();
+            path.Clear();
+            if (bt >= 0.5f) { path.Add(best.top); path.Add(best.topApproach); }
+            else { path.Add(best.bottom); path.Add(best.bottomApproach); }
+            destination = path[path.Count - 1];
+            goal = Goal.None;
+            SetState(State.Walking);
+            return true;
         }
 
         void Unstick(bool offFloor)
         {
             Vector3 p = transform.position;
+            warpNote = offFloor ? "見張り：階段の途中" : "見張り：動けない（道の点 " + path.Count + "）";
             if (offFloor)
             {
                 // 階段の途中：いちばん近い階段の上か下に立たせる
@@ -3820,10 +3881,19 @@ namespace LifeSimProto
             else if (path.Count > 0)
             {
                 // 道の先（同じ高さの、少し先の点）へずらす
-                int k = Mathf.Min(3, path.Count - 1);
-                while (k > 0 && Mathf.Abs(path[k].y - p.y) > 0.3f) k--;
-                if (Mathf.Abs(path[k].y - p.y) > 0.3f) transform.position = world.NearestFree(p + new Vector3(Random.Range(-0.8f, 0.8f), 0f, Random.Range(-0.8f, 0.8f)));
-                else { transform.position = path[k]; path.RemoveRange(0, k + 1); }
+                // 道に沿って 0.8m だけ進める（前は道の点3つ先まで飛ばしていて、何mも瞬間移動して見えた。2026-10-31）
+                // あわせて少しのあいだ、ほかの人との押し合いを止める（人ごみで動けなくなるのを防ぐ）
+                ghostUntil = Time.time + 4f;
+                float left = 0.8f;
+                Vector3 c = p;
+                while (path.Count > 0 && left > 0f && Mathf.Abs(path[0].y - c.y) <= 0.3f)
+                {
+                    float d = (path[0] - c).magnitude;
+                    if (d <= left) { c = path[0]; path.RemoveAt(0); left -= d; }
+                    else { c = c + (path[0] - c) / d * left; left = 0f; }
+                }
+                if ((c - p).sqrMagnitude < 0.01f) c = world.NearestFree(p + new Vector3(Random.Range(-0.5f, 0.5f), 0f, Random.Range(-0.5f, 0.5f)));
+                transform.position = c;
             }
             else transform.position = world.NearestFree(p + new Vector3(Random.Range(-0.8f, 0.8f), 0f, Random.Range(-0.8f, 0.8f)));
             if (!IsMob) world.Log("（" + displayName + "が動けなくなっていたので、位置を少しずらした）");
@@ -3870,6 +3940,7 @@ namespace LifeSimProto
             }
             Vector3 side = new Vector3(Random.Range(-0.6f, 0.6f), 0f, Random.Range(-0.6f, 0.6f));
             Vector3 np = transform.position + side;
+            warpNote = "詰まり：横へずらす";
             if (world.NavAt(transform.position).IsFree(np)) transform.position = np;
             var p = world.FindPath(transform.position, destination);
             if (p != null) { path.Clear(); path.AddRange(p); }
@@ -4207,9 +4278,12 @@ namespace LifeSimProto
 
         static Vector3 Flat(Vector3 v) { v.y = 0f; return v; }
 
+        float ghostUntil = -1f; // この時刻まで、ほかの人との押し合いをしない（詰まったあと）
+
         void LateUpdate()
         {
             if (Time.deltaTime <= 0f || CurrentPose() != Pose.Stand || !Present) return;
+            if (Time.time < ghostUntil) return;
             if (!LoungeWorld.OnFloorLevel(transform.position)) return;
             var nav = world.NavAt(transform.position);
             bool meMoving = IsMoving;
