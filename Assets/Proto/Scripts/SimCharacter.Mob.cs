@@ -87,6 +87,7 @@ namespace LifeSimProto
         void MobThink()
         {
             double now = world.Now;
+            if (InDungeon) return; // ダンジョン実習の間は組に任せる
             EnsureSchedule();
             if (world.Day != mobDay) { mobDay = world.Day; mobHomeAt = MobLeaveTime(mobDay); mobLunchDone = false; }
             switch (state)
@@ -142,13 +143,17 @@ namespace LifeSimProto
             }
             if (walkingFree) return;
 
+            // 部活（2026-11-01）
+            if (clubPhase == ClubPhase.Active) { if (now < clubUntil) return; EndClub(true); return; }
+            if (MobClubDue(now) && state != State.Walking) { MobFinishActivity(); MobGoClub(); return; }
+
             if (now < mobUntil) return;
             MobFinishActivity();
             MobPickActivity();
         }
 
         /// <summary>エッチのあと：すぐ次のひまつぶしを考える。</summary>
-        void MobAfterPrivate() { mobUntil = world.Now; mobStarted = -1; mobGrowSubject = -1; mobGrowAbility = -1; }
+        void MobAfterPrivate() { if (clubPhase == ClubPhase.Active) EndClub(false); mobUntil = world.Now; mobStarted = -1; mobGrowSubject = -1; mobGrowAbility = -1; }
 
         // ================= 行き来 =================
         void MobComeBack()
@@ -370,6 +375,7 @@ namespace LifeSimProto
                     MobVanish();
                     return true;
                 case Goal.Wander:
+                    if (MobClubArrive()) return true;
                     goal = Goal.None;
                     SetState(State.Idle);
                     actionText = sitLabel ?? "ぼんやりしている";

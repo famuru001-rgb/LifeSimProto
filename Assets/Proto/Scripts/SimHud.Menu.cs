@@ -73,6 +73,20 @@ namespace LifeSimProto
             ClampMenu();
         }
 
+        /// <summary>右クリックの選択肢：ダンジョン実習の組に入れる・外す（2026-11-01）。</summary>
+        void AddDungeonPickItem(List<MenuItem> items, SimCharacter g)
+        {
+            var dd = DungeonDirector.Instance;
+            if (dd == null || dd.FRun != null) return;
+            bool inPick = dd.fPicks.Contains(g);
+            items.Add(new MenuItem
+            {
+                label = inPick ? "ダンジョン実習の組から外す" : "ダンジョン実習の組に入れる（" + dd.fPicks.Count + "/" + DungeonDirector.MaxPicks + "）",
+                enabled = inPick || dd.fPicks.Count < DungeonDirector.MaxPicks,
+                act = () => { dd.TogglePick(g); CloseMenu(); }
+            });
+        }
+
         void ClampMenu()
         {
             float vw = Screen.width / Scale, vh = Screen.height / Scale;
@@ -207,6 +221,7 @@ namespace LifeSimProto
                 // 寮生以外の学生・先生：会話なし。エッチに誘うだけ（famuru 2026-10-30）
                 var g = girl;
                 items.Add(new MenuItem { label = g.displayName + "をエッチに誘う ▶", enabled = !g.InPrivate, act = OpenInvite });
+                if (!g.IsTeacher) AddDungeonPickItem(items, g);
             }
             else if (girl != null)
             {
@@ -214,6 +229,14 @@ namespace LifeSimProto
                 items.Add(new MenuItem { label = Story.Pending.Contains(g.letter) ? g.displayName + "に話しかける ★" : g.displayName + "に話しかける", enabled = true, act = () => { f.OrderTalk(g); world.Log("篤への指示：「" + g.displayName + "と話す」"); CloseMenu(); } });
                 if (!c.IsTarget) items.Add(new MenuItem { label = "プレゼントする ▶", enabled = true, act = () => menuGift = true });
                 items.Add(new MenuItem { label = g.displayName + "をエッチに誘う ▶", enabled = !g.IsSick, act = OpenInvite });
+                AddDungeonPickItem(items, g);
+            }
+            if (c.IsTarget && girl == null && DungeonDirector.Instance != null && DungeonDirector.Instance.FRun == null)
+            {
+                var dd = DungeonDirector.Instance;
+                string why;
+                bool ok = dd.CanStartNow(out why);
+                items.Add(new MenuItem { label = "ダンジョン実習へ出発（組：篤" + (dd.fPicks.Count > 0 ? "・" + PickNames(dd) : "だけ") + "）", enabled = ok, act = () => { dd.StartF(); CloseMenu(); } });
             }
             // ヒロインを選んでいるときに別のキャラを右クリック：篤が「〇〇に会いに行って」とお願いしに行く
             var s = menuSelected;

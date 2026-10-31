@@ -200,6 +200,8 @@ namespace LifeSimProto
             RebuildFurniture();
             gameObject.AddComponent<EventDirector>();
             gameObject.AddComponent<YearEvents>();
+            gameObject.AddComponent<AcademyDirector>();   // 部活・寮杯（2026-11-01）
+            gameObject.AddComponent<DungeonDirector>();   // ダンジョン実習（2026-11-01）
             gameObject.AddComponent<ProgressDirector>();
             gameObject.AddComponent<SimHud>();
             if (loaded) Log("セーブを読み込みました（" + Loop.Count + "周目 " + Day + "日目 " + ScheduleMaker.Clock(Now) + "）");

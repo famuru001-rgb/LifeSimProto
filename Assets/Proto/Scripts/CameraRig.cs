@@ -77,12 +77,24 @@ namespace LifeSimProto
             if (follow != null)
             {
                 Vector3 want = follow.position + Vector3.up * 1.0f;
+                // ダンジョン実習の場所（東の離れ）と寮・学園のあいだは、追いかけるときに一気に移る（2026-11-01）
+                if (DungeonDirector.InArea(want) != DungeonDirector.InArea(pivot)) pivot = want;
                 pivot = Vector3.Lerp(pivot, want, 1f - Mathf.Exp(-dt * 5f));
             }
 
+            if (DungeonDirector.InArea(pivot))
+            {
+                Vector3 o = LoungeWorld.DungeonOrigin;
+                pivot.x = Mathf.Clamp(pivot.x, o.x - 12f, o.x + 12f);
+                pivot.z = Mathf.Clamp(pivot.z, o.z - 10f, o.z + LoungeWorld.DungeonStep * 4f + 10f);
+                pivot.y = Mathf.Clamp(pivot.y, 0.2f, 6f);
+            }
+            else
+            {
             pivot.x = Mathf.Clamp(pivot.x, -38f, 78f); // 東の3つの寮まで（2026-10-31）
             pivot.z = Mathf.Clamp(pivot.z, -132f, 38f); // 前庭・渡り廊下・中庭、学校の本館まで見られるように
             pivot.y = Mathf.Clamp(pivot.y, 0.2f, LoungeWorld.RoofY + 0.9f);
+            }
 
             Quaternion rot = Quaternion.Euler(pitch, yaw, 0f);
             Vector3 pos = pivot - rot * Vector3.forward * distance;

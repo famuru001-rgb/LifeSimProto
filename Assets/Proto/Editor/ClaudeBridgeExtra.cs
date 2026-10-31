@@ -71,6 +71,11 @@ namespace LifeSimProto.EditorTools
                 case "fastwatch":
                 case "hipstrace":
                 case "camfollow":
+                case "dgo":
+                case "dpick":
+                case "dstat":
+                case "cup":
+                case "club":
                 case "animdump":
                 case "hstat":
                 case "perf":
@@ -234,6 +239,58 @@ namespace LifeSimProto.EditorTools
                         ProtoBody.TraceWho = w.characters[int.Parse(a[1])];
                         ProtoBody.TraceUntil = Time.time + (a.Length > 2 ? float.Parse(a[2]) : 10f);
                         log.AppendLine("hipstrace: " + ProtoBody.TraceWho.displayName);
+                        break;
+                    }
+                    case "dgo":
+                    {
+                        // 試験用：dgo 番号 番号 …（篤の組にその子たちを入れて、ダンジョン実習へ出発。2026-11-01）
+                        var dd = DungeonDirector.Instance;
+                        dd.fPicks.Clear();
+                        for (int i = 1; i < a.Length; i++) dd.fPicks.Add(w.characters[int.Parse(a[i])]);
+                        dd.StartF();
+                        log.AppendLine("dgo: " + (dd.FRun != null ? dd.FRun.MemberNames() : "出発できなかった"));
+                        break;
+                    }
+                    case "dpick":
+                    {
+                        // 試験用：dpick 番号（篤の組の出来事で、その選択肢を選ぶ）
+                        var run = DungeonDirector.Instance.FRun;
+                        if (run != null && run.phase == DungeonRun.Phase.Choice) run.picked = int.Parse(a[1]);
+                        log.AppendLine("dpick: " + (run != null ? run.phase + " " + run.evText : "組なし"));
+                        break;
+                    }
+                    case "dstat":
+                    {
+                        // 試験用：ダンジョン実習の組のようす
+                        foreach (var r in DungeonDirector.Instance.runs)
+                        {
+                            log.AppendLine("  " + r.title + "｜" + r.MemberNames() + "｜" + r.phase + "｜" + r.floor + "階・" + r.room + "｜体力" + Mathf.RoundToInt(r.hp) + "/" + Mathf.RoundToInt(r.maxHp) + "｜" + (r.onStage ? "見える" : "見えない") + "｜" + r.evText + "｜選択：" + string.Join("/", r.choices));
+                            int from = Mathf.Max(0, r.log.Count - 6);
+                            for (int i = from; i < r.log.Count; i++) log.AppendLine("    " + r.log[i]);
+                        }
+                        log.AppendLine("dstat: " + DungeonDirector.Instance.runs.Count + "組");
+                        break;
+                    }
+                    case "cup":
+                    {
+                        // 試験用：寮杯の点
+                        log.AppendLine("cup: " + HouseCup.Standings());
+                        for (int i = 0; i < Mathf.Min(12, HouseCup.Recent.Count); i++) log.AppendLine("  " + HouseCup.Recent[i]);
+                        break;
+                    }
+                    case "club":
+                    {
+                        // 試験用：club（部ごとの人数と、今活動している人）／club tournament（部の大会をすぐ行う）
+                        if (a.Length > 1 && a[1] == "tournament") { Clubs.Tournament(w); log.AppendLine("club: tournament " + Clubs.LastTournament); break; }
+                        for (int k = 0; k < Clubs.Count; k++)
+                        {
+                            int n = 0, act = 0;
+                            var names = new List<string>();
+                            foreach (var c in w.characters) if (c.club == k) { n++; if (c.InClub) { act++; if (!c.IsMob) names.Add(c.displayName); } }
+                            log.AppendLine("  " + Clubs.Names[k] + "｜" + n + "人｜活動中 " + act + "｜" + string.Join("・", names.ToArray()));
+                        }
+                        if (a.Length > 1 && a[1] == "who") foreach (var c in w.residents) log.AppendLine("  " + c.displayName + "｜" + c.ClubDebug + "｜" + c.actionText);
+                        log.AppendLine("club: 篤は" + Clubs.NameOf(w.RomanceTarget != null ? w.RomanceTarget.club : -1));
                         break;
                     }
                     case "camfollow":

@@ -173,6 +173,7 @@ namespace LifeSimProto
             var members = new List<SimCharacter>(g.members);
             var f = world.RomanceTarget;
             string memo = null;
+            int repBefore = world.dormReputation;
             switch (e.key)
             {
                 case "entrance":
@@ -239,6 +240,8 @@ namespace LifeSimProto
                     // ほかの3つの寮の力（寮生以外の学生の実技と能力。2026-10-30。前はくじの数字）
                     int place = 1;
                     var rivalParts = new List<string>();
+                    var cupScores = new float[HouseCup.Count];
+                    cupScores[0] = ours;
                     for (int dg = 0; dg < 3; dg++)
                     {
                         float rs = 0f; int rn = 0;
@@ -252,12 +255,14 @@ namespace LifeSimProto
                         }
                         float theirs = rn > 0 ? rs / rn + Random.Range(0f, 20f) : Random.Range(45f, 75f);
                         if (theirs > ours) place++;
+                        cupScores[dg + 1] = theirs;
                         rivalParts.Add(CharProfiles.MobDormNames[dg] + " " + Mathf.RoundToInt(theirs));
                     }
-                    world.Log("魔法競技会の点：この寮 " + Mathf.RoundToInt(ours) + "・" + string.Join("・", rivalParts.ToArray()));
+                    world.Log("魔法競技会の点：" + HouseCup.OurName + " " + Mathf.RoundToInt(ours) + "・" + string.Join("・", rivalParts.ToArray()));
+                    HouseCup.AddRanked(world, cupScores, new[] { 100, 60, 35, 15 }, "魔法競技会");
                     world.dormReputation += place == 1 ? 10 : (place == 2 ? 5 : 2);
                     foreach (var c in members) { if (place == 1) c.PositiveEvent(0.8f); else if (place == 4) c.NegativeEvent(0.5f); }
-                    world.Log("★ 魔法競技会（寮対抗）：この寮は " + place + "位！" + (mvp != null ? "　活躍：" + mvp.displayName : "") + "（寮の評判 " + world.dormReputation + "）");
+                    world.Log("★ 魔法競技会（寮対抗）：" + HouseCup.OurName + "は " + place + "位！" + (mvp != null ? "　活躍：" + mvp.displayName : "") + "（寮の評判 " + world.dormReputation + "）");
                     memo = "魔法競技会で寮が" + place + "位" + (mvp != null ? "（" + mvp.displayName + "が大活躍）" : "");
                     break;
                 }
@@ -380,6 +385,10 @@ namespace LifeSimProto
                 }
             }
             if (memo != null) Album.Add(world, memo);
+            // 寮杯：行事で寮の評判が上がったら、古時計寮に点（競技会は順位で別に入る。2026-11-01）
+            int repGain = world.dormReputation - repBefore;
+            if (repGain > 0 && e.key != "contest") HouseCup.Add(world, 0, repGain * 4, e.name);
+            if (e.key == "solstice") HouseCup.Announce(world);
         }
 
         static string VenueOf(string key)

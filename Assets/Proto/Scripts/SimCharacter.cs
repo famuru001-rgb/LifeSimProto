@@ -18,7 +18,7 @@ namespace LifeSimProto
         enum Act { None, Rest, Fun, Study, Hobby, Meal, Snack, Tea, Work }
         enum Intent { Talk, Love, Private, Bake, Give, Request, Heal }
         enum Choice { None, Social, Rest, Fun, Snack, Study, Hobby, Love, Nap, Private, Hover, Cling }
-        enum AwayKind { Class, Stroll, Outing, Job }
+        enum AwayKind { Class, Stroll, Outing, Job, Club, Dungeon }
 
         // ---- 設定 ----
         public int id;
@@ -167,6 +167,7 @@ namespace LifeSimProto
         {
             get
             {
+                if (InDungeon) return false; // ダンジョン実習の間
                 if (IsMob) return MobInviteOk(); // 寮生以外の学生・先生は、篤が誘いに来たときだけ（会話なし）
                 if (!Present || state == State.Bathing || state == State.Talking || state == State.Private) return false;
                 if (state == State.Sleeping && !sickRest) return false;
@@ -613,7 +614,7 @@ namespace LifeSimProto
         {
 
             UpdateNeeds(dt);
-            if (Present) Watchdog(dt);
+            if (Present && !InDungeon) Watchdog(dt);
             // 床から立ち上がる間はその場に止め、終わったら座席の前へ出る（2026-10-30 モーション）
             if (standUpUntil > 0f)
             {
@@ -626,7 +627,7 @@ namespace LifeSimProto
                 float sdt = dt / n;
                 for (int i = 0; i < n; i++)
                 {
-                    if (state == State.Walking || state == State.Approaching) { Move(sdt); CheckStuck(sdt); }
+                    if (state == State.Walking || state == State.Approaching) { Move(sdt); if (!InDungeon) CheckStuck(sdt); }
                     if (state == State.Approaching) UpdateApproach(sdt);
                     else if (state == State.Waiting) UpdateWaiting(sdt);
                     else if (state != State.Walking) break;
@@ -1537,7 +1538,7 @@ namespace LifeSimProto
         {
             transform.position = world.exitPoint;
             SetVisible(true);
-            string what = awayKind == AwayKind.Stroll ? "散歩" : (awayKind == AwayKind.Outing ? "おでかけ" : (awayKind == AwayKind.Job ? "アルバイト" : (awayLabel == "試験を受けている" ? "試験" : "授業")));
+            string what = awayKind == AwayKind.Stroll ? "散歩" : (awayKind == AwayKind.Outing ? "おでかけ" : (awayKind == AwayKind.Job ? "アルバイト" : (awayKind == AwayKind.Club ? "部活" : (awayKind == AwayKind.Dungeon ? "ダンジョン実習" : (awayLabel == "試験を受けている" ? "試験" : "授業")))));
             if (awayLabel == "飛び出していった") what = "外";
             world.Log(displayName + "が" + what + "から帰ってきた");
             goal = Goal.Return;
@@ -1767,6 +1768,9 @@ namespace LifeSimProto
             else bedWalkStart = -1;
             if (inPlaceClass && now >= classUntil) EndPlaceClass();
             if (chatting) return; // その場での会話が終わるまで待つ
+            if (InDungeon) return; // ダンジョン実習の間は、組の進み方に任せる（SimCharacter.Dungeon.cs）
+            CheckClubInterrupted();
+            if (TryStartClubTrip(now)) return; // 部活へ（2026-11-01）
 
             switch (state)
             {
@@ -1782,7 +1786,7 @@ namespace LifeSimProto
                     if (now >= sleepUntil) WakeUp();
                     return;
                 case State.Away:
-                    if (now >= awayUntil) ReturnHome();
+                    if (now >= awayUntil && !ClubAfterAway(now) && !DungeonAfterAway(now)) ReturnHome();
                     return;
                 case State.Private:
                     if (now >= privateUntil || (hs == null && privateUntil > 1e17)) EndPrivate();
@@ -1808,6 +1812,7 @@ namespace LifeSimProto
                     actionText = "ぼんやりしている";
                     break;
                 case State.Activity:
+                    if (clubPhase == ClubPhase.Active) { if (now >= clubUntil) EndClub(true); return; } // 部活中
                     if (inPlaceClass && now < classUntil && act == Act.Study) return; // 授業中は最後まで受ける
                     if (mealPending)
                     {
@@ -2497,7 +2502,7 @@ namespace LifeSimProto
         bool CanTakeOrder()
         {
             if (!Present || state == State.Bathing || state == State.Private || sickRest) return false;
-            if (state == State.Sleeping) return false;
+            if (state == State.Sleeping || InDungeon) return false;
             return true;
         }
 
@@ -4141,6 +4146,7 @@ namespace LifeSimProto
         {
             get
             {
+                if (sceneLabel != null && (state == State.Activity || state == State.Idle)) return sceneLabel; // 部活・ダンジョン
                 if (state == State.Activity && poi != null) return poi.label;
                 if (state == State.Eating) return act == Act.Tea ? "#お茶" : "#食べる";
                 if (state == State.Sitting)
@@ -4283,7 +4289,7 @@ namespace LifeSimProto
         void LateUpdate()
         {
             if (Time.deltaTime <= 0f || CurrentPose() != Pose.Stand || !Present) return;
-            if (Time.time < ghostUntil) return;
+            if (Time.time < ghostUntil || InDungeon) return;
             if (!LoungeWorld.OnFloorLevel(transform.position)) return;
             var nav = world.NavAt(transform.position);
             bool meMoving = IsMoving;

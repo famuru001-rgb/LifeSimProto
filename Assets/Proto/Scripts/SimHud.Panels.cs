@@ -774,7 +774,8 @@ namespace LifeSimProto
                 case "memory":
                     memoryOpen = true; memoryTab = Mathf.Clamp(tab, 0, MemoryTabs.Length - 1); memoryScroll = Vector2.zero; hLoopView = Loop.Count;
                     break;
-                case "invite": DebugInvite(letter, tab); break; // letter にキャラの番号、tab に 1 場所・2 内容
+                case "invite": DebugInvite(letter, tab); break;
+                case "academy": examOpen = true; academyTab = Mathf.Clamp(tab, 0, AcademyTabs.Length - 1); break; // 成績・寮杯・部活・ダンジョン // letter にキャラの番号、tab に 1 場所・2 内容
                 case "save": saveOpen = true; loadConfirm = -1; break;
                 case "openh": openH = HLog.Entries.Count > 0 ? HLog.Entries[HLog.Entries.Count - 1] : null; break; // いちばん新しい記録を開く
                 case "shop": shopOpen = true; shopShelf = (ItemShelf)Mathf.Clamp(tab, 0, ShelfNames.Length - 1); break;

@@ -298,10 +298,16 @@ namespace LifeSimProto
             float our = 0f;
             foreach (var kv in ours) our += kv.Value;
             our /= ours.Count;
-            var list = new List<KeyValuePair<string, float>> { new KeyValuePair<string, float>("この寮", our) };
+            var list = new List<KeyValuePair<string, float>> { new KeyValuePair<string, float>(HouseCup.OurName, our) };
             for (int g = 0; g < 3; g++) if (counts[g] > 0) list.Add(new KeyValuePair<string, float>(CharProfiles.MobDormNames[g], sums[g] / counts[g]));
             list.Sort((a, b) => b.Value.CompareTo(a.Value));
-            int place = list.FindIndex(x => x.Key == "この寮") + 1;
+            int place = list.FindIndex(x => x.Key == HouseCup.OurName) + 1;
+            // 寮杯：試験の寮ごとの平均点の順位（年度末の試験は大きく。2026-11-01）
+            var cup = new float[HouseCup.Count];
+            cup[0] = our;
+            for (int g = 0; g < 3; g++) cup[g + 1] = counts[g] > 0 ? sums[g] / counts[g] : 0f;
+            bool yearEndCup = Calendar.Season(world.Day) == 3;
+            HouseCup.AddRanked(world, cup, yearEndCup ? new[] { 80, 50, 30, 15 } : new[] { 40, 25, 15, 5 }, yearEndCup ? "年度末の試験" : "試験の平均点");
             var parts = new List<string>();
             for (int i = 0; i < list.Count; i++) parts.Add((i + 1) + "位 " + list[i].Key + "（" + Mathf.RoundToInt(list[i].Value) + "点）");
             int rep = place == 1 ? 3 : (place == 2 ? 1 : 0);

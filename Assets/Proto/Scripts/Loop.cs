@@ -69,6 +69,7 @@ namespace LifeSimProto
             NightTogether.Clear();
             Story.OnRewind();         // 物語の気配・その周の行事の結果は消える（進みと針は残る）
             RoomDecor.Placed.Clear(); // 家具は持ち物と同じく戻る
+            HouseCup.Reset();          // 寮杯の点は0から（優勝した回数は残る）
             PickRewind();
             ReloadScene();
         }

@@ -97,6 +97,7 @@ namespace LifeSimProto
         bool OverHud(Vector2 v)
         {
             if (OverSlideTags(v)) return true;
+            if (DungeonChoiceShown && DungeonChoiceRect.Contains(v)) return true;
             if (TopBar.Contains(v) || TablePanel.Contains(v) || LogPanel.Contains(v) || RomancePanel.Contains(v)) return true;
             if (GearRect.Contains(v) || FloorButtonsRect.Contains(v) || (helpOpen && HelpPopup.Contains(v))) return true;
             if (selected != null && DetailPanel.Contains(v)) return true;
@@ -322,6 +323,7 @@ namespace LifeSimProto
             if (memoryOpen) DrawMemory();
             if (Loop.AskChoice) DrawChoice();
             if (saveOpen) DrawSave();
+            DrawDungeonChoice(); // ダンジョン実習で、篤の組がどうするか（SimHud.Academy.cs）
             DrawMenu(); // 右クリックの選択肢
             if (Story.IsActive) DrawStory();
         }
@@ -821,8 +823,9 @@ namespace LifeSimProto
             Rect r = ExamPanel;
             GUI.Box(r, GUIContent.none, panel);
             string when = Academics.lastExamDay > 0 ? "（" + Academics.lastExamDay + "日目の試験）" : "（まだ試験がありません。土の日の午前に試験・18:00 に結果発表）";
-            GUI.Label(new Rect(r.x + 14, r.y + 8, r.width - 120, 30), "成績表" + when, title);
+            GUI.Label(new Rect(r.x + 14, r.y + 8, r.width - 530, 30), academyTab == 0 ? "成績表" + when : "学園：" + AcademyTabs[academyTab], academyTab == 0 ? tiny : title);
             if (GUI.Button(new Rect(r.xMax - 92, r.y + 8, 80, 30), "閉じる", smallButton)) examOpen = false;
+            if (DrawAcademyTabs(r)) return; // 寮杯・部活・ダンジョン（SimHud.Academy.cs）
             float y = r.y + 46;
             // 31人になったので、上位10人と篤の順位だけ出す（2026-10-30）
             const int Top = 10;

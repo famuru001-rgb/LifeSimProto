@@ -32,6 +32,12 @@ namespace LifeSimProto
         public List<string> hands = new List<string>(), storyFlags = new List<string>(), storyPending = new List<string>();
         public List<StrStr> achievements = new List<StrStr>();
         public List<StrInt> furniture = new List<StrInt>();
+        // 寮杯・部活・ダンジョン実習（2026-11-01）
+        public int[] cupPoints;
+        public List<string> cupRecent = new List<string>();
+        public int cupWins;
+        public bool cupAnnounced;
+        public int fClub = -1, dungeonBest;
     }
 
     [System.Serializable] public class IntPair { public int key, value; }
@@ -136,6 +142,12 @@ namespace LifeSimProto
             d.storyPending.AddRange(Story.Pending);
             foreach (var kv in Achievements.Got) d.achievements.Add(new StrStr { key = kv.Key, value = kv.Value });
             foreach (var p in RoomDecor.Placed) d.furniture.Add(new StrInt { key = p.Key, value = (int)p.Value });
+            d.cupPoints = (int[])HouseCup.Points.Clone();
+            d.cupRecent.AddRange(HouseCup.Recent);
+            d.cupWins = HouseCup.Wins;
+            d.cupAnnounced = HouseCup.Announced;
+            d.fClub = Clubs.FChoice;
+            d.dungeonBest = DungeonDirector.BestFloor;
             return d;
         }
 
@@ -162,6 +174,13 @@ namespace LifeSimProto
             Story.ActiveLetter = null; Story.ActiveEp = -1; Story.ActiveFinal = false;
             Achievements.Got.Clear(); if (d.achievements != null) foreach (var kv in d.achievements) Achievements.Got[kv.key] = kv.value;
             RoomDecor.Placed.Clear(); if (d.furniture != null) foreach (var kv in d.furniture) RoomDecor.Placed.Add(new KeyValuePair<string, ItemKind>(kv.key, (ItemKind)kv.value));
+            HouseCup.Reset();
+            if (d.cupPoints != null) for (int i = 0; i < HouseCup.Count && i < d.cupPoints.Length; i++) HouseCup.Points[i] = d.cupPoints[i];
+            if (d.cupRecent != null) HouseCup.Recent.AddRange(d.cupRecent);
+            HouseCup.Wins = d.cupWins;
+            HouseCup.Announced = d.cupAnnounced;
+            Clubs.FChoice = d.fClub;
+            DungeonDirector.BestFloor = d.dungeonBest;
             Loop.RefreshRewind();
             Pending = d;
             Loop.ReloadScene();

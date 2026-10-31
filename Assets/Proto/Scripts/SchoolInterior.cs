@@ -436,7 +436,15 @@ namespace LifeSimProto
                     FBox("Banner", x0, sy0, f, 0.05f, D / 2f, 1.4f, 0.03f, 1.6f, 2.4f, fabricRed);
                     break;
                 default:
-                    if (n.EndsWith("部の部室"))
+                    if (n.EndsWith("料理部の部室"))
+                    {
+                        // 料理部：調理台とかまど・鍋（2026-11-01）
+                        FTable(x0, sy0, f, W / 2f, D / 2f, 3.6f, 1.2f, false, "Furn_CafeteriaTable");
+                        FBox("Club_Stove", x0, sy0, f, W - 1.2f, D / 2f, 0f, 1.0f, 0.9f, 2.4f, mortarDark, true);
+                        for (int i = 0; i < 3; i++) Cyl("Club_Pot", RU(x0, sy0, W - 1.2f, D / 2f - 0.7f + i * 0.7f, FloorY(f) + 1.0f), new Vector3(0.35f, 0.12f, 0.35f), Quaternion.identity, iron);
+                        FShelf(x0, sy0, f, W, D, 2, W / 2f, W - 4f, 2.0f, paperMat, woodFloor, seed);
+                    }
+                    else if (n.EndsWith("の部室"))
                     {
                         FTable(x0, sy0, f, W / 2f, D / 2f, 3.0f, 1.2f, true, "Furn_CafeteriaTable");
                         FShelf(x0, sy0, f, W, D, 2, W / 2f, W - 4f, 2.0f, paperMat, woodFloor, seed);
