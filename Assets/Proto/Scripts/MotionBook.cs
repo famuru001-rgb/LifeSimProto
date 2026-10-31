@@ -38,7 +38,13 @@ namespace LifeSimProto
         }
 
         /// <summary>歩く動きの名前。気分（sad・tired・happy・angry）があればそちらを使う</summary>
-        public static string Walk(string style, string mood) { return "BN_walk_" + (string.IsNullOrEmpty(mood) ? style : mood); }
+        // 歩きの active は使わない（famuru 2026-10-31）→ happy に置きかえる。おじぎ・手を振るは active のまま
+        public static string Walk(string style, string mood)
+        {
+            string s = string.IsNullOrEmpty(mood) ? style : mood;
+            if (s == "active") s = "happy";
+            return "BN_walk_" + s;
+        }
         public static string Bow(string style) { return "BN_bow_" + style; }
         public static string Bye(string style) { return "BN_bye_" + style; }
 
