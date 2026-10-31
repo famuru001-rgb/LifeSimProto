@@ -68,6 +68,8 @@ namespace LifeSimProto.EditorTools
                 case "ftalk":
                 case "fmove":
                 case "jumpwatch":
+                case "fastwatch":
+                case "hipstrace":
                 case "animdump":
                 case "hstat":
                 case "perf":
@@ -206,6 +208,31 @@ namespace LifeSimProto.EditorTools
                         else if (m == "off") SimCharacter.JumpWatch = false;
                         System.IO.File.WriteAllText(System.IO.Path.Combine(Application.dataPath, "../Logs/jump_log.txt"), SimCharacter.JumpLog.ToString(), new UTF8Encoding(false));
                         log.AppendLine("jumpwatch: " + m + "（" + SimCharacter.JumpLog.Length + "文字）");
+                        break;
+                    }
+                    case "fastwatch":
+                    {
+                        // 試験用：fastwatch on／off／dump（見た目の腰が速く動いた区間を Logs\\fast_log.txt に書く。2026-10-31）
+                        string m = a.Length > 1 ? a[1] : "dump";
+                        if (m == "on") { ProtoBody.FastLog.Length = 0; ProtoBody.FastWatch = true; }
+                        else if (m == "off") ProtoBody.FastWatch = false;
+                        System.IO.File.WriteAllText(System.IO.Path.Combine(Application.dataPath, "../Logs/fast_log.txt"), ProtoBody.FastLog.ToString(), new UTF8Encoding(false));
+                        log.AppendLine("fastwatch: " + m + "（" + ProtoBody.FastLog.Length + "文字）");
+                        break;
+                    }
+                    case "hipstrace":
+                    {
+                        // 試験用：hipstrace 番号 秒／hipstrace dump（1人の体の位置と腰の位置を毎コマ Logs\\hips_trace.txt へ。2026-10-31）
+                        if (a.Length > 1 && a[1] == "dump")
+                        {
+                            System.IO.File.WriteAllText(System.IO.Path.Combine(Application.dataPath, "../Logs/hips_trace.txt"), "time\tdt\trootX\trootZ\thipLX\thipLY\thipLZ\thipX\thipZ\tclip\tclipT\tfade\tstate\tact\n" + ProtoBody.TraceLog, new UTF8Encoding(false));
+                            log.AppendLine("hipstrace: dump " + ProtoBody.TraceLog.Length);
+                            break;
+                        }
+                        ProtoBody.TraceLog.Length = 0;
+                        ProtoBody.TraceWho = w.characters[int.Parse(a[1])];
+                        ProtoBody.TraceUntil = Time.time + (a.Length > 2 ? float.Parse(a[2]) : 10f);
+                        log.AppendLine("hipstrace: " + ProtoBody.TraceWho.displayName);
                         break;
                     }
                     case "animdump":

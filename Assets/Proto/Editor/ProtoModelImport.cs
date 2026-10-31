@@ -16,7 +16,7 @@ namespace LifeSimProto.EditorTools
         const string MotionDir = "Assets/Proto/Resources/Motions";
         const string CharDir = "Assets/Proto/Resources/Chars";   // 本番キャラ（Codex 制作）
 
-        public override uint GetVersion() { return 12; }
+        public override uint GetVersion() { return 13; }
 
         static bool IsModel(string p) { p = p.Replace('\\', '/'); return p.StartsWith(ModelDir) || p.StartsWith(CharDir); }
         static bool IsMotion(string p) { return p.Replace('\\', '/').StartsWith(MotionDir); }
@@ -91,6 +91,11 @@ namespace LifeSimProto.EditorTools
                 c.keepOriginalPositionXZ = true;
                 // 二人きりの時間・自慰（Motions/H、名前が H_）：2人の位置関係を保つため、前後左右の位置も体に焼き込む。
                 // 「_Finish_」を含むものは1回だけ（2026-10-31 モーション）
+                // 歩く・おじぎ・手を振る（BN_ で始まる動き）と、名前に walk / Walk を含む動きは、元の動きの前後左右の位置を使わず体の重心に合わせる。
+                // BN_walk は元の位置が 4m ほど後ろにあり、歩いている間は見た目の体が 4m 後ろにずれ、座る・止まるときに一瞬で滑って見えた
+                // （2026-10-31 本体。famuru「椅子に座る直前に高速移動がある」）
+                if (file.StartsWith("BN_") || file.Contains("walk") || file.Contains("Walk"))
+                    c.keepOriginalPositionXZ = false;
                 if (file.StartsWith("H_"))
                 {
                     c.lockRootPositionXZ = true;

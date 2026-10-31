@@ -107,6 +107,40 @@ namespace LifeSimProto
         [System.NonSerialized] public bool testStandUp;   // 確認用：床から立ち上がる途中のつもり
         [System.NonSerialized] public string testClip;
         [System.NonSerialized] public string testLetter, testScene, testMood;   // 確認用：キャラの記号・生活の場面・歩くときの気分     // 確認用：姿勢に関係なくこの動きを流す（動きの候補の見比べ。2026-10-30 モーション）
+        // ---- 試験用：見た目の腰が歩く速さより速く動いた区間を書き留める（fastwatch 命令。2026-10-31 famuru「椅子に座る直前に高速移動」）----
+        Vector3 snapOff, snapStart;    // 見た目の体を、本当の位置からずらしている分（世界の向き）。SnapTime 秒で0へ
+        float snapT = 1f, snapDur = 1f;
+        bool snapWasPresent;
+        const float SnapTime = 0.5f;   // 追いつくまでの秒（いちばん短いとき。長い移動は 1m あたり0.7秒。いちばん速いところで歩く速さくらい）
+        public static bool FastWatch;
+        public static SimCharacter TraceWho; public static float TraceUntil; public static readonly System.Text.StringBuilder TraceLog = new System.Text.StringBuilder();
+        public static readonly System.Text.StringBuilder FastLog = new System.Text.StringBuilder();
+        Vector3 fwHips, fwRoot; bool fwHas, fwIn; float fwT, fwDist, fwRootDist; string fwStart;
+
+        string FwInfo() { return (sim != null ? sim.state + "・" + sim.actionText : "") + "・" + (curClip != null ? curClip.name : "なし") + "・切りかえ" + fade.ToString("0.00"); }
+
+        void FastWatchStep(float dt)
+        {
+            if (hips == null || sim == null) return;
+            Vector3 h = hips.position, r = transform.position;
+            if (!fwHas || !sim.Present) { fwHips = h; fwRoot = r; fwHas = sim.Present; fwIn = false; return; }
+            Vector3 dh = h - fwHips; dh.y = 0f;
+            Vector3 dr = r - fwRoot; dr.y = 0f;
+            float v = dh.magnitude / dt;
+            if (v > 2.5f)
+            {
+                if (!fwIn) { fwIn = true; fwT = 0f; fwDist = 0f; fwRootDist = 0f; fwStart = FwInfo(); }
+                fwT += dt; fwDist += dh.magnitude; fwRootDist += dr.magnitude;
+            }
+            else if (fwIn)
+            {
+                fwIn = false;
+                if (fwDist > 0.25f && FastLog.Length < 400000)
+                    FastLog.AppendLine(LifeSimProto.ScheduleMaker.Clock(LoungeWorld.Instance != null ? LoungeWorld.Instance.Now : 0) + "｜" + sim.displayName + "｜腰 " + fwDist.ToString("0.00") + "m／" + (fwT * 1000f).ToString("0") + "ms（体の位置は " + fwRootDist.ToString("0.00") + "m）｜始め：" + fwStart + "｜終わり：" + FwInfo());
+            }
+            fwHips = h; fwRoot = r;
+        }
+
         /// <summary>試験用：今の全身の動きの名前と、何秒目か（animdump 命令）。</summary>
         public string DebugClipNow() { if (!graph.IsValid() || curClip == null || !mixer.GetInput(0).IsValid()) return "なし"; double t = mixer.GetInput(0).GetTime(); return curClip.name + " " + t.ToString("0.00") + "秒（長さ " + curClip.length.ToString("0.00") + "・くり返し " + curClip.isLooping + "）"; }
         public void TestSetClipTime(float t) { if (graph.IsValid() && mixer.GetInput(0).IsValid()) mixer.GetInput(0).SetTime(t); }
@@ -507,7 +541,16 @@ namespace LifeSimProto
             Vector3 d = transform.position - lastPos;
             d.y = 0f;
             lastPos = transform.position;
-            speed = Mathf.Lerp(speed, Mathf.Min(d.magnitude / dt, 3f), Mathf.Clamp01(dt * 10f));
+            // 座る・立つ・ベッドに入るときの一瞬の位置の移動（0.3〜2.5m）は、見た目だけ少しずつ追いつかせる（2026-10-31 famuru「椅子に座る直前に高速移動」）
+            bool appeared = sim != null && sim.Present && !snapWasPresent;   // 見えなかった子が出てきた（登校・授業から戻る）
+            snapWasPresent = sim == null || sim.Present;
+            bool snapped = !appeared && d.magnitude > 0.3f && d.magnitude < 2.5f && d.magnitude / dt > 4f;
+            if (snapped) { snapStart = snapOff - d; snapT = 0f; snapDur = Mathf.Max(SnapTime, snapStart.magnitude * 0.7f); }
+            else if (appeared || d.magnitude >= 2.5f) { snapStart = Vector3.zero; snapT = snapDur; } // 遠くへの移動（見えなくなる・出てくる）はそのまま
+            snapT = Mathf.Min(snapDur, snapT + dt);
+            float sk = snapT / snapDur;
+            snapOff = snapStart * (1f - sk * sk * (3f - 2f * sk)); // なめらかに（始めと終わりはゆっくり）
+            if (!snapped) speed = Mathf.Lerp(speed, Mathf.Min(d.magnitude / dt, 3f), Mathf.Clamp01(dt * 10f));
 
             BodyPose pose = testMode ? testPose : sim.BodyPoseNow;
             string outfit = testMode ? testOutfit : sim.OutfitNow;
@@ -531,6 +574,7 @@ namespace LifeSimProto
                 model.localRotation = fix;
                 model.localPosition = Vector3.zero;
             }
+            if (snapOff != Vector3.zero) model.localPosition += Quaternion.Inverse(transform.rotation) * snapOff;
 
             // Mixamo の動きがあれば使う
             AnimationClip clip = null;
@@ -652,6 +696,13 @@ namespace LifeSimProto
             string face = testMode ? testFace : sim.FaceNow;
             UpdateFace(dt, eyesClosed, speaking, face);
             UpdateCorrectives(dt, pose);
+            if (FastWatch) FastWatchStep(dt);
+            if (TraceWho == sim && sim != null && Time.time < TraceUntil && hips != null && TraceLog.Length < 2000000)
+            {
+                Vector3 hl = transform.InverseTransformPoint(hips.position);
+                double ct = graph.IsValid() && mixer.GetInput(0).IsValid() ? mixer.GetInput(0).GetTime() : -1;
+                TraceLog.AppendLine(Time.time.ToString("0.000") + "\t" + dt.ToString("0.0000") + "\t" + transform.position.x.ToString("0.000") + "\t" + transform.position.z.ToString("0.000") + "\t" + hl.x.ToString("0.000") + "\t" + hl.y.ToString("0.000") + "\t" + hl.z.ToString("0.000") + "\t" + hips.position.x.ToString("0.000") + "\t" + hips.position.z.ToString("0.000") + "\t" + (curClip != null ? curClip.name : "-") + "\t" + ct.ToString("0.000") + "\t" + fade.ToString("0.00") + "\t" + sim.state + "\t" + sim.actionText);
+            }
             // 2026-10-30（軽量化のチャット）：揺れは画面に映っている子だけ計算する（映っていない子はそのまま止め、映ったら元の形から始める）
             if (!PerfProbe.NoSway)
             {
