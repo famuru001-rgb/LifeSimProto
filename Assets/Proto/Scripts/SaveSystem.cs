@@ -38,6 +38,10 @@ namespace LifeSimProto
         public int cupWins;
         public bool cupAnnounced;
         public int fClub = -1, dungeonBest;
+        // いちばん新しい試験の結果（2026-11-01）
+        public int examDay = -1;
+        public string examDormRanking = "";
+        public List<Academics.ExamSave> exam = new List<Academics.ExamSave>();
     }
 
     [System.Serializable] public class IntPair { public int key, value; }
@@ -148,6 +152,9 @@ namespace LifeSimProto
             d.cupAnnounced = HouseCup.Announced;
             d.fClub = Clubs.FChoice;
             d.dungeonBest = DungeonDirector.BestFloor;
+            d.examDay = Academics.lastExamDay;
+            d.examDormRanking = Academics.LastDormRanking;
+            if (d.subjectVersion == Academics.Version) Academics.SaveExam(d.exam);
             return d;
         }
 
@@ -218,6 +225,7 @@ namespace LifeSimProto
                 if (d.lover != null && i < d.lover.Length) w.romance.lover[i] = d.lover[i];
                 if (d.loveCooldown != null && i < d.loveCooldown.Length) w.romance.cooldownUntil[i] = d.loveCooldown[i];
             }
+            if (d.subjectVersion == Academics.Version) Academics.LoadExam(w, d.exam, d.examDay, d.examDormRanking); // 試験の結果（2026-11-01）
             return true;
         }
     }

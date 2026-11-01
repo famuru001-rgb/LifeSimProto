@@ -271,7 +271,7 @@ namespace LifeSimProto
             seat.occupant = this;
             goal = Goal.DiningSeat;
             actionText = "学食へ";
-            if (!GoTo(seat.approach, State.Walking) || PathLength() > 40f) { path.Clear(); seat.occupant = null; seat = null; goal = Goal.None; SetState(State.Idle); return false; } // 学食が遠いときは食べない（自分の寮で食べた）
+            if (!GoTo(seat.approach, State.Walking) || PathLength() > 40f) { path.Clear(); ReleaseSeatAndPoi(); goal = Goal.None; SetState(State.Idle); return false; } // 学食が遠いときは食べない（自分の寮で食べた）
             return true;
         }
 
@@ -325,7 +325,7 @@ namespace LifeSimProto
                     sitLabel = pick.label;
                     MobStartPlan(pick);
                     actionText = "学食へ";
-                    if (!GoTo(seat.approach, State.Walking)) { seat.occupant = null; seat = null; goal = Goal.None; mobUntil = world.Now + 5; }
+                    if (!GoTo(seat.approach, State.Walking)) { ReleaseSeatAndPoi(); goal = Goal.None; mobUntil = world.Now + 5; } // 道が見つからないと GoTo が席を手放している（2026-11-01：ここで止まる失敗を直した）
                     return;
                 }
             }

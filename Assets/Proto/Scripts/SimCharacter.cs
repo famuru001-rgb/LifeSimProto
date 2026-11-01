@@ -522,7 +522,8 @@ namespace LifeSimProto
             seat.occupant = this;
             goal = Goal.Nap;
             actionText = "熱で部屋に戻る";
-            if (!GoTo(seat.approach, State.Walking)) { SnapToSeat(); SetState(State.Sleeping); }
+            var bed = seat;
+            if (!GoTo(seat.approach, State.Walking)) { seat = bed; bed.occupant = this; SnapToSeat(); SetState(State.Sleeping); } // 道が見つからないと GoTo が席を手放すので、取り直してその場で寝る（2026-11-01）
         }
 
         // ================= 初期化 =================
@@ -584,8 +585,18 @@ namespace LifeSimProto
         bool jumpWasPresent;
         string warpNote; // そのコマで位置をずらした理由（試験用の記録に出す）
 
+        // 再生中にプログラムが読み直されると、寮の情報（恋愛など）が消えて毎コマ失敗が出る。そのときは動かさず、1回だけ知らせる（2026-11-01）
+        static bool reloadWarned;
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetReloadWarned() { reloadWarned = false; }
+
         void UpdateCore()
         {
+            if (world == null || world.romance == null)
+            {
+                if (!reloadWarned) { reloadWarned = true; Debug.LogWarning("再生中にプログラムが読み直されたため、寮の情報が消えました。寮生は止めています。再生し直してください"); }
+                return;
+            }
             float dt = Time.deltaTime;
             if (dt <= 0f) return;
             stateTime += dt;

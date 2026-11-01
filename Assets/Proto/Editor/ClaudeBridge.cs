@@ -8,7 +8,7 @@ namespace LifeSimProto.EditorTools
     /// <summary>
     /// Claude が外から Unity を操作するための合図（ファイル）を見る。
     /// LifeSimProto\Logs\claude_cmd.txt に1行ずつ命令を書くと、順に実行して claude_result.txt に結果を書く。
-    /// 命令：refresh（読み込み直し）／play（再生）／stop（停止）／photos（再生中なら確認用の写真）／reimport（仮モデルと動きを読み込み直す）／checkchars（本番キャラの検品）／shadercheck（トゥーン表示のシェーダーのエラーを shader_check.txt に書く）／matinfo（キャラBの材質の色と画像を mat_info.txt に書く）
+    /// 命令：refresh（読み込み直し。再生中なら再生を止めてから）／play（再生）／stop（停止）／photos（再生中なら確認用の写真）／reimport（仮モデルと動きを読み込み直す）／checkchars（本番キャラの検品）／shadercheck（トゥーン表示のシェーダーのエラーを shader_check.txt に書く）／matinfo（キャラBの材質の色と画像を mat_info.txt に書く）
     /// famuru さんが Unity を操作しているときの邪魔はしない（ファイルが置かれたときだけ動く）。
     /// </summary>
     [InitializeOnLoad]
@@ -22,13 +22,46 @@ namespace LifeSimProto.EditorTools
         static ClaudeBridge()
         {
             EditorApplication.update += Tick;
+            EditorApplication.playModeStateChanged += OnPlayMode;
+            if (EditorApplication.isPlaying) LockReload();
+        }
+
+        // ---- 再生中にプログラムを読み直さない（2026-11-01）----
+        // 再生中に読み直すと、寮の情報（恋愛など）が消えて毎コマ失敗が出ていた（いくつものチャットが同時に触るため起きやすい）。
+        // 再生中は読み直しを待たせ、止めたときにまとめて読み直す。refresh を再生中に受けたら、再生を止めてから読み直す。
+        static bool reloadLocked, refreshAfterStop;
+
+        static void LockReload()
+        {
+            if (reloadLocked) return;
+            reloadLocked = true;
+            EditorApplication.LockReloadAssemblies();
+        }
+
+        static void UnlockReload()
+        {
+            if (!reloadLocked) return;
+            reloadLocked = false;
+            EditorApplication.UnlockReloadAssemblies();
+        }
+
+        static void OnPlayMode(PlayModeStateChange s)
+        {
+            if (s == PlayModeStateChange.EnteredPlayMode) LockReload();
+            else if (s == PlayModeStateChange.ExitingPlayMode) UnlockReload();
+            else if (s == PlayModeStateChange.EnteredEditMode)
+            {
+                UnlockReload();
+                if (refreshAfterStop) { refreshAfterStop = false; AssetDatabase.Refresh(); }
+            }
         }
 
         static void Tick()
         {
             if (EditorApplication.timeSinceStartup < next) return;
             next = EditorApplication.timeSinceStartup + 1.0;
-            if (EditorApplication.isCompiling || EditorApplication.isUpdating) return;
+            // 再生中に読み直しを待たせている間（reloadLocked）は、命令は受け付ける（止める・再生などができなくならないように）
+            if ((EditorApplication.isCompiling && !reloadLocked) || EditorApplication.isUpdating) return;
             string text;
             try
             {
@@ -192,8 +225,18 @@ namespace LifeSimProto.EditorTools
                 switch (cmd)
                 {
                     case "refresh":
-                        AssetDatabase.Refresh();
-                        log.AppendLine("refresh: ok");
+                        if (EditorApplication.isPlaying)
+                        {
+                            // 再生中は読み直せない：止めてから読み直す（再生し直すときは play を送る）
+                            refreshAfterStop = true;
+                            EditorApplication.ExitPlaymode();
+                            log.AppendLine("refresh: 再生中だったので、再生を止めてから読み直す");
+                        }
+                        else
+                        {
+                            AssetDatabase.Refresh();
+                            log.AppendLine("refresh: ok");
+                        }
                         break;
                     case "reimport":
                         EditorApplication.ExecuteMenuItem("LifeSim/仮モデルと動きを読み込み直す");

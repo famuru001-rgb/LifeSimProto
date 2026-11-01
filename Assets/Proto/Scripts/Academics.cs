@@ -96,10 +96,37 @@ namespace LifeSimProto
             return t;
         }
 
+        /// <summary>試験の結果を空にする（試験の始め・寮を作ったとき＝再生のはじめ・ループで春に戻る）。</summary>
         public static void ClearExam()
         {
             foreach (var l in LastExam) l.Clear();
             LastOverall.Clear();
+            lastExamDay = -1;      // 2026-11-01：前の周・前の再生の「何日目の試験」が残っていた
+            LastDormRanking = "";
+        }
+
+        // ---- セーブ用（キャラは letter で覚える）----
+        [System.Serializable] public class ExamSave { public int subject = -1; public string letter; public float score; }
+
+        public static void SaveExam(List<ExamSave> to)
+        {
+            for (int s = 0; s < LastExam.Length; s++) foreach (var e in LastExam[s]) if (e.who != null) to.Add(new ExamSave { subject = s, letter = e.who.letter, score = e.score });
+            foreach (var kv in LastOverall) if (kv.Key != null) to.Add(new ExamSave { subject = -1, letter = kv.Key.letter, score = kv.Value });
+        }
+
+        public static void LoadExam(LoungeWorld w, List<ExamSave> from, int day, string ranking)
+        {
+            ClearExam();
+            if (from == null) return;
+            foreach (var e in from)
+            {
+                var c = w.characters.Find(x => x.letter == e.letter);
+                if (c == null) continue;
+                if (e.subject < 0) LastOverall.Add(new KeyValuePair<SimCharacter, float>(c, e.score));
+                else if (e.subject < LastExam.Length) LastExam[e.subject].Add(new ExamEntry { who = c, score = e.score, mark = Mark(e.score) });
+            }
+            lastExamDay = LastOverall.Count > 0 ? day : -1;
+            LastDormRanking = LastOverall.Count > 0 && ranking != null ? ranking : "";
         }
     }
 }
