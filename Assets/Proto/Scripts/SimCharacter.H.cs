@@ -16,6 +16,7 @@ namespace LifeSimProto
         public static float SickMaxMin = 120f;            // 風邪・発熱のとき（2人だけ）の最長
         public static float SickStartMin = 5f, SickMid1Min = 25f, SickAfterMin = 15f;
         public static float NoOneEngagedEndMin = 60f;     // 全員が休憩のまま、この分だけ戻らなければ終わる
+        public static float LowVigorEndLine = 10f;        // 篤の精力がこれ以下で、女性が全員「参加」か「休憩」なら、すぐ終わる（2026-11-01 famuru）
 
         // 寮の子
         public static float FinishDesireDrop = 30f;       // フィニッシュで下がる性欲
@@ -192,7 +193,7 @@ namespace LifeSimProto
         }
 
         /// <summary>
-        /// 1回のエッチの場面。篤が続ける限り（精力が0になるまで・最長12時間）続く。
+        /// 1回のエッチの場面。篤が続ける限り（精力が0になるまで・最長12時間。精力10以下で女性が全員「参加」か「休憩」ならすぐ終わる）続く。
         /// 直接の相手1人＋ペッティング3人まで。ほかは順番を待つ。終わりの条件になった子は休憩（その場に残る）。途中参加もある。
         /// </summary>
         class HSession
@@ -525,7 +526,7 @@ namespace LifeSimProto
                 if (Engaged == 0)
                 {
                     if (noneSince < 0) noneSince = now;
-                    if (now - noneSince >= HBook.NoOneEngagedEndMin || ps.Count == 0) { GoAfter(); return; }
+                    if (now - noneSince >= HBook.NoOneEngagedEndMin || ps.Count == 0 || f.vigor <= HBook.LowVigorEndLine) { GoAfter(); return; }
                     Chatter(dt);
                     return;
                 }
@@ -603,6 +604,7 @@ namespace LifeSimProto
                 }
                 if (sick || f.vigor <= 0f) { GoAfter(); return; }
                 FillEngaged();
+                if (Engaged == 0 && f.vigor <= HBook.LowVigorEndLine) { GoAfter(); return; } // 精力が残り少なく、だれも相手をしていない
                 if (Engaged == 0) { phase = "resume"; phaseUntil = world.Now + HBook.ResumeMin; return; }
                 SetPhase("resume");
                 var d = Direct;

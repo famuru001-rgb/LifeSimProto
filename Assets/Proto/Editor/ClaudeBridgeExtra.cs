@@ -71,6 +71,7 @@ namespace LifeSimProto.EditorTools
                 case "fastwatch":
                 case "hipstrace":
                 case "camfollow":
+                case "hvigor":
                 case "dgo":
                 case "dpick":
                 case "dstat":
@@ -239,6 +240,14 @@ namespace LifeSimProto.EditorTools
                         ProtoBody.TraceWho = w.characters[int.Parse(a[1])];
                         ProtoBody.TraceUntil = Time.time + (a.Length > 2 ? float.Parse(a[2]) : 10f);
                         log.AppendLine("hipstrace: " + ProtoBody.TraceWho.displayName);
+                        break;
+                    }
+                    case "hvigor":
+                    {
+                        // 試験用：hvigor 値（篤の精力を変える。2026-11-01）
+                        var f = w.RomanceTarget;
+                        f.vigor = float.Parse(a[1], System.Globalization.CultureInfo.InvariantCulture);
+                        log.AppendLine("hvigor: " + f.vigor);
                         break;
                     }
                     case "dgo":
