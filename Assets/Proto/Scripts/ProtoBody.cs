@@ -963,7 +963,7 @@ namespace LifeSimProto
 
         void UpdateCorrectives(float dt, BodyPose pose)
         {
-            if (skirtSitKeys.Count == 0) return;
+            if (skirtSitKeys.Count == 0) { skirtSitNow = 0f; return; }
             float target = pose == BodyPose.Sit ? 100f : 0f;
             skirtSitNow = Mathf.MoveTowards(skirtSitNow, target, 400f * Mathf.Min(dt, 0.1f));
             if (testMode && testSkirtSit >= 0f) skirtSitNow = testSkirtSit;
@@ -1106,6 +1106,9 @@ namespace LifeSimProto
             public Vector3 tip, vel, goalPrev, rootPrev;
             public int depth;
             public bool collide;                      // 髪・ネクタイ：胴・胸・腕に入らないようにする
+            public float[] legInside;                 // スカート：元の姿勢で脚の筒に入っていた深さ（筒ごと。少なくともここまでは許す）
+            public float[] legAllow;                  // スカート：今許している深さ（ゆっくり変わる姿勢には合わせる）
+            public int legMask;                       // スカート：そのコマに届きそうな脚の筒（ビット。届かない筒は見ない）
             public int stretchAxis = -1;              // 伸び縮みする軸（骨の向きに近い軸。0=x 1=y 2=z）
             public float pitch, swing, k = 1f;        // 確認用：上下の角度・元の向きからの角度・伸び
         }
@@ -1184,18 +1187,198 @@ namespace LifeSimProto
             springs.Sort((a, b) => a.depth.CompareTo(b.depth));
             lastSpringRoot = transform.position;
             SetupHitShapes();
+            SetupLegShapes();
         }
 
         // ================= 髪の当たり判定（2026-10-26 famuru 決定：体・腕の簡単な当たり判定。セレネ・リア共通） =================
         // 胴・胸・腕のまわりに見えない筒（両端が丸い）を置き、髪・ネクタイの揺れの骨の先がその中に入ったら外へ押し出す。
         // 元の姿勢ですでに入っている深さまでは許す（髪が体から浮かないように）。太さは肩幅（左右の腕の付け根の間）から決める。
-        class HitShape { public Transform a, b; public float r; }
+        class HitShape { public Transform a, b; public float r, rb; }   // rb：b の側の太さ（脚の筒は先ほど細い）
         readonly List<HitShape> hitShapes = new List<HitShape>();
 
         void AddHit(Transform a, Transform b, float r)
         {
             if (a == null) return;
-            hitShapes.Add(new HitShape { a = a, b = b ?? a, r = r });
+            hitShapes.Add(new HitShape { a = a, b = b ?? a, r = r, rb = r });
+        }
+
+        // ================= スカートと脚の当たり判定（2026-11-01 famuru 決定。依頼：連携\依頼\ゲーム_スカートの揺れに脚の当たり判定.md） =================
+        // 太もも（UpLeg→Leg）・すね（Leg→Foot）に見えない筒（両端が丸く、先ほど細い）を置き、スカートの揺れの骨（Spring_Skirt…）の先が
+        // その中に入ったら外へ押し出す。スカートは脚の筒にだけ当てる（根元が腰の中にあるので胴には当てない）。
+        // 元の姿勢（読み込んだときの形）で筒に入っていた深さまでは許す（スカートが脚から浮かないように）。
+        // 押し出す向きは、ひとつ前の骨の先がいた側（脚がスカートを突き抜けて反対側へ押し出さないように）。
+        // 座っているとき（座りの補正 Corrective_Skirt_Sit が効いている分）は弱める（太ももが横になり、スカートが跳ね上がるため）。
+        public static bool SkirtLegHit = true;                       // 全員：脚の当たり判定を使うか（確認用に切りかえられる）
+        [System.NonSerialized] public bool testNoLegHit;           // 確認用：この子だけ脚の当たり判定を使わない（足す前と比べる）
+        public static float ThighR0 = 0.46f, ThighR1 = 0.30f, ShinR0 = 0.30f, ShinR1 = 0.19f;   // 太さ（左右の脚の付け根の間の長さに対する割合。付け根の側・先の側）
+        readonly List<HitShape> legShapes = new List<HitShape>();
+        float legK;   // 今の効き（0〜1）
+        Vector3[] legPA = new Vector3[0], legPB = new Vector3[0];   // そのコマの脚の筒の両端（軽くするため1コマに1回だけ取る）
+        Vector3 legHipsNow, legUpNow;
+
+        void CacheLegPoints()
+        {
+            if (legPA.Length != legShapes.Count) { legPA = new Vector3[legShapes.Count]; legPB = new Vector3[legShapes.Count]; }
+            for (int i = 0; i < legShapes.Count; i++)
+            {
+                var h = legShapes[i];
+                legPA[i] = h.a != null ? h.a.position : Vector3.zero;
+                legPB[i] = h.b != null ? h.b.position : legPA[i];
+            }
+            legHipsNow = hips.position;
+            legUpNow = transform.up;
+        }
+
+        void SetupLegShapes()
+        {
+            legShapes.Clear();
+            bool anySkirt = false;
+            foreach (var s in springs) if (s.kind == 1) { anySkirt = true; break; }
+            if (!anySkirt) return;
+            Transform lu = B("LeftUpLeg"), ru = B("RightUpLeg");
+            if (lu == null || ru == null) return;
+            float w = (lu.position - ru.position).magnitude;
+            if (w < 1e-4f) return;
+            foreach (var side in new[] { "Left", "Right" })
+            {
+                Transform up = B(side + "UpLeg"), kn = B(side + "Leg"), ft = B(side + "Foot");
+                if (up == null || kn == null) continue;
+                legShapes.Add(new HitShape { a = up, b = kn, r = w * ThighR0, rb = w * ThighR1 });
+                if (ft != null) legShapes.Add(new HitShape { a = kn, b = ft, r = w * ShinR0, rb = w * ShinR1 });
+            }
+            foreach (var s in springs)
+            {
+                if (s.kind != 1) continue;
+                s.legInside = new float[legShapes.Count];
+                Vector3 root0 = s.bone.position, tip = s.child.position;
+                for (int i = 0; i < legShapes.Count; i++)
+                {
+                    var h = legShapes[i];
+                    float inside = 0f;
+                    foreach (float f in LegSamples)
+                    {
+                        Vector3 q; float t;
+                        float d = SegDistT(root0 + (tip - root0) * f, h.a.position, h.b.position, out q, out t);
+                        inside = Mathf.Max(inside, Mathf.Lerp(h.r, h.rb, t) - d);
+                    }
+                    s.legInside[i] = inside;
+                }
+            }
+        }
+
+        static float SegDistT(Vector3 p, Vector3 a, Vector3 b, out Vector3 q, out float t)
+        {
+            Vector3 ab = b - a;
+            t = ab.sqrMagnitude > 1e-10f ? Mathf.Clamp01(Vector3.Dot(p - a, ab) / ab.sqrMagnitude) : 0f;
+            q = a + ab * t;
+            return (p - q).magnitude;
+        }
+
+        // 骨の途中も見る（スカートの骨が1本で腰から裾まであるキャラは、太ももが骨の途中を突き抜けるため）。根元からこの割合の点で当たりを見る
+        static readonly float[] LegSamples = { 1f, 0.75f, 0.5f };
+
+        // 許す深さ：ゆっくり変わる姿勢（立ち方・座り方の違い）には合わせ、速い脚の動き（歩く・跳ねる）だけ押し返す。
+        // 今の目標の向き（揺れていないときの骨）で脚に入っている深さへ、深くなるときは LegAdaptSec 秒かけて、浅くなるときはすぐ合わせる。
+        public static float LegAdaptSec = 2.0f;
+        void UpdateLegAllow(SpringBone s, Vector3 root, Vector3 goal, float dt, bool reset)
+        {
+            if (s.legAllow == null || s.legAllow.Length != legShapes.Count) { s.legAllow = (float[])s.legInside.Clone(); reset = true; }
+            float k = reset ? 1f : 1f - Mathf.Exp(-dt / Mathf.Max(0.05f, LegAdaptSec));
+            s.legMask = 0;
+            for (int i = 0; i < legShapes.Count; i++)
+            {
+                var h = legShapes[i];
+                Vector3 q0; float t0;
+                if (SegDistT(root, legPA[i], legPB[i], out q0, out t0) > s.length * 1.3f + Mathf.Max(h.r, h.rb)) continue;   // 骨が揺れても届かない
+                s.legMask |= 1 << i;
+                float inside = s.legInside[i];
+                foreach (float f in LegSamples)
+                {
+                    Vector3 q; float t;
+                    float d = SegDistT(root + (goal - root) * f, legPA[i], legPB[i], out q, out t);
+                    inside = Mathf.Max(inside, Mathf.Lerp(h.r, h.rb, t) - d);
+                }
+                s.legAllow[i] = inside <= s.legAllow[i] ? inside : s.legAllow[i] + (inside - s.legAllow[i]) * k;
+            }
+        }
+
+        // 点 p を、out の向き（体の外側）へだけ動かして、脚の筒の外に出す。動かしたら true
+        static bool PushAlong(ref Vector3 p, Vector3 outDir, HitShape h, Vector3 a, Vector3 b, float allow)
+        {
+            Vector3 q; float t;
+            float d = SegDistT(p, a, b, out q, out t);
+            float R = Mathf.Lerp(h.r, h.rb, t) - allow;
+            if (R <= 0f || d >= R) return false;
+            Vector3 w = p - q, u = outDir;
+            if (t > 0f && t < 1f)
+            {
+                Vector3 axis = b - a;
+                w = Vector3.ProjectOnPlane(w, axis);
+                u = Vector3.ProjectOnPlane(u, axis);
+            }
+            float uu = u.sqrMagnitude;
+            if (uu < 1e-6f) return false;
+            float wu = Vector3.Dot(w, u), disc = wu * wu - uu * (w.sqrMagnitude - R * R);
+            if (disc < 0f) return false;
+            float k = (-wu + Mathf.Sqrt(disc)) / uu;
+            if (k <= 0f) return false;
+            p += outDir * k;
+            return true;
+        }
+
+        // 骨の向き dir を、脚の筒から押し出した向きにして返す。押し出す向きは体の外側だけ（脚の間や体の内へは押さない）
+        Vector3 PushOutLegs(SpringBone s, Vector3 dir, Vector3 root, float len)
+        {
+            Vector3 outDir = Vector3.ProjectOnPlane(root - legHipsNow, legUpNow);
+            if (outDir.sqrMagnitude < 1e-6f) return dir;
+            outDir.Normalize();
+            if (s.legMask == 0) return dir;
+            for (int it = 0; it < 2; it++)
+            {
+                bool any = false;
+                foreach (float f in LegSamples)
+                {
+                    Vector3 p = root + dir * (len * f);
+                    bool moved = false;
+                    for (int i = 0; i < legShapes.Count; i++)
+                    {
+                        if ((s.legMask & (1 << i)) == 0) continue;
+                        if (PushAlong(ref p, outDir, legShapes[i], legPA[i], legPB[i], s.legAllow != null ? s.legAllow[i] : s.legInside[i])) moved = true;
+                    }
+                    if (moved) { any = true; Vector3 v = p - root; if (v.sqrMagnitude > 1e-10f) dir = v.normalized; }
+                }
+                if (!any) break;   // 1回目で当たらなければ終わり
+            }
+            return dir;
+        }
+
+        // 確認用：スカートの骨（根元〜先の3点）が、脚の筒に許した深さより入っている量（最大・合計 cm）と、スカートの骨の元の向きからの平均の角度（度）
+        public string SkirtLegDebug
+        {
+            get
+            {
+                float mx = 0f, sum = 0f, sw = 0f; int ns = 0;
+                foreach (var s in springs)
+                {
+                    if (s.kind != 1) continue;
+                    sw += s.swing; ns++;
+                    if (s.legInside == null) continue;
+                    float worst = 0f;
+                    Vector3 root = s.bone.position;
+                    foreach (float f in LegSamples)
+                    {
+                        Vector3 p = root + (s.tip - root) * f;
+                        for (int i = 0; i < legShapes.Count; i++)
+                        {
+                            var h = legShapes[i]; Vector3 q; float t;
+                            float d = SegDistT(p, h.a.position, h.b.position, out q, out t);
+                            worst = Mathf.Max(worst, Mathf.Lerp(h.r, h.rb, t) - (s.legAllow != null ? s.legAllow[i] : s.legInside[i]) - d);
+                        }
+                    }
+                    mx = Mathf.Max(mx, worst); sum += worst;
+                }
+                return (mx * 100f).ToString("0.0") + "," + (sum * 100f).ToString("0.0") + "," + (ns > 0 ? (sw / ns).ToString("0.0") : "") + "," + ns + "," + legShapes.Count + "," + skirtSitKeys.Count;
+            }
         }
 
         void SetupHitShapes()
@@ -1262,6 +1445,12 @@ namespace LifeSimProto
                     float inward = -Vector3.Dot(dir - restDir, radial);
                     if (inward > lim) dir = (dir + radial * (inward - lim)).normalized;
                 }
+                // 脚の筒から押し出す（2026-11-01）
+                if (legK > 0.001f && s.legInside != null && legShapes.Count > 0)
+                {
+                    Vector3 pushed = PushOutLegs(s, dir, root, s.length);
+                    dir = Vector3.Slerp(dir, pushed, legK).normalized;
+                }
             }
             else if (s.kind == 2) // 胸：左右へは maxSide 度まで
             {
@@ -1319,6 +1508,7 @@ namespace LifeSimProto
         SkinnedMeshRenderer[] visRends;
         bool AnyVisible()
         {
+            if (testMode && !perfClone) return true;   // 確認用の写真（別のカメラで撮る間だけ映る）はいつも揺らす（2026-11-01：撮る合間に止まって形が戻っていた）
             if (visRends == null) visRends = model.GetComponentsInChildren<SkinnedMeshRenderer>(true);
             foreach (var r in visRends) if (r != null && r.enabled && r.isVisible) return true;
             return false;
@@ -1340,6 +1530,8 @@ namespace LifeSimProto
         void UpdateSprings(float dt, bool forceReset = false)
         {
             if (springs.Count == 0) return;
+            legK = SkirtLegHit && !testNoLegHit ? 1f - Mathf.Clamp01(skirtSitNow / 100f) : 0f;   // 座りの補正が効いている分だけ脚の当たりを弱める
+            if (legShapes.Count > 0) CacheLegPoints();
             bool reset = forceReset || dt > 0.1f || (transform.position - lastSpringRoot).sqrMagnitude > 0.25f;
             lastSpringRoot = transform.position;
             int n = Mathf.Clamp(Mathf.CeilToInt(dt * 120f), 1, 12);  // 1/120秒ごとに分けて計算
@@ -1351,6 +1543,7 @@ namespace LifeSimProto
                 Vector3 root = s.bone.position;
                 Vector3 restDir = s.bone.TransformDirection(s.restDirLocal);
                 Vector3 goal = root + restDir * s.length;
+                if (s.kind == 1 && s.legInside != null && legShapes.Count > 0) UpdateLegAllow(s, root, goal, dt, reset);
                 if (reset)
                 {
                     s.tip = goal; s.vel = Vector3.zero;

@@ -87,6 +87,9 @@ namespace LifeSimProto.EditorTools
                 case "usagevideo":
                 case "hpreview":
                 case "hpreviewshot":
+                case "skirtlegshots":
+                case "skirtleg":
+                case "skirtlegbench":
                     break;
                 default:
                     return false;
@@ -420,6 +423,36 @@ namespace LifeSimProto.EditorTools
                     {
                         new GameObject("MotionVideo").AddComponent<LifeSimProto.MotionVideo>();
                         log.AppendLine("motionvideo: started");
+                        break;
+                    }
+                    case "skirtlegshots":
+                    {
+                        // スカートと脚の当たり判定の見比べ（2026-11-01 本体）：skirtlegshots [記号,記号…] [Tag] → 仮モデル\Unity確認\スカート脚_（Tag）\
+                        LifeSimProto.SkirtLegShots.Letters = a.Length > 1 ? a[1] : "R,I";
+                        LifeSimProto.SkirtLegShots.Tag = a.Length > 2 ? a[2] : "now";
+                        new GameObject("SkirtLegShots").AddComponent<LifeSimProto.SkirtLegShots>();
+                        log.AppendLine("skirtlegshots: started " + LifeSimProto.SkirtLegShots.Letters + " " + LifeSimProto.SkirtLegShots.Tag);
+                        break;
+                    }
+                    case "skirtlegbench":
+                    {
+                        // 重さを測る見本（12人・Sec 秒で消える）：skirtlegbench [秒]
+                        LifeSimProto.SkirtLegBench.Sec = a.Length > 1 ? float.Parse(a[1], System.Globalization.CultureInfo.InvariantCulture) : 60f;
+                        new GameObject("SkirtLegBench").AddComponent<LifeSimProto.SkirtLegBench>();
+                        log.AppendLine("skirtlegbench: started " + LifeSimProto.SkirtLegBench.Sec + "s");
+                        break;
+                    }
+                    case "skirtleg":
+                    {
+                        // skirtleg on/off：全員の脚の当たり判定を切りかえ。skirtleg r 太もも根元 太もも先 すね根元 すね先：太さ（これから作る子に効く）
+                        var ci = System.Globalization.CultureInfo.InvariantCulture;
+                        if (a.Length > 1 && (a[1] == "on" || a[1] == "off")) LifeSimProto.ProtoBody.SkirtLegHit = a[1] == "on";
+                        if (a.Length > 5 && a[1] == "r")
+                        {
+                            LifeSimProto.ProtoBody.ThighR0 = float.Parse(a[2], ci); LifeSimProto.ProtoBody.ThighR1 = float.Parse(a[3], ci);
+                            LifeSimProto.ProtoBody.ShinR0 = float.Parse(a[4], ci); LifeSimProto.ProtoBody.ShinR1 = float.Parse(a[5], ci);
+                        }
+                        log.AppendLine("skirtleg: " + (LifeSimProto.ProtoBody.SkirtLegHit ? "on" : "off") + " 太さ " + LifeSimProto.ProtoBody.ThighR0 + "/" + LifeSimProto.ProtoBody.ThighR1 + "/" + LifeSimProto.ProtoBody.ShinR0 + "/" + LifeSimProto.ProtoBody.ShinR1);
                         break;
                     }
                     case "gestureshots":
