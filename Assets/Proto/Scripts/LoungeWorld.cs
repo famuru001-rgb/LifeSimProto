@@ -117,9 +117,9 @@ namespace LifeSimProto
 
         public const float NightStartMin = 23f * 60f, NightEndMin = 6.5f * 60f;
         // 1階分の高さは 4.5m（famuru 2026-10-25「1つの階を1.5倍くらい高く」。前は 3m）。DormBuilder の FloorH と合わせる
-        public const float Floor2Y = 4.5f; // 2階の床の高さ
-        public const float Floor3Y = 9f;   // 3階の床の高さ
-        public const float RoofY = 13.5f;  // 屋上
+        public static float Floor2Y = 4.5f; // 2026-11-01：新しい寮では 3.5（NewDorm.cs の ApplyLayout） // 2階の床の高さ
+        public static float Floor3Y = 9f;   // 3階の床の高さ
+        public static float RoofY = 13.5f;  // 屋上
 
         // ---- 状態 ----
         public readonly GridNav[] navs = new GridNav[4]; // 1階・2階・3階・屋上の歩ける所

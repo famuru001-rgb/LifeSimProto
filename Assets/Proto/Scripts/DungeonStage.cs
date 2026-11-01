@@ -9,7 +9,7 @@ namespace LifeSimProto
     /// </summary>
     public partial class LoungeWorld
     {
-        public static readonly Vector3 DungeonOrigin = new Vector3(130f, 0f, -22f);
+        public static Vector3 DungeonOrigin { get { return NewLayout ? new Vector3(400f, 0f, -22f) : new Vector3(130f, 0f, -22f); } } // 2026-11-01 家具のチャット：新しい学園（NewDorm.cs）では東が正門の外の街になるので、遠くの離れに
         public const float DungeonStep = 11f;     // 部屋の間隔（部屋8m＋通路3m）
         const float DRoomHalf = 4f, DCorrHalf = 1.2f, DWallH = 3.2f;
 

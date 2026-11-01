@@ -42,7 +42,7 @@ namespace LifeSimProto
         Material grassMat, glassMat, brassMat, terraMat, leafMat, leafLightMat, lavenderMat, greenLampMat, crystalMat, crystalBlueMat, slateMat, paperMat, rugGoldMat;
 
         public bool PlaceOpen(string place) { return place == Kitchen || Loop.OpenedPlaces.Contains(place); } // 台所は最初から開いている（famuru 2026-10-26）
-        public static Vector3 FocusOf(string place) { Vector3 v; return PlaceFocus.TryGetValue(place, out v) ? v : Vector3.zero; }
+        public static Vector3 FocusOf(string place) { Vector3 v; if (NewLayout && NewFocus.TryGetValue(place, out v)) return v; return PlaceFocus.TryGetValue(place, out v) ? v : Vector3.zero; } // 新しい学園は NewDorm.cs の NewFocus
 
         /// <summary>実技の授業が見える場所（開いていれば）。</summary>
         public static string ClassPlace(int subject)

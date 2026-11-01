@@ -5,8 +5,10 @@ using UnityEngine;
 namespace LifeSimProto
 {
     /// <summary>
-    /// 新しい学園（作り直しの第5案。famuru 2026-10-31 決定）の試し組み。今のゲームの寮・学校とは別の場所（x＋2000）に組むので、ゲームの流れには関わらない。
-    /// ・Logs\new_campus.txt があるときだけ組む（無ければ何もしない）
+    /// 新しい学園（作り直しの第5案。famuru 2026-10-31 決定）の外側。
+    /// ・新しい学園で遊ぶとき（Logs\new_campus_play.txt があるとき＝LoungeWorld.NewLayout）は、寮と学校の本当の場所に合わせて組む（配置図の座標→CampusPlan.G）。
+    ///   寮と学校の中（NewDorm.cs・SchoolBuilder）は組まず、島・崖・城壁・正門・街・中庭を囲む渡り廊下・地上の廊下・ほかの寮・離れ・森・道だけ
+    /// ・そうでなく Logs\new_campus.txt があるときは、今までどおり別の場所（x＋2000）に全部を試しに組む（ゲームの流れには関わらない）
     /// ・写真：Logs\campus_cmd.txt に1行1枚「shot 名前 x z 高さ 向き 見下ろし 距離」（x・z は配置図の座標。正門が 0,0、北が +z）→ Logs\campus_名前.png
     /// ・部品は Resources\Furniture の建物_v2（依頼20）。模様は共通の材質だけ（材質の名前で置きかえる）
     /// 2026-11-01 家具のチャット
@@ -19,7 +21,7 @@ namespace LifeSimProto
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Boot()
         {
-            if (!File.Exists(Path.Combine(LogsDir, "new_campus.txt"))) return;
+            if (!LoungeWorld.NewLayout && !File.Exists(Path.Combine(LogsDir, "new_campus.txt"))) return;
             new GameObject("NewCampus").AddComponent<CampusPreview>();
         }
 
@@ -27,6 +29,7 @@ namespace LifeSimProto
         readonly Dictionary<string, Material> mats = new Dictionary<string, Material>();
         Material copper, water, grass, bannerOurs, bannerKnight, bannerMage, bannerTower;
         int placed;
+        bool game; // 新しい学園で遊ぶとき（本当の場所に組む）
 
         // 配置図の形（正門が 0,0。x は東、y は北）
         static readonly Vector2[] Island =
@@ -39,11 +42,16 @@ namespace LifeSimProto
             new Vector2(-72,3), new Vector2(-8,0.6f), new Vector2(8,0.6f), new Vector2(72,3), new Vector2(94,26), new Vector2(96,86), new Vector2(80,108), new Vector2(-80,108), new Vector2(-96,86), new Vector2(-94,26)
         };
         const float WaterY = -3f;
+        public static bool GateOpen = true; // 組んだときの形。新しい学園で遊ぶときは時刻で開け閉めする（6:00〜21:00 は開ける）
+        GameObject gateL, gateR;
+        float gateK;
 
         void Start()
         {
             root = transform;
-            root.position = Origin;
+            game = LoungeWorld.NewLayout;
+            if (game) { root.position = CampusPlan.Origin; root.rotation = CampusPlan.Rotation; }
+            else root.position = Origin;
             MakeMats();
             Build();
             Debug.Log("[新しい学園] 組み終わり：部品 " + placed + " 個");
@@ -139,7 +147,7 @@ namespace LifeSimProto
                 Vector2 a = pts[i], b = pts[i + 1];
                 float len = Vector2.Distance(a, b);
                 Vector2 c = (a + b) / 2f;
-                var go = Box("Path", new Vector3(c.x, 0.03f, c.y), new Vector3(width, 0.06f, len + width * 0.6f), Tiled("Tile_Flagstone", width / 2f, len / 2f));
+                var go = Box("Path", new Vector3(c.x, game ? -0.01f : 0.03f, c.y), new Vector3(width, game ? 0.05f : 0.06f, len + width * 0.6f), Tiled("Tile_Flagstone", width / 2f, len / 2f));
                 go.transform.localRotation = Quaternion.Euler(0f, Mathf.Atan2(b.x - a.x, b.y - a.y) * Mathf.Rad2Deg, 0f);
             }
         }
@@ -149,7 +157,7 @@ namespace LifeSimProto
             var go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             go.name = "Lawn";
             go.transform.SetParent(root, false);
-            go.transform.localPosition = new Vector3(x, 0.04f, y);
+            go.transform.localPosition = new Vector3(x, game ? -0.02f : 0.04f, y);
             go.transform.localScale = new Vector3(r * 2f, 0.02f, r * 2f);
             go.GetComponent<Renderer>().sharedMaterial = Tiled("Tile_Grass", r / 2f, r / 2f);
             Destroy(go.GetComponent<Collider>());
@@ -187,7 +195,7 @@ namespace LifeSimProto
                 for (int i = 0; i <= nx; i++)
                 {
                     float x = x0 + i * step, y = y0 + j * step;
-                    verts.Add(new Vector3(x, H(x, y), y)); uvs.Add(new Vector2(x / 4f, y / 4f));
+                    verts.Add(new Vector3(x, H(x, y) - (game ? 0.04f : 0f), y)); uvs.Add(new Vector2(x / 4f, y / 4f));
                 }
             for (int j = 0; j < ny; j++)
                 for (int i = 0; i < nx; i++)
@@ -264,6 +272,11 @@ namespace LifeSimProto
             }
             // 正門（崖のきわ。前が南）と跳ね橋
             Put("Gatehouse", 0f, 0f, 5f, 180f);
+            // 正門の扉（依頼21。木と鉄の両開き）。跳ね橋の鎖に当たらないよう、城の内側へ開いた形で置く
+            // ちょうつがい：Blender (±3.56, -3.14, 0.04) → 門の向き 180° で (∓3.56, 0.04, -3.14)
+            gateL = Put("Gate_Door", -3.56f, 0.04f, 5f - 3.14f, GateOpen ? 90f : 180f);
+            gateR = Put("Gate_Door", 3.56f, 0.04f, 5f - 3.14f, GateOpen ? -90f : 180f, new Vector3(-1f, 1f, 1f));
+            gateK = GateOpen ? 1f : 0f;
             Put("Drawbridge", 0f, -0.8f, 5f - 15.64f, 180f);
             // 街：石の護岸と家並み（背景）
             const float qz = -24f;
@@ -355,14 +368,14 @@ namespace LifeSimProto
             Box("Court_South", new Vector3(0f, 0.02f, 38f), new Vector3(42f, 0.04f, 8f), Tiled("Tile_Grass", 10f, 2f));
         }
 
-        void ArcadeLine(Vector2 ctr, Vector2 a, Vector2 b)
+        void ArcadeLine(Vector2 ctr, Vector2 a, Vector2 b, float depth = 1f)
         {
             Vector2 d = b - a; float L = d.magnitude; int k = Mathf.Max(1, Mathf.RoundToInt(L / 3f)); float seg = L / k;
             for (int s = 0; s < k; s++)
             {
                 Vector2 p = a + d.normalized * (seg * (s + 0.5f));
                 Vector2 n = new Vector2(-d.y, d.x).normalized; if (Vector2.Dot(n, ctr - p) < 0f) n = -n;
-                Put("Arcade", p.x, 0f, p.y, YawFacing(n), new Vector3(seg / 3f, 1f, 1f));
+                Put("Arcade", p.x, 0f, p.y, YawFacing(n), new Vector3(seg / 3f, 1f, depth));
             }
         }
 
@@ -386,8 +399,17 @@ namespace LifeSimProto
             // わたしたちの寮（31×24m・3階建て。外見だけの試し。中はあとで）
             float x0 = 46f, x1 = 77f, y0 = 64f, y1 = 88f;
             StoneBox("OurDorm", x0, y0, x1, y1, 0f, 10.5f);
-            RoofAlongX(x0, x1, (y0 + y1) / 2f, 24.6f, 10.5f, 8f);
-            for (int i = 0; i < 5; i++) { Put("Dormer", 52f + i * 4.2f, 12.2f, y0 + 3.2f, 180f); Put("Dormer", 52f + i * 4.2f, 12.2f, y1 - 3.2f, 0f); }
+            // 屋根は高さの違う屋根を組み合わせる（絵のように。famuru「直線的すぎる」）
+            RoofAlongY(y0, y1, 72f, 10.6f, 10.5f, 6.5f);          // 東の帯（食堂・浴場の上。いちばん高い）
+            RoofAlongY(y0 + 4f, y1 - 4f, 49f, 6.6f, 10.5f, 4.6f);  // 西の帯（入口の側）
+            RoofAlongX(52f, 67f, 84.6f, 7.4f, 10.5f, 5.2f);       // 北の個室の棟
+            RoofAlongX(52f, 67f, 67.4f, 7.4f, 10.5f, 5.2f);       // 南の個室の棟
+            RoofAlongX(52f, 67f, 76f, 10.4f, 10.5f, 2.6f);        // 吹き抜けの上（低い屋根）
+            for (int i = 0; i < 4; i++) { Put("Dormer", 54f + i * 4f, 11.2f, y0 + 2.2f, 180f); Put("Dormer", 54f + i * 4f, 11.2f, y1 - 2.2f, 0f); }
+            for (int i = 0; i < 3; i++) Put("Dormer", 77.3f, 11.3f, 70f + i * 6f, 90f);
+            Put("Chimney", 60f, 13.6f, 84.6f, 0f, new Vector3(1.2f, 1.6f, 1.2f)); Put("Chimney", 60f, 13.6f, 67.4f, 0f, new Vector3(1.2f, 1.6f, 1.2f));
+            Put("Chimney", 72f, 15.2f, 80f, 0f, new Vector3(1.2f, 1.8f, 1.2f));
+            Put("Ivy", x0 - 0.05f, 0f, 70f, -90f); Put("Ivy", 57f, 0f, y0 - 0.05f, 180f); Put("Ivy", 66f, 0f, y1 + 0.05f, 0f);
             for (int f = 0; f < 3; f++)
                 for (int i = 0; i < 5; i++)
                 {
@@ -412,13 +434,17 @@ namespace LifeSimProto
         void OtherDorms()
         {
             Put("Dorm_Knight", -62f, 0f, 63f, 180f, null, bannerKnight);
-            Put("Dorm_Mage", 61.5f, 0f, 25f, 180f, null, bannerMage);
+            Put("Dorm_Mage", 61.5f, 0f, 25f, 0f, null, bannerMage); // 正面（サンルーム・玄関）を北の学園の側へ
             Put("Dorm_Tower", -72f, 0f, 29f, 180f, null, bannerTower);
-            Put("Greenhouse", -59f, 0f, 99.5f, 180f);
-            Put("Hut", -44.5f, 0f, 99f, 180f);
+            if (!game) { Put("Greenhouse", -59f, 0f, 99.5f, 180f); Put("Hut", -44.5f, 0f, 99f, 180f); } // 新しい学園では温室と工房は NewDorm.cs（中に入れる）
             Put("Training_Hall", -43f, H(-43f, 124f), 124f, 180f);
             Put("Dungeon_Gate", -67f, H(-67f, 131f), 131f, 180f);
             // 地上の廊下：騎士団の寮→本館の西のはし、塔の寮・魔術師団の寮→中庭の渡り廊下の南のすみ（famuru）
+            if (game)
+            {
+                foreach (var w in CampusPlan.Walkways) Walkway(w);
+                return;
+            }
             Walkway(new Vector2(-47f, 71f), new Vector2(-40f, 71f), new Vector2(-40f, 81f), new Vector2(-35.5f, 81f));
             Walkway(new Vector2(-58f, 31f), new Vector2(-40f, 35f), new Vector2(-24f, 40f));
             Walkway(new Vector2(52f, 37f), new Vector2(40f, 35f), new Vector2(24f, 40f));
@@ -426,6 +452,16 @@ namespace LifeSimProto
 
         void Paths()
         {
+            if (game)
+            {
+                PathLine(4f, new Vector2(0, 3.5f), new Vector2(0, 11)); // 門の中から（跳ね橋の上には出さない）
+                foreach (var p in CampusPlan.Paths) PathLine(p.w, p.pts);
+                PathLine(2.5f, new Vector2(-52, 92), new Vector2(-72, 94), new Vector2(-87, 99)); // 温室の前から裏門へ
+                PathLine(2.2f, new Vector2(-87, 99), new Vector2(-80, 112), new Vector2(-70, 122));
+                PathLine(2.2f, new Vector2(-80, 112), new Vector2(-50, 118));
+                Lawn(0f, 18f, 7.5f); Lawn(26f, 25f, 4.5f); Lawn(-26f, 25f, 4.5f);
+                return;
+            }
             PathLine(4f, new Vector2(0, 0), new Vector2(0, 11));
             PathLine(3f, new Vector2(0, 18), new Vector2(0, 30));
             PathLine(3f, new Vector2(0, 18), new Vector2(14, 22), new Vector2(28, 28), new Vector2(40, 40), new Vector2(43, 52), new Vector2(41, 64));
@@ -454,7 +490,10 @@ namespace LifeSimProto
                     n++;
                 }
             // 城壁の中の木（道ぞい）
-            foreach (var p in new[] { new Vector2(-14, 40), new Vector2(14, 40), new Vector2(-50, 40), new Vector2(50, 50), new Vector2(-30, 95), new Vector2(30, 98), new Vector2(86, 40), new Vector2(-86, 50) })
+            var inner = game
+                ? new[] { new Vector2(-10, 28), new Vector2(10, 28), new Vector2(-50, 40), new Vector2(52, 52), new Vector2(-24, 99), new Vector2(26, 98), new Vector2(86, 40), new Vector2(-86, 50), new Vector2(-38, 60) }
+                : new[] { new Vector2(-14, 40), new Vector2(14, 40), new Vector2(-50, 40), new Vector2(50, 50), new Vector2(-30, 95), new Vector2(30, 98), new Vector2(86, 40), new Vector2(-86, 50) };
+            foreach (var p in inner)
                 Put("Tree", p.x, 0f, p.y, p.x * 7f, Vector3.one * 1.1f);
         }
 
@@ -464,10 +503,36 @@ namespace LifeSimProto
             Cliffs();
             Walls();
             Paths();
-            School();
-            OurDorm();
+            if (game) ArcadeRing(); // 本館・体育館・大講堂・わたしたちの寮は NewDorm.cs（本当の建物）
+            else { School(); OurDorm(); }
             OtherDorms();
             Trees();
+        }
+
+        // ---------------- 中庭を囲む渡り廊下（本当の学校に合わせる） ----------------
+        /// <summary>
+        /// 本当の学校（配置図の座標で、教室の棟 y 69〜90・外廊下 y 67〜69・大講堂 x −35〜−17・体育館 x 17〜35（y 44〜67）・中庭 x −17〜17）に合わせる。
+        /// 北は学校の外廊下がそのまま渡り廊下。西と東は大講堂・体育館の壁ぞい、南は外へふくらむ曲線で、真ん中に入口（famuru）。
+        /// </summary>
+        void ArcadeRing()
+        {
+            var ctr = new Vector2(0f, 55f);
+            ArcadeLine(ctr, new Vector2(-15.8f, 44.5f), new Vector2(-15.8f, 66.5f), 0.8f); // 幅を少し細く（中庭の東屋をよける）
+            ArcadeLine(ctr, new Vector2(15.8f, 44.5f), new Vector2(15.8f, 66.5f), 0.8f);
+            var curve = new List<Vector2>();
+            for (int i = 0; i <= 14; i++)
+            {
+                float t = i / 14f;
+                Vector2 a = CampusPlan.ArcadeA, c = CampusPlan.ArcadeC, b = CampusPlan.ArcadeB;
+                curve.Add((1 - t) * (1 - t) * a + 2 * (1 - t) * t * c + t * t * b);
+            }
+            for (int i = 0; i + 1 < curve.Count; i++)
+            {
+                Vector2 a = curve[i], b = curve[i + 1], m = (a + b) / 2f, d = b - a;
+                Vector2 n = new Vector2(-d.y, d.x).normalized; if (Vector2.Dot(n, ctr - m) < 0f) n = -n;
+                if (i == 6 || i == 7) { if (i == 6) Put("Arcade_Gate", curve[7].x, 0f, curve[7].y, YawFacing(-n)); continue; }
+                Put("Arcade", m.x, 0f, m.y, YawFacing(n), new Vector3(d.magnitude / 3f * 1.04f, 1f, 1f));
+            }
         }
 
         // ---------------- 写真 ----------------
@@ -476,6 +541,19 @@ namespace LifeSimProto
 
         void Update()
         {
+            // 正門の扉：朝6時に開け、夜9時に閉める（3秒かけて動かす）
+            if (game && gateL != null && gateR != null && LoungeWorld.Instance != null)
+            {
+                float m = LoungeWorld.Instance.MinuteOfDay;
+                float want = (m >= 6f * 60f && m < 21f * 60f) ? 1f : 0f;
+                if (gateK != want)
+                {
+                    gateK = Mathf.MoveTowards(gateK, want, Time.unscaledDeltaTime / 3f);
+                    float k = Mathf.SmoothStep(0f, 1f, gateK);
+                    gateL.transform.localRotation = Quaternion.Euler(0f, Mathf.Lerp(180f, 90f, k), 0f);
+                    gateR.transform.localRotation = Quaternion.Euler(0f, Mathf.Lerp(180f, -90f, k), 0f);
+                }
+            }
             if (Time.unscaledTime < nextPoll) return;
             nextPoll = Time.unscaledTime + 0.5f;
             string cmd = Path.Combine(LogsDir, "campus_cmd.txt");
@@ -530,6 +608,80 @@ namespace LifeSimProto
             File.WriteAllBytes(path, tex.EncodeToPNG());
             Destroy(tex);
             return "shot: " + path;
+        }
+    }
+
+    /// <summary>
+    /// 新しい学園の配置図（famuru 決定。正門が 0,0、x は東、y は北）とゲームの座標の対応、学園の道（歩ける所）。
+    /// ゲームの座標：わたしたちの寮の真ん中が 0,0。配置図の東＝＋z、北＝−x（寮は配置図の x 46〜77・y 64〜88、学校は x −35〜35・y 44〜90）。
+    /// 2026-11-01 家具のチャット
+    /// </summary>
+    public static class CampusPlan
+    {
+        public const float OX = 61.5f, OY = 76f;
+        public static Vector3 G(float px, float py, float h = 0f) { return new Vector3(OY - py, h, px - OX); }
+        public static Vector3 Origin { get { return G(0f, 0f); } }
+        public static readonly Quaternion Rotation = Quaternion.Euler(0f, -90f, 0f);
+
+        /// <summary>中庭の南の渡り廊下（曲線）：はし A・B と、ふくらみの制御点 C。入口は真ん中（y 33.25。中庭の東屋をよける）。</summary>
+        public static readonly Vector2 ArcadeA = new Vector2(-15.5f, 44.5f), ArcadeB = new Vector2(15.5f, 44.5f), ArcadeC = new Vector2(0f, 22f);
+
+        /// <summary>ほかの寮の出入り口（0 冒険者寮＝崖の上の塔の寮、1 騎士寮＝騎士団の寮、2 魔法師寮＝魔術師団の寮）。地上の廊下のはし。</summary>
+        static readonly Vector2[] MobDoors = { new Vector2(-54.5f, 31f), new Vector2(-46f, 71f), new Vector2(45f, 30f) };
+        public static Vector3 MobDoor(int d) { var p = MobDoors[Mathf.Clamp(d, 0, 2)]; return G(p.x, p.y); }
+
+        /// <summary>地上の廊下（屋根つき）：塔の寮・魔術師団の寮→中庭の南のすみ、騎士団の寮→本館の西のはし（famuru）。</summary>
+        public static readonly Vector2[][] Walkways =
+        {
+            new[] { new Vector2(-54.5f, 31f), new Vector2(-40f, 35f), new Vector2(-19f, 42f) },
+            new[] { new Vector2(45f, 30f), new Vector2(38f, 34f), new Vector2(19f, 42f) },
+            new[] { new Vector2(-46f, 71f), new Vector2(-41f, 71f), new Vector2(-41f, 79.5f), new Vector2(-35.5f, 79.5f) },
+        };
+
+        public class PathDef { public float w; public Vector2[] pts; public PathDef(float w, params Vector2[] pts) { this.w = w; this.pts = pts; } }
+        /// <summary>石畳の道（見た目と歩ける所の両方）。</summary>
+        public static readonly PathDef[] Paths =
+        {
+            new PathDef(3f, new Vector2(0, 10), new Vector2(0, 34.5f)),                                                                       // 正門→中庭の入口
+            new PathDef(3f, new Vector2(0, 18), new Vector2(14, 22), new Vector2(28, 28), new Vector2(40, 40), new Vector2(43, 52), new Vector2(40, 64), new Vector2(40, 70)), // →わたしたちの寮の前庭
+            new PathDef(3f, new Vector2(0, 18), new Vector2(-14, 22), new Vector2(-28, 28), new Vector2(-40, 40), new Vector2(-46, 46), new Vector2(-62, 47)),             // →騎士団の寮の正面
+            new PathDef(2.5f, new Vector2(40, 40), new Vector2(61.5f, 40.5f)),                                                              // →魔術師団の寮の正面
+            new PathDef(2.5f, new Vector2(0, 90.5f), new Vector2(0, 96), new Vector2(-30, 96), new Vector2(-52, 92)),                         // 本館の北の玄関→温室・工房の前
+            new PathDef(2f, new Vector2(-46, 93.4f), new Vector2(-46, 97.6f)),                                                               // →工房の扉
+            new PathDef(2f, new Vector2(-59, 92.6f), new Vector2(-59, 97.1f)),                                                               // →温室の扉
+        };
+
+        /// <summary>学園の道を1階の歩ける網に開ける（建物の中は NewDorm・SchoolBuilder が開ける）。</summary>
+        public static void OpenPaths(GridNav n)
+        {
+            foreach (var p in Paths) OpenLine(n, p.w, p.pts);
+            foreach (var w in Walkways) OpenLine(n, 3f, w);
+            // 中庭の南（中庭と曲線の渡り廊下のあいだ）
+            OpenPlanRect(n, -16f, 31.5f, 16f, 44.6f);
+            // 正門の内側
+            OpenPlanRect(n, -4f, 9f, 4f, 13f);
+        }
+
+        static void OpenPlanRect(GridNav n, float x0, float y0, float x1, float y1)
+        {
+            Vector3 a = G(x0, y0), b = G(x1, y1);
+            n.Open(Rect.MinMaxRect(Mathf.Min(a.x, b.x), Mathf.Min(a.z, b.z), Mathf.Max(a.x, b.x), Mathf.Max(a.z, b.z)));
+        }
+
+        static void OpenLine(GridNav n, float w, Vector2[] pts)
+        {
+            float h = w / 2f - 0.25f;
+            for (int i = 0; i + 1 < pts.Length; i++)
+            {
+                float len = Vector2.Distance(pts[i], pts[i + 1]);
+                int k = Mathf.Max(1, Mathf.CeilToInt(len / 0.25f));
+                for (int s = 0; s <= k; s++)
+                {
+                    Vector2 p = Vector2.Lerp(pts[i], pts[i + 1], s / (float)k);
+                    Vector3 g = G(p.x, p.y);
+                    n.Open(Rect.MinMaxRect(g.x - h, g.z - h, g.x + h, g.z + h));
+                }
+            }
         }
     }
 }

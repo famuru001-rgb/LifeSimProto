@@ -370,10 +370,10 @@ namespace LifeSimProto.EditorTools
                     }
                     case "fmove":
                     {
-                        // 試験用：fmove x z（篤を1階のその場所へ。会話中なら切り上げる）
+                        // 試験用：fmove x z（篤を1階のその場所へ。会話中なら切り上げる）。fmove x z y で高さ（階）も（2026-11-01 家具のチャット）
                         var ci = System.Globalization.CultureInfo.InvariantCulture;
                         var f = w.RomanceTarget;
-                        f.OrderMove(new Vector3(float.Parse(a[1], ci), 0f, float.Parse(a[2], ci)));
+                        f.OrderMove(new Vector3(float.Parse(a[1], ci), a.Length > 3 ? float.Parse(a[3], ci) : 0f, float.Parse(a[2], ci)));
                         log.AppendLine("fmove: " + f.StateName());
                         break;
                     }

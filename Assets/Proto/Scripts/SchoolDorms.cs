@@ -18,6 +18,7 @@ namespace LifeSimProto
         /// <summary>その寮の扉の前（寮生以外の学生が出入りする所）。</summary>
         public static Vector3 MobDormDoor(int dorm)
         {
+            if (NewLayout) return CampusPlan.MobDoor(dorm); // 新しい学園：ほかの寮の地上の廊下のはし（CampusPreview.cs の CampusPlan）
             dorm = Mathf.Clamp(dorm, 0, 2);
             return new Vector3(MobDormX0 - 1.2f, 0f, (MobDormZ0[dorm] + MobDormZ1[dorm]) / 2f);
         }

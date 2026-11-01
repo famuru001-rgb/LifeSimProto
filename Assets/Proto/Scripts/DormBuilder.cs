@@ -59,34 +59,35 @@ namespace LifeSimProto
     /// </summary>
     public partial class LoungeWorld
     {
-        public const float HalfW = 8.6f;   // 談話室（真ん中）の幅の半分
-        public const float FloorH = 4.5f;  // 1階分の高さ（famuru 2026-10-25「1.5倍」。前は 3m）
-        public const float RoomH = FloorH * 3f; // 吹き抜けの高さ
+        // 2026-11-01 家具のチャット：寸法は新しい寮（NewDorm.cs）と切りかえられるよう static（値は ApplyLayout で決まる。今の寮の値のまま）
+        public static float HalfW = 8.6f;   // 談話室（真ん中）の幅の半分
+        public static float FloorH = 4.5f;  // 1階分の高さ（famuru 2026-10-25「1.5倍」。前は 3m）
+        public static float RoomH { get { return FloorH * 3f; } } // 吹き抜けの高さ
         public static float FloorY(int floor) { return floor * FloorH; }
 
         // 棟：真ん中の端 x 8.6 → 廊下 → x 11 → 個室（奥行き6m）→ x 17（外壁）
-        const float WingIn = 8.6f, WingCorr = 11f, WingOut = 17f, RoomW = 3.6f, RoomDepth = 6f;
+        static float WingIn = 8.6f, WingCorr = 11f, WingOut = 17f, RoomW = 3.6f, RoomDepth = 6f;
         // 奥と手前の帯
-        const float BackZ = 9f, BackOut = 18f, FrontZ = -9f, FrontOut = -18f;
+        static float BackZ = 9f, BackOut = 18f, FrontZ = -9f, FrontOut = -18f;
         // 2・3階の吹き抜け（z −7〜5.2）。手前の通路 z −9〜−7、奥の通路 z 5.2〜7.2、階段の帯 z 7.2〜9
-        const float VoidZ0 = -7f, VoidZ1 = 5.2f, BandZ0 = 7.2f, BandZ1 = 9f, BandZ = 8.1f;
+        static float VoidZ0 = -7f, VoidZ1 = 5.2f, BandZ0 = 7.2f, BandZ1 = 9f, BandZ = 8.1f;
         // 階段（x）：1階→2階と3階→屋上は 0.6→7.6（東へ上る）、2階→3階は −0.6→−7.6（西へ上る）。真ん中 −0.6〜0.6 が踊り場
         // （階の高さを 4.5m にしたので、1本 7m の長い段にした。2026-10-25）
-        const float StairA0 = 0.6f, StairA1 = 7.6f, StairB0 = -0.6f, StairB1 = -7.6f;
+        static float StairA0 = 0.6f, StairA1 = 7.6f, StairB0 = -0.6f, StairB1 = -7.6f;
         // 奥の部屋：台所は x 11〜17（6m×9m。famuru 2026-10-25「少し小さく」。前は x 8.6〜17）、食堂は x −2〜11
-        public const float KitchenX0 = 11f;
-        public const float KitchenDoorZ = 16.8f; // 台所の扉の真ん中（奥の壁から0.7m・配膳の口から0.5m。famuru 2026-10-26。前は 17.0）
+        public static float KitchenX0 = 11f;
+        public static float KitchenDoorZ = 16.8f; // 台所の扉の真ん中（奥の壁から0.7m・配膳の口から0.5m。famuru 2026-10-26。前は 17.0）
         // 2階の入口の通路（渡り廊下へ）
-        const float PassX0 = 6f, PassX1 = 8.6f;
+        static float PassX0 = 6f, PassX1 = 8.6f;
         const float Stub = 1.0f;
         const float WallT = 0.3f;
 
         // 寮の中の目印（行事の集まる所など）
-        public static readonly Vector3 LoungeCenter = new Vector3(-5.5f, 0f, 3.5f);   // ソファのまわり
-        public static readonly Vector3 BirthdaySpot = new Vector3(-5.5f, 0f, 6.0f);
-        public static readonly Vector3 FireplaceSpot = new Vector3(-5.5f, 0f, 7.0f);  // 暖炉の前
-        public static readonly Vector3 DiningCenter = new Vector3(4.3f, 0f, 13.5f);   // 食堂
-        public static readonly Rect LoungeWanderRect = new Rect(-7.5f, -16f, 15f, 21f); // 談話室の中をぶらぶらする範囲
+        public static Vector3 LoungeCenter = new Vector3(-5.5f, 0f, 3.5f);   // ソファのまわり
+        public static Vector3 BirthdaySpot = new Vector3(-5.5f, 0f, 6.0f);
+        public static Vector3 FireplaceSpot = new Vector3(-5.5f, 0f, 7.0f);  // 暖炉の前
+        public static Vector3 DiningCenter = new Vector3(4.3f, 0f, 13.5f);   // 食堂
+        public static Rect LoungeWanderRect = new Rect(-7.5f, -16f, 15f, 21f); // 談話室の中をぶらぶらする範囲
 
         class WallSeg
         {
@@ -113,6 +114,7 @@ namespace LifeSimProto
 
         void Build()
         {
+            if (NewLayout) { BuildNew(); return; } // 新しい寮（NewDorm.cs。Logs\new_campus_play.txt があるときだけ）
             root = new GameObject("Dorm").transform;
             CreateMaterials();
             SetupSun();
@@ -826,6 +828,7 @@ namespace LifeSimProto
                     ClosedDoor(new Vector3(s * WingCorr, y, cz), false, 1.2f);
                     Label(room.labelPos, "空き部屋");
                 }
+                else if (NewLayout) FurnishRoomNew(room, side, cz); // 新しい寮の個室（3.0×4.8m）
                 else FurnishRoom(room, side, cz);
                 AddArea(room.AreaName, room.rect, floor);
                 rooms.Add(room);
@@ -1807,7 +1810,7 @@ namespace LifeSimProto
         {
             string n = r.gameObject.name;
             if (n == "Chandelier_Ring" || n == "Candle" || n == "Pillar" || n == "Fireplace_Chimney") return 0; // 吹き抜けの高い所にある1階の物
-            if (r.transform.position.z > BackOut + 0.3f) return 0; // 寮の奥（中庭・温室・工房）は地面の物
+            if (!NewLayout && r.transform.position.z > BackOut + 0.3f) return 0; // 寮の奥（中庭・温室・工房）は地面の物（新しい学園では奥に北東の塔があるので高さで決める）
             float bottom = r.transform.position.y - Mathf.Abs(r.transform.lossyScale.y) * 0.5f;
             for (var tp = r.transform; tp != null; tp = tp.parent)
             {

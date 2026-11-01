@@ -15,8 +15,8 @@ namespace LifeSimProto
     /// </summary>
     public partial class LoungeWorld
     {
-        const float SXN = 43.3f, SZ0 = -24.5f;     // 設計図の (0,0) の、プログラムの x と z
-        const float SK = 1.5f;                      // 設計図の1を何mにするか（全体の大きさ。famuru 2026-10-25「1.5倍」）
+        static float SXN = 43.3f, SZ0 = -24.5f;     // 2026-11-01 家具のチャット：新しい学園（NewDorm.cs）と切りかえられるよう static（値は今のまま）     // 設計図の (0,0) の、プログラムの x と z
+        static float SK = 1.5f;                      // 設計図の1を何mにするか（全体の大きさ。famuru 2026-10-25「1.5倍」）
         const float SLen = 70f;                     // 東西の長さ
         const float SVer0 = 23f, SVer1 = 25f;       // 外廊下
         const float SCor0 = 34f, SCor1 = 37f;       // 大廊下
@@ -24,9 +24,9 @@ namespace LifeSimProto
         const float SBand0 = 43.6f, SBand1 = 45.6f, SBand = 44.6f; // 階段の帯
 
         /// <summary>本館の真ん中（授業へ出かけるときの行き先：2階の大廊下）。</summary>
-        public static readonly Vector3 SchoolCorridor2F = new Vector3(SXN - SK * 35.5f, Floor2Y, SZ0 - SK * 35f);
+        public static Vector3 SchoolCorridor2F = new Vector3(SXN - SK * 35.5f, Floor2Y, SZ0 - SK * 35f);
         /// <summary>正門（本館の南。寮生以外の学生・先生はここから来て、ここから自分の寮へ帰る。2026-10-30）。</summary>
-        public static Vector3 SchoolGate { get { return S3(35f, 51f, 0f); } }
+        public static Vector3 SchoolGate { get { return NewLayout ? NewSchoolGate : S3(35f, 51f, 0f); } }
 
         static Vector2 SP(float sx, float sy) { return new Vector2(SXN - SK * sy, SZ0 - SK * sx); }
         static Vector3 S3(float sx, float sy, float y) { return new Vector3(SXN - SK * sy, y, SZ0 - SK * sx); }
@@ -96,6 +96,7 @@ namespace LifeSimProto
             BuildSchoolHall(0f, 18f, "体育館", "西");
             BuildSchoolHall(52f, 70f, "大講堂", "東");
             BuildSchoolCourtyard();
+            if (NewLayout) { BuildDungeonStage(); return; } // 新しい学園（NewDorm.cs）：ほかの寮・正門への道は CampusPreview.cs。ダンジョン実習の場所は遠くの離れ（DungeonOrigin）
             BuildMobDorms(); // 寮生以外の学生の寮（仮の建物。SchoolDorms.cs）
             BuildDungeonStage(); // ダンジョン実習の場所（東の離れ。DungeonStage.cs）
             // 正門への道（南）
@@ -154,8 +155,8 @@ namespace LifeSimProto
             if (f == 0) gapsS.Add(new Vector4(35f - 1.2f, 35f + 1.2f, y, y + 2.8f));
             var wS = SWall(y, y + FloorH, 0, SBack, SLen, SBack, gapsS.ToArray());
             // 西と東の外壁（1階の西は裏口：寮の前庭へ）
-            var wW = f == 0 ? SWall(y, y + FloorH, 0, 25, 0, SBack, new Vector4(35.5f - 25f - 0.8f, 35.5f - 25f + 0.8f, y, y + 2.5f)) : SWall(y, y + FloorH, 0, 25, 0, SBack);
-            var wE = SWall(y, y + FloorH, SLen, 25, SLen, SBack);
+            var wW = f == 0 || (f == 1 && NewLayout) ? SWall(y, y + FloorH, 0, 25, 0, SBack, new Vector4(35.5f - 25f - 0.8f, 35.5f - 25f + 0.8f, y, y + 2.5f)) : SWall(y, y + FloorH, 0, 25, 0, SBack); // 新しい学園では2階の西のはしに寮の渡り廊下
+            var wE = f == 0 && NewLayout ? SWall(y, y + FloorH, SLen, 25, SLen, SBack, new Vector4(35.5f - 25f - 0.8f, 35.5f - 25f + 0.8f, y, y + 2.5f)) : SWall(y, y + FloorH, SLen, 25, SLen, SBack); // 新しい学園では1階の東のはしに扉（騎士団の寮への地上の廊下）
             // 仕切り
             for (int i = 1; i < north.Length; i++) SWall(y, y + FloorH, north[i].x0, 25, north[i].x0, SCor0);
             for (int i = 1; i < south.Length; i++) SWall(y, y + FloorH, south[i].x0, SCor1, south[i].x0, SBack);
@@ -165,7 +166,7 @@ namespace LifeSimProto
             foreach (var r in south) if (r.kind != SKind.Hall || f > 0) Window(wS, S3(r.Mid, SBack, y), SDir(0, -1), 1.0f, 1.2f, 1.4f);
             Window(wW, S3(0, 29.5f, y), SDir(1, 0), 1.0f, 1.0f, 1.4f);
             Window(wE, S3(SLen, 29.5f, y), SDir(-1, 0), 1.0f, 1.0f, 1.4f);
-            Window(wE, S3(SLen, 35.5f, y), SDir(-1, 0), 1.0f, 1.0f, 1.4f);
+            if (!(f == 0 && NewLayout)) Window(wE, S3(SLen, 35.5f, y), SDir(-1, 0), 1.0f, 1.0f, 1.4f);
 
             // 大廊下
             for (int i = 0; i < 7; i++) Lamp(S3(5f + i * 10f, 35.5f, y + 2.5f), 2.2f, 7f);
