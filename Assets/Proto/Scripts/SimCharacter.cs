@@ -1783,6 +1783,7 @@ namespace LifeSimProto
             if (chatting) return; // その場での会話が終わるまで待つ
             if (InDungeon) return; // ダンジョン実習の間は、組の進み方に任せる（SimCharacter.Dungeon.cs）
             if (lifeEv != null) return; // 生活のできごとの間は、その進み方に任せる（LifeEventDirector.cs。2026-11-02）
+            if (LifeNightBack()) return; // 夜中に起こされて断った・何もしていない：寝に戻る
             CheckClubInterrupted();
             if (TryStartClubTrip(now)) return; // 部活へ（2026-11-01）
 
@@ -2596,7 +2597,7 @@ namespace LifeSimProto
         {
             if (g == null || g == this) return;
             if (!CanTakeOrder()) { world.Log(displayName + "は今は動けない（" + BusyReason() + "）"); RefundGift(why); return; }
-            bool asleepOk = g.state == State.Sleeping && g.sickRest;
+            bool asleepOk = g.state == State.Sleeping && (g.sickRest || (why == Intent.Private && IsTarget)); // 篤が寝ている子を誘う：そばで起こしてから聞く（2026-11-02）
             if (!g.Present || g.InPrivate || g.state == State.Bathing || (g.state == State.Sleeping && !asleepOk))
             {
                 ShowBubble(g.displayName + "は今いないみたい", 2.2f);
@@ -2877,15 +2878,18 @@ namespace LifeSimProto
         void UpdateApproach(float dt)
         {
             bool sickOk = target != null && target.state == State.Sleeping && target.sickRest;
-            if (target == null || !target.Present || target.InPrivate || (target.state == State.Sleeping && !sickOk) || target.state == State.Bathing) { GiveUp(); return; }
+            // 篤が寝ている子を誘いに行く：そばまで行って起こし、起きてから聞く（2026-11-02 famuru。SimCharacter.Life.cs）
+            bool wakeOk = target != null && target.state == State.Sleeping && !target.sickRest && intent == Intent.Private && IsTarget && hasOrder;
+            if (target == null || !target.Present || target.InPrivate || (target.state == State.Sleeping && !sickOk && !wakeOk) || target.state == State.Bathing) { GiveUp(); return; }
             if (intent == Intent.Private && !PrivateNight) RecruitEscorts();
             approachTimer += dt;
             repathTimer -= dt;
             Vector3 d3 = target.transform.position - transform.position;
             float d = Flat(d3).magnitude;
             bool sameFloor = Mathf.Abs(d3.y) < 0.5f;
-            if (sameFloor && d <= 1.6f)
+            if (sameFloor && d <= (wakeOk ? 2.2f : 1.6f))
             {
+                if (wakeOk) target.LifeWakeAtNight(this);
                 if (target.CanStartTalk(this)) { BeginInteraction(); return; }
                 StartWaiting();
                 return;
@@ -2905,7 +2909,14 @@ namespace LifeSimProto
 
         void BeginInteraction()
         {
-            if (intent == Intent.Private && target.CanJoinPrivate(this)) { StartCoroutine(PrivateRoutine(target)); return; }
+            if (intent == Intent.Private && target.CanJoinPrivate(this)) { target.LifeWokenAccept(this); StartCoroutine(PrivateRoutine(target)); return; }
+            if (intent == Intent.Private && IsTarget && hasOrder && target.lifeNightWoken)
+            {
+                // 夜中に起こして聞いたが、断られた：その子は寝に戻る（SimCharacter.Life.cs）
+                target.LifeWokenRefuse(this);
+                hasOrder = false; target = null; intent = Intent.Talk; ReleaseEscorts(); SetState(State.Idle); actionText = "ぼんやりしている";
+                return;
+            }
             if (intent == Intent.Private && IsTarget && hasOrder)
             {
                 // 篤が誘ったが、今は気分ではない：断って、ふつうに話す
@@ -2924,7 +2935,9 @@ namespace LifeSimProto
             // 誘われた側も望んでいるときだけ（性欲40以上。famuru 決定 2026-10-21）
             // 篤が誘ったときは、恋人なら性欲が低くても受ける（2026-10-25）
             bool loverInvite = !IsTarget && by.IsTarget && by.hasOrder && IsLover;
-            return pair && !sickRest && (desire >= 40f || loverInvite);
+            // 前もって約束している（しるし「夜の約束」）：篤が来たら受ける（2026-11-02 famuru。始めるのは起こしてから）
+            bool promised = !IsTarget && by.IsTarget && LifeHasFlag(PromiseFlag);
+            return pair && !sickRest && state != State.Sleeping && (desire >= 40f || loverInvite || promised);
         }
 
         void UpdateWaiting(float dt)

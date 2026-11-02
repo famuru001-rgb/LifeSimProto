@@ -20,18 +20,21 @@ namespace LifeSimProto
         public static readonly List<LifeLine> Lines = new List<LifeLine>();
         public static readonly List<KeyValuePair<string, string[]>> Roles = new List<KeyValuePair<string, string[]>>();
         public static readonly List<string> Errors = new List<string>();
+        /// <summary>キャラの型（キャラの型.csv：記号 → 型。条件「型:世話焼き」で使う。キャラデザで決める）。</summary>
+        public static readonly Dictionary<string, string[]> Types = new Dictionary<string, string[]>();
         public static bool Loaded;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetAll() { Loaded = false; Events.Clear(); Lines.Clear(); Roles.Clear(); Errors.Clear(); }
+        static void ResetAll() { Loaded = false; Events.Clear(); Lines.Clear(); Roles.Clear(); Errors.Clear(); Types.Clear(); }
 
         /// <summary>表を読む（Unity の中では、ファイルを直接読むので Unity に取り込み直さなくても「life reload」で反映される）。</summary>
         public static void Load(bool force = false)
         {
             if (Loaded && !force) return;
             Loaded = true;
-            Events.Clear(); Lines.Clear(); Roles.Clear(); Errors.Clear();
+            Events.Clear(); Lines.Clear(); Roles.Clear(); Errors.Clear(); Types.Clear();
             LoadRoles(ReadTable("場所の役割"));
+            LoadTypes(ReadTable("キャラの型"));
             LoadEvents(ReadTable("できごと"));
             LoadLines(ReadTable("せりふ"));
             if (Errors.Count > 0) Debug.LogWarning("生活のできごとの表：直したほうがよい所が " + Errors.Count + " か所（Logs\\life_check.txt / 命令 life check）");
@@ -118,6 +121,69 @@ namespace LifeSimProto
                 Roles.Add(new KeyValuePair<string, string[]>(role, SplitList(words)));
             }
         }
+
+        static void LoadTypes(List<string[]> t)
+        {
+            if (t.Count == 0) return;
+            var h = new Header(t[0]);
+            for (int i = 1; i < t.Count; i++)
+            {
+                var r = t[i];
+                if (Blank(r)) continue;
+                string l = h.Get(r, "記号").ToUpperInvariant();
+                if (l.Length == 0 || l.StartsWith("#")) continue;
+                Types[l] = SplitList(h.Get(r, "型"));
+            }
+        }
+
+        public static bool HasType(string letter, string type)
+        {
+            string[] ts;
+            return letter != null && Types.TryGetValue(letter, out ts) && System.Array.IndexOf(ts, type) >= 0;
+        }
+
+        /// <summary>せりふを書く所の一覧（命令 life lines → Logs\せりふ_書く所.csv）。せりふ.csv と同じ列で、せりふの列を書いて貼りつければよい。</summary>
+        public static string LineSlots()
+        {
+            var sb = new StringBuilder("グループ,場面,言う人,記号,条件,せりふ,メモ\r\n");
+            var seen = new HashSet<string>();
+            foreach (var d in Events)
+            {
+                if (!seen.Add(d.group)) continue;
+                var rows = Events.FindAll(x => x.group == d.group);
+                var scenes = new List<KeyValuePair<string, string>>();   // 場面・言う人
+                bool hasPartner = rows.Exists(x => x.partnerKind != "なし");
+                bool withF = rows.Exists(x => x.partnerKind == "篤" || x.partnerKind == "寮生か篤");
+                bool withGirl = rows.Exists(x => x.partnerKind == "寮生" || x.partnerKind == "寮生か篤");
+                foreach (var sc in new[] { "始まり", "最中", "終わり" })
+                {
+                    if (sc == "最中" && rows.TrueForAll(x => x.Instant)) continue;
+                    scenes.Add(new KeyValuePair<string, string>(sc, "主役"));
+                    if (withGirl) scenes.Add(new KeyValuePair<string, string>(sc, "相手"));
+                    if (withF && sc != "最中") scenes.Add(new KeyValuePair<string, string>(sc, "篤"));
+                }
+                var labels = new List<string>();
+                foreach (var x in rows) foreach (var c in x.choices) if (!labels.Contains(c)) labels.Add(c);
+                foreach (var c in labels) { scenes.Add(new KeyValuePair<string, string>(c, "篤")); scenes.Add(new KeyValuePair<string, string>(c, "主役")); if (withGirl) scenes.Add(new KeyValuePair<string, string>(c, "相手")); }
+                string kinds = string.Join("・", rows.ConvertAll(x => x.id).ToArray());
+                foreach (var kv in scenes)
+                {
+                    int have = 0;
+                    foreach (var l in Lines) if (l.group == d.group && l.speaker == kv.Value && (l.scene == kv.Key || (labels.Contains(kv.Key) && l.scene == "選択" + (labels.IndexOf(kv.Key) + 1)))) have++;
+                    string memo = d.name + "（" + d.kind + "）／行：" + kinds + "／今 " + have + "本" + (hasPartner ? "" : "／ひとり");
+                    for (int k = 0; k < 2; k++) sb.Append(Csv(d.group) + "," + Csv(kv.Key) + "," + kv.Value + ",*,,," + Csv(memo) + "\r\n");
+                }
+            }
+            foreach (var sc in new[] { "起こす|篤", "起こされた|主役", "受ける|主役", "断る|主役" })
+            {
+                var a = sc.Split('|');
+                int have = 0; foreach (var l in Lines) if (l.group == "夜に起こす" && l.scene == a[0] && l.speaker == a[1]) have++;
+                for (int k = 0; k < 2; k++) sb.Append("夜に起こす," + a[0] + "," + a[1] + ",*,,," + Csv("篤が寝ている子を起こして誘うとき（どのできごとでも・右クリックの誘いでも）／今 " + have + "本") + "\r\n");
+            }
+            return sb.ToString();
+        }
+
+        static string Csv(string s) { return s.IndexOfAny(new[] { ',', '"', '\n' }) >= 0 ? "\"" + s.Replace("\"", "\"\"") + "\"" : s; }
 
         static void LoadEvents(List<string[]> t)
         {
@@ -243,7 +309,7 @@ namespace LifeSimProto
         {
             var sb = new StringBuilder();
             sb.AppendLine("== 生活のできごと　" + System.DateTime.Now.ToString("yyyy-MM-dd HH:mm"));
-            sb.AppendLine("できごと " + Events.Count + "件・せりふ " + Lines.Count + "本・場所の役割 " + Roles.Count + "件");
+            sb.AppendLine("できごと " + Events.Count + "件・せりふ " + Lines.Count + "本・場所の役割 " + Roles.Count + "件・キャラの型 " + Types.Count + "人");
             sb.AppendLine();
             sb.AppendLine("■ 直したほうがよい所（" + Errors.Count + "）");
             foreach (var e in Errors) sb.AppendLine("・" + e);
@@ -387,7 +453,7 @@ namespace LifeSimProto
             {
                 at.key = a.Substring(0, colon).Trim();
                 at.text = a.Substring(colon + 1).Trim();
-                if (System.Array.IndexOf(new[] { "状態", "好き", "嫌い", "趣味", "記号", "種族", "しるし" }, at.key) < 0) { LifeBook.Errors.Add(where + "：「" + a + "」の「" + at.key + ":」が分からない"); return null; }
+                if (System.Array.IndexOf(new[] { "状態", "好き", "嫌い", "趣味", "記号", "種族", "しるし", "型" }, at.key) < 0) { LifeBook.Errors.Add(where + "：「" + a + "」の「" + at.key + ":」が分からない"); return null; }
                 StatusLine dl; int ds;
                 if (at.key == "状態" && !LifeStatus.Find(at.text, out dl, out ds)) { LifeBook.Errors.Add(where + "：状態「" + at.text + "」がない"); return null; }
                 return at;
@@ -450,6 +516,7 @@ namespace LifeSimProto
                 case "記号": return System.Array.IndexOf(LifeBook.SplitList(at.text), c.letter) >= 0;
                 case "種族": return p != null && (p.race ?? "").Contains(at.text);
                 case "しるし": return c.LifeHasFlag(at.text);
+                case "型": { foreach (var t in LifeBook.SplitList(at.text)) if (LifeBook.HasType(c.letter, t)) return true; return false; }
                 case "恋人": return !c.IsTarget && c.IsLover;
                 case "寝ている": return c.state == SimCharacter.State.Sleeping;
                 case "起きている": return c.state != SimCharacter.State.Sleeping;
@@ -524,7 +591,7 @@ namespace LifeSimProto
                 var e = new LifeEffect();
                 foreach (var w in new[] { "主役", "相手", "ふたり", "篤" })
                     if (a.StartsWith(w + ":")) { e.who = w; a = a.Substring(w.Length + 1).Trim(); break; }
-                if (a == "起こす" || a == "寝る" || a == "エッチへ" || a == "誘う") { e.kind = a; res.Add(e); continue; }
+                if (a == "起こす" || a == "寝る" || a == "エッチへ" || a == "誘う" || a == "起こして誘う") { e.kind = a; res.Add(e); continue; }
                 int colon = a.IndexOf(':');
                 if (colon > 0)
                 {

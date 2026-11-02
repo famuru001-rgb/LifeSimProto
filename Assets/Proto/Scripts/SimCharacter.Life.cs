@@ -12,6 +12,100 @@ namespace LifeSimProto
         readonly Dictionary<string, double> lifeFlags = new Dictionary<string, double>();
 
         public bool LifeHasFlag(string name) { double u; return lifeFlags.TryGetValue(name, out u) && world.Now < u; }
+        public void LifeClearFlag(string name) { lifeFlags.Remove(name); }
+
+        // ================= 寝ている子を誘うとき（2026-11-02 famuru） =================
+        // ・寝ている子：篤がそばまで行って起こし、起きてから聞く（受けるかは今の決まり：性欲40以上か、恋人を篤が誘ったとき）
+        // ・前もって約束している子（しるし「夜の約束」）：起こしたら、そのまま受ける（確認の断りは出ない）。始めるのは起きてから
+        // ・寝込んでいる子：二人きりの時間は始まらない（軽いふれあい＝手を握る・髪をなでる などは、できごとの選択肢で）
+        // ・断られたら、その子はまた寝に戻る。せりふは せりふ.csv のグループ「夜に起こす」（場面：起こす〈篤〉・起こされた・受ける・断る）
+        public const string PromiseFlag = "夜の約束";
+        /// <summary>誘われて夜中に起こされた（断ったら寝に戻る）。</summary>
+        public bool lifeNightWoken;
+
+        /// <summary>篤に起こされる（寝込んでいる子は起こさない）。起きたら篤の方を向いて、ひとこと。</summary>
+        public void LifeWakeAtNight(SimCharacter by)
+        {
+            if (state != State.Sleeping || sickRest) return;
+            napping = false;
+            dozing = false;
+            if (seat != null && seat.occupant == this)
+            {
+                if (seat.kind == SeatKind.Bed) { transform.position = world.NearestFree(seat.approach); seat.occupant = null; }
+            }
+            if (seat != null && seat.kind == SeatKind.Bed) seat = null;
+            path.Clear();
+            goal = Goal.None;
+            SetState(State.Idle);
+            lifeNightWoken = true;
+            actionText = "起こされた";
+            if (by != null)
+            {
+                Vector3 d = by.transform.position - transform.position; d.y = 0f;
+                if (d.sqrMagnitude > 0.01f) transform.rotation = Quaternion.LookRotation(d.normalized);
+                by.ShowBubble(LifeBook.PickLine("夜に起こす", "起こす", "篤", by, this, world) ?? "…起きてる？", 1.8f);
+            }
+            string l = LifeBook.PickLine("夜に起こす", "起こされた", "主役", this, by, world);
+            if (l != null) StartCoroutine(LifeSayLater(l, 1.6f));
+            world.Log(displayName + "が篤に起こされた");
+        }
+
+        System.Collections.IEnumerator LifeSayLater(string text, float delay)
+        {
+            yield return new WaitForSeconds(delay);
+            ShowBubble(text.Replace("{呼び方}", profile != null && !string.IsNullOrEmpty(profile.callF) ? profile.callF : "篤くん"), 2.2f);
+        }
+
+        /// <summary>試験用：今すぐ自分のベッドで寝かせる（命令 life sleep 記号）。</summary>
+        public string LifeTestSleep(float minutes)
+        {
+            if (room == null || room.bed == null) return "部屋がない";
+            if (lifeEv != null || InPrivate) return "今は寝かせられない";
+            LeaveCurrentSpot();
+            path.Clear();
+            seat = room.bed;
+            seat.occupant = this;
+            goal = Goal.None;
+            SnapToSeat();
+            napping = false;
+            sleepUntil = world.Now + minutes;
+            actionText = "寝ている";
+            SetState(State.Sleeping);
+            return "寝かせた（" + minutes + "分）";
+        }
+
+        /// <summary>起こされた子が誘いを受けた（約束はここで使い終わる）。</summary>
+        void LifeWokenAccept(SimCharacter by)
+        {
+            if (!lifeNightWoken) return;
+            lifeNightWoken = false;
+            LifeClearFlag(PromiseFlag);
+            string l = LifeBook.PickLine("夜に起こす", "受ける", "主役", this, by, world);
+            if (l != null) StartCoroutine(LifeSayLater(l, 0.2f));
+        }
+
+        /// <summary>起こされた子が断った：ひとこと言って、寝に戻る（篤への気持ちが「好き」より前なら、少し下がる）。</summary>
+        void LifeWokenRefuse(SimCharacter by)
+        {
+            string l = LifeBook.PickLine("夜に起こす", "断る", "主役", this, by, world);
+            ShowBubble((l ?? "ん…眠いから、また今度ね").Replace("{呼び方}", profile != null && !string.IsNullOrEmpty(profile.callF) ? profile.callF : "篤くん"), 2.2f);
+            world.Log(displayName + "は眠そうに断って、また寝た（篤の誘い）");
+            if (!IsTarget && LoveStage < 2) world.ChangeLove(this, -1f);
+            lifeNightWoken = false;
+            if (room != null) StartBed(); else SetState(State.Idle);
+        }
+
+        /// <summary>Think から：起こされたまま何もしていなければ寝に戻る。戻ったら true。</summary>
+        bool LifeNightBack()
+        {
+            if (!lifeNightWoken) return false;
+            if (state == State.Sleeping || InPrivate || privatePending || hs != null) { if (state == State.Sleeping) lifeNightWoken = false; return false; }
+            if (state != State.Idle || stateTime < 5f) return false;
+            lifeNightWoken = false;
+            if (room == null) return false;
+            StartBed();
+            return true;
+        }
         public void LifeSetFlag(string name, float days) { lifeFlags[name] = world.Now + Mathf.Max(0.01f, days) * 1440.0; }
         public bool LifeSickInBed { get { return sickRest; } }
         public bool LifeInOwnRoom

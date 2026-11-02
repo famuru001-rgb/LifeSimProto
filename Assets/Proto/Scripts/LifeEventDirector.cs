@@ -372,9 +372,11 @@ namespace LifeSimProto
             r.chosen = i;
             r.choiceOpen = false;
             Apply(r, r.def.choiceResults[i]);
-            Speak(r, "選択" + (i + 1), "篤", 0f);
-            Speak(r, "選択" + (i + 1), "主役", 1.8f);
-            if (r.partner != null && !r.partnerIsF) Speak(r, "選択" + (i + 1), "相手", 3.4f);
+            // せりふの場面は、選択肢の言葉そのもの（例「手伝う」）か「選択1」のどちらでもよい
+            string label = r.def.choices[i], num = "選択" + (i + 1);
+            Speak(r, label, "篤", 0f, num);
+            Speak(r, label, "主役", 1.8f, num);
+            if (r.partner != null && !r.partnerIsF) Speak(r, label, "相手", 3.4f, num);
             if (r.pendingH != null) Finish(r);   // 二人きりの時間へ：ここで終わる
         }
 
@@ -394,10 +396,10 @@ namespace LifeSimProto
             Release(r);
             // 二人きりの時間へ（受けるかは今の決まりのまま：相手が望むときだけ）
             var f = w.RomanceTarget;
-            if (r.pendingH != null && f != null && !r.main.IsSick)
+            if (r.pendingH != null && f != null && !r.main.IsSick && (r.main.state != SimCharacter.State.Sleeping || r.pendingH == "起こして誘う"))
             {
                 if (r.pendingH == "エッチへ") r.main.LifeSeek(f);
-                else if (r.pendingH == "誘う" && f.LifeAvailableAsF) f.OrderInvite(r.main, null);
+                else if ((r.pendingH == "誘う" || r.pendingH == "起こして誘う") && f.LifeAvailableAsF) f.OrderInvite(r.main, null);   // 寝ていれば、そばまで行って起こしてから聞く
             }
         }
 
@@ -449,7 +451,7 @@ namespace LifeSimProto
                     case "銀貨":
                         if (w.player != null) { if (e.value > 0) w.player.Earn(Mathf.RoundToInt(e.value), r.def.name); else w.player.money = Mathf.Max(0, w.player.money + Mathf.RoundToInt(e.value)); }
                         continue;
-                    case "エッチへ": case "誘う": r.pendingH = e.kind; continue;
+                    case "エッチへ": case "誘う": case "起こして誘う": r.pendingH = e.kind; continue;
                 }
                 foreach (var c in who)
                 {
@@ -476,12 +478,13 @@ namespace LifeSimProto
         }
 
         // ================= せりふ =================
-        void Speak(LifeRun r, string scene, string role, float delay)
+        void Speak(LifeRun r, string scene, string role, float delay, string scene2 = null)
         {
             SimCharacter who = role == "主役" ? r.main : (role == "相手" ? r.partner : w.RomanceTarget);
             SimCharacter other = role == "主役" ? (r.partner ?? w.RomanceTarget) : r.main;
             if (who == null) return;
             string line = LifeBook.PickLine(r.def.group, scene, role, who, other, w);
+            if (line == null && scene2 != null) line = LifeBook.PickLine(r.def.group, scene2, role, who, other, w);
             if (line == null) return;
             line = Fill(line, r, who);
             if (delay <= 0f) who.LifeSay(line, 2.4f);
@@ -553,6 +556,28 @@ namespace LifeSimProto
                         var r = runs[runs.Count - 1];
                         f.OrderMove(w.LifeNear(r.pMain, 1.5f));
                         return "life f: 篤が" + r.def.name + "の場所へ向かう";
+                    }
+                case "sleep":
+                    {
+                        // 試験用：life sleep 記号 [分]：その子を今すぐ自分のベッドで寝かせる
+                        var c = a.Length > 2 ? w.characters.Find(x => x.letter == a[2].ToUpperInvariant()) : null;
+                        if (c == null) return "life sleep: 記号がない";
+                        float min = a.Length > 3 ? float.Parse(a[3], System.Globalization.CultureInfo.InvariantCulture) : 240f;
+                        return "life sleep: " + c.displayName + " " + c.LifeTestSleep(min);
+                    }
+                case "promise":
+                    {
+                        // 試験用：life promise 記号：その子に「夜の約束」を付ける（1日）
+                        var c = a.Length > 2 ? w.characters.Find(x => x.letter == a[2].ToUpperInvariant()) : null;
+                        if (c == null) return "life promise: 記号がない";
+                        c.LifeSetFlag(SimCharacter.PromiseFlag, 1f);
+                        return "life promise: " + c.displayName + " に夜の約束";
+                    }
+                case "lines":
+                    {
+                        string path = System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.dataPath, "../Logs/せりふ_書く所.csv"));
+                        System.IO.File.WriteAllText(path, LifeBook.LineSlots(), new UTF8Encoding(true));
+                        return "life lines: " + path;
                     }
                 case "clear":
                     foreach (var r in runs) Cancel(r, "試験で止めた");
