@@ -73,6 +73,8 @@ namespace LifeSimProto.EditorTools
                 case "camfollow":
                 case "hvigor":
                 case "dgo":
+                case "dtrain":
+                case "navcheck":
                 case "dpick":
                 case "dstat":
                 case "cup":
@@ -251,6 +253,28 @@ namespace LifeSimProto.EditorTools
                         var f = w.RomanceTarget;
                         f.vigor = float.Parse(a[1], System.Globalization.CultureInfo.InvariantCulture);
                         log.AppendLine("hvigor: " + f.vigor);
+                        break;
+                    }
+                    case "navcheck":
+                    {
+                        // 試験用：navcheck x y z x2 y2 z2（2点のあいだの道があるか。2026-11-02 家具のチャット）
+                        var ci = System.Globalization.CultureInfo.InvariantCulture;
+                        var p1 = new Vector3(float.Parse(a[1], ci), float.Parse(a[2], ci), float.Parse(a[3], ci));
+                        var p2 = new Vector3(float.Parse(a[4], ci), float.Parse(a[5], ci), float.Parse(a[6], ci));
+                        var path = w.FindPath(p1, p2);
+                        log.AppendLine("navcheck: " + (path == null ? "道なし" : path.Count + "点") + "　近い通れる所 " + w.NearestFree(p1) + " → " + w.NearestFree(p2));
+                        break;
+                    }
+                    case "dtrain":
+                    {
+                        // 試験用：dtrain 番号 …（篤の組にその子たちを入れて、訓練の施設の事前研修へ出発）／dtrain done・dtrain reset（研修を終えた印を変える）。2026-11-01 家具のチャット
+                        var dd = DungeonDirector.Instance;
+                        if (a.Length > 1 && a[1] == "done") { DungeonDirector.TrainingDone = true; log.AppendLine("dtrain: done"); break; }
+                        if (a.Length > 1 && a[1] == "reset") { DungeonDirector.TrainingDone = false; log.AppendLine("dtrain: reset"); break; }
+                        dd.fPicks.Clear();
+                        for (int i = 1; i < a.Length; i++) dd.fPicks.Add(w.characters[int.Parse(a[i])]);
+                        dd.StartF(true);
+                        log.AppendLine("dtrain: " + (dd.FRun != null ? dd.FRun.MemberNames() : "出発できなかった") + "（研修済み " + DungeonDirector.TrainingDone + "）");
                         break;
                     }
                     case "dgo":

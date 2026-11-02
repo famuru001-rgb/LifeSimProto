@@ -651,7 +651,7 @@ namespace LifeSimProto
             WallF(0, new Vector2(-WingOut, FrontZ), new Vector2(-WingIn, FrontZ), DoorGap(0, -6.2f - a0));
             WallF(0, new Vector2(WingIn, FrontZ), new Vector2(WingOut, FrontZ), DoorGap(0, 6.2f - WingIn));
             WallF(1, new Vector2(-WingOut, FrontZ), new Vector2(-WingIn, FrontZ), DoorGap(1, -6.2f - a0));
-            WallF(1, new Vector2(-WingIn, FrontZ), new Vector2(PassX0, FrontZ), DoorGap(1, -1.0f + WingIn));
+            WallF(1, new Vector2(-WingIn, FrontZ), new Vector2(PassX0, FrontZ), DoorGap(1, 1.1f + WingIn)); // 篤の部屋の扉（x 1.1。ソファの前をよける 2026-11-02）
             WallF(1, new Vector2(PassX1, FrontZ), new Vector2(WingOut, FrontZ), DoorGap(1, 6.2f - PassX1));
             WallF(2, new Vector2(-WingOut, FrontZ), new Vector2(-WingIn, FrontZ), DoorGap(2, -6.2f - a0));
             WallF(2, new Vector2(-WingIn, FrontZ), new Vector2(WingOut, FrontZ), DoorGap(2, 0f + WingIn), DoorGap(2, 6.2f + WingIn));
@@ -660,11 +660,8 @@ namespace LifeSimProto
             WallF(1, new Vector2(PassX1, FrontOut), new Vector2(PassX1, FrontZ));
             WallF(2, new Vector2(-WingIn, FrontOut), new Vector2(-WingIn, FrontZ));
             float cs = -(WingIn + WingOut) / 2f, cn = -cs, cz = (FrontZ + FrontOut) / 2f;
-            // 1階：倉庫
-            Label(new Vector3(cs, 2.2f, cz), "倉庫");
-            AddArea("倉庫", Rect.MinMaxRect(-WingOut, FrontOut, -WingIn, FrontZ), 0);
-            for (int i = 0; i < 3; i++) { PlaceFurn("Furn_Crate", null, new Vector3(-11.2f + i * 1.1f, 0f, FrontOut + 0.7f), 0f); blockers[0].Add(new Rect(-11.7f + i * 1.1f, FrontOut + 0.2f, 1.0f, 1.0f)); }
-            Lamp(new Vector3(cs, 2.4f, cz), 1.4f, 5f);
+            // 1階：ランドリー（もとの倉庫。外の物干し場へ出られる。NLaundry）
+            NLaundry();
             // 2階
             float y1 = FloorY(1);
             Label(new Vector3(8.6f, y1 + 2.2f, cz), "小さな談話室（北）");
@@ -719,6 +716,7 @@ namespace LifeSimProto
                     var gs = new List<Vector4>();
                     if (f == 0 && s > 0) gs.Add(new Vector4(-12.9f - (FrontOut) - 0.45f, -12.9f - FrontOut + 0.45f, y, y + 2.2f)); // 先生の個室R3への扉（z −12.9）
                     if (s > 0) gs.Add(new Vector4(TDoorZ - FrontOut - 0.45f, TDoorZ - FrontOut + 0.45f, y, y + 2.2f)); // 北東の塔への扉（z 13.7）
+                    if (f == 0 && s < 0) gs.Add(new Vector4(LaundryDoorZ - FrontOut - 0.45f, LaundryDoorZ - FrontOut + 0.45f, y, y + 2.2f)); // ランドリーから物干し場への扉（z −10.6）
                     var side = WallF(f, new Vector2(s * WingOut, FrontOut), new Vector2(s * WingOut, BackOut), gs.ToArray());
                     for (int i = 0; i < 5; i++) Window(side, new Vector3(s * WingOut, y, FrontZ + RoomW * (i + 0.5f)), new Vector3(-s, 0f, 0f), 1.0f, 0.9f, 1.2f);
                     if (!(f == 0 && s > 0)) Window(side, new Vector3(s * WingOut, y, (FrontZ + FrontOut) / 2f), new Vector3(-s, 0f, 0f), 1.0f, 1.0f, 1.3f);
@@ -733,7 +731,7 @@ namespace LifeSimProto
         {
             // 北西：先生の塔（半径5）。建物の内側の4分の1を除いた外の弧に壁
             TowerRing(TeacherTowerC, TeacherTowerR, 180f, 450f, 14, 3, true);
-            // 南西（倉庫）・北東（食料庫と屋上への階段）：半径3.5。中は閉じる（あとで部屋にする）
+            // 南西（ランドリーのすみ。中は閉じた物置）
             TowerRing(new Vector2(-WingOut, FrontOut), TowerR, 90f, 360f, 10, 3, false);
             TowerRing(NETowerC, NETowerR, 270f, 540f, 12, 3, false); // 北東：食料庫と屋上への階段（NFoodTower。半径 4.5）
             // 屋根
@@ -788,6 +786,9 @@ namespace LifeSimProto
         }
 
         readonly Dictionary<string, Material> kitMats = new Dictionary<string, Material>();
+        /// <summary>城の部品（屋外）の模様。依頼24 の作り直し（Resources\TilesV2）を先に探す。寮の中の模様は今のまま。</summary>
+        static Texture2D OutTex(string n) { var t = Resources.Load<Texture2D>("TilesV2/Tile_" + n); return t != null ? t : TileTex(n); }
+        static Texture2D OutAtlas() { var t = Resources.Load<Texture2D>("TilesV2/Castle_Atlas"); return t != null ? t : Resources.Load<Texture2D>("Tiles/Castle_Atlas"); }
         Material KitMat(string matName, string model)
         {
             string key = null;
@@ -799,12 +800,13 @@ namespace LifeSimProto
             if (kitMats.TryGetValue(key, out m)) return m;
             switch (key)
             {
-                case "Stone_Wall": case "Stone_Trim": m = ProtoArt.Mat(Color.white, TileTex("StoneWall"), null, 0.12f); break;
-                case "Roof_Slate": m = ProtoArt.Mat(Color.white, TileTex("RoofSlate"), null, 0.25f); break;
-                case "Wood_Dark": m = ProtoArt.Mat(Color.white, TileTex("WoodPanel"), null, 0.15f); break;
-                case "Plaster": m = ProtoArt.Mat(Color.white, TileTex("Plaster"), null, 0.1f); break;
-                case "Ground_Path": m = ProtoArt.Mat(Color.white, TileTex("Flagstone"), null, 0.1f); break;
-                case "Rock_Cliff": m = ProtoArt.Mat(Color.white, TileTex("Cliff"), null, 0.08f); break;
+                case "Stone_Wall": m = TilePBR.Apply(ProtoArt.Mat(Color.white, OutTex("StoneWall"), null, 0.12f), "Tile_StoneWall"); break;
+                case "Stone_Trim": { bool tr = OutTex("StoneTrim") != null; m = TilePBR.Apply(ProtoArt.Mat(Color.white, OutTex(tr ? "StoneTrim" : "StoneWall"), null, 0.12f), tr ? "Tile_StoneTrim" : "Tile_StoneWall"); break; } // 依頼24
+                case "Roof_Slate": m = TilePBR.Apply(ProtoArt.Mat(Color.white, OutTex("RoofSlate"), null, 0.25f), "Tile_RoofSlate"); break;
+                case "Wood_Dark": m = TilePBR.Apply(ProtoArt.Mat(Color.white, OutTex("WoodPanel"), null, 0.15f), "Tile_WoodPanel"); break;
+                case "Plaster": m = TilePBR.Apply(ProtoArt.Mat(Color.white, OutTex("Plaster"), null, 0.1f), "Tile_Plaster"); break;
+                case "Ground_Path": m = TilePBR.Apply(ProtoArt.Mat(Color.white, OutTex("Flagstone"), null, 0.1f), "Tile_Flagstone"); break;
+                case "Rock_Cliff": m = TilePBR.Apply(ProtoArt.Mat(Color.white, OutTex("Cliff"), null, 0.08f), "Tile_Cliff"); break;
                 case "Metal_Iron": m = ProtoArt.Mat(new Color(0.17f, 0.17f, 0.18f), null, null, 0.35f); break;
                 case "Dome": m = ProtoArt.Mat(new Color(0.36f, 0.6f, 0.53f), null, null, 0.4f); break;
                 case "Glass_Window":
@@ -812,8 +814,8 @@ namespace LifeSimProto
                     m = sharedWindowMat; break;
                 case "Fabric_Banner": m = ProtoArt.Mat(new Color(0.18f, 0.29f, 0.62f), null, null, 0.1f); break;
                 default:
-                    m = ProtoArt.MatNew(Color.white, Resources.Load<Texture2D>("Tiles/Castle_Atlas"), null, 0.1f);
-                    m.SetFloat("_AlphaClip", 1f); m.SetFloat("_Cutoff", 0.45f); m.EnableKeyword("_ALPHATEST_ON"); break;
+                    m = ProtoArt.MatNew(Color.white, OutAtlas(), null, 0.1f);
+                    m.SetFloat("_AlphaClip", 1f); m.SetFloat("_Cutoff", 0.45f); m.EnableKeyword("_ALPHATEST_ON"); TilePBR.Apply(m, "Castle_Atlas"); break;
             }
             kitMats[key] = m;
             return m;
@@ -1126,6 +1128,86 @@ namespace LifeSimProto
             NewFocus[Workshop] = new Vector3(-19.8f - 4.25f, 0f, 8.5f - 116f);
         }
 
+        // ================= ランドリーと物干し場（famuru 2026-11-02「寮にランドリーと衣服を干す場所」。1階の倉庫だった部屋＋外の南の芝生） =================
+        // 反転前の座標で書く（あとで MirrorDorm）。部屋は x −12〜−5.2・z −15.5〜−9.5、外への扉は南の外壁（x −12）の z −10.6。物干し場は外の x −18.6〜−12.4・z −11.4〜−1。
+        // 家具は依頼22（Furn_WashTub・LaundryBasket・IroningTable・LinenShelf・ClothesLine・ClothesLineEmpty）。届くまでは箱で組み、届けば自動で入れかわる。
+        const float LaundryDoorZ = -10.6f;
+        static readonly Rect DryYard = Rect.MinMaxRect(-18.6f, -11.4f, -12.4f, -1.0f);
+
+        void NLaundry()
+        {
+            float y = 0f;
+            Label(new Vector3(-8.6f, 2.2f, -12.6f), "ランドリー");
+            AddArea("ランドリー", Rect.MinMaxRect(-WingOut, FrontOut, -WingIn, FrontZ), 0);
+            // 洗濯桶（前の壁ぎわに2台）
+            foreach (float x in new[] { -10.9f, -9.3f })
+            {
+                if (PlaceFurn("Furn_WashTub", null, new Vector3(x, y, -15.0f), 0f) == null)
+                {
+                    Box("WashTub_Stand", new Vector3(x, 0.3f, -15.0f), new Vector3(1.4f, 0.6f, 0.7f), woodDark);
+                    Cyl("WashTub_A", new Vector3(x - 0.35f, 0.75f, -15.0f), new Vector3(0.6f, 0.15f, 0.6f), Quaternion.identity, woodMid);
+                    Cyl("WashTub_B", new Vector3(x + 0.35f, 0.75f, -15.0f), new Vector3(0.6f, 0.15f, 0.6f), Quaternion.identity, woodMid);
+                    Cyl("WashTub_Water", new Vector3(x - 0.35f, 0.9f, -15.0f), new Vector3(0.5f, 0.01f, 0.5f), Quaternion.identity, waterMat);
+                }
+            }
+            blockers[0].Add(Rect.MinMaxRect(-11.65f, FrontOut, -8.55f, -14.6f));
+            PlaceFurn("Furn_BarrelWater", null, new Vector3(-7.9f, y, -15.0f), 0f);
+            blockers[0].Add(Rect.MinMaxRect(-8.3f, FrontOut, -7.5f, -14.6f));
+            // リネンの棚（談話室との壁ぎわ）
+            if (PlaceFurn("Furn_LinenShelf", null, new Vector3(-WingIn - 0.4f, y, -13.3f), -90f) == null)
+                Box("LinenShelf", new Vector3(-WingIn - 0.4f, 0.95f, -13.3f), new Vector3(0.45f, 1.9f, 1.2f), woodDark);
+            blockers[0].Add(Rect.MinMaxRect(-WingIn - 0.7f, -13.95f, -WingIn, -12.65f));
+            // アイロン台
+            if (PlaceFurn("Furn_IroningTable", null, new Vector3(-8.4f, y, -11.8f), 0f) == null)
+                Box("IroningTable", new Vector3(-8.4f, 0.82f, -11.8f), new Vector3(1.3f, 0.06f, 0.45f), fabricWhite);
+            blockers[0].Add(Rect.MinMaxRect(-9.1f, -12.1f, -7.7f, -11.5f));
+            // 洗濯かご
+            foreach (var p in new[] { new Vector3(-11.1f, y, -13.2f), new Vector3(-10.2f, y, -13.9f) })
+            {
+                if (PlaceFurn("Furn_LaundryBasket", null, p, 20f) == null && PlaceFurn("Furn_Basket", null, p, 20f) == null)
+                    Box("LaundryBasket", p + Vector3.up * 0.2f, new Vector3(0.6f, 0.4f, 0.45f), woodMid);
+                blockers[0].Add(new Rect(p.x - 0.35f, p.z - 0.3f, 0.7f, 0.6f));
+            }
+            Lamp(new Vector3(-8.6f, 2.4f, -12.5f), 1.6f, 6f);
+            pois.Add(MakePoi("洗濯をしている", new Vector3(-10.1f, 0.9f, -15.0f), new Vector3(-10.9f, y, -14.25f), new Vector3(-9.3f, y, -14.25f)));
+            pois.Add(MakePoi("アイロンをかけている", new Vector3(-8.4f, 0.9f, -11.8f), new Vector3(-8.4f, y, -11.05f)));
+            pois.Add(MakePoi("洗濯物をたたんでいる", new Vector3(-WingIn - 0.4f, 1.0f, -13.3f), new Vector3(-6.35f, y, -13.3f), new Vector3(-6.35f, y, -12.4f)));
+
+            // 物干し場（外の南の芝生）：3列×2本。雨の日と夜は洗濯物を取り込んだ形（LaundryLines）
+            var full = new GameObject("DryYard_Full").transform; full.SetParent(root, false);
+            var empty = new GameObject("DryYard_Empty").transform; empty.SetParent(root, false);
+            var lineSpots = new List<Vector3>();
+            foreach (float x in new[] { -13.9f, -15.7f, -17.5f })
+                foreach (float z in new[] { -8.6f, -4.2f })
+                {
+                    var c = new Vector3(x, y, z);
+                    if (PlaceFurn("Furn_ClothesLine", full, c, 90f) == null) ClothesLineBox(full, c, true);
+                    if (PlaceFurn("Furn_ClothesLineEmpty", empty, c, 90f) == null) ClothesLineBox(empty, c, false);
+                    blockers[0].Add(new Rect(x - 0.2f, z - 1.7f, 0.4f, 0.4f));
+                    blockers[0].Add(new Rect(x - 0.2f, z + 1.3f, 0.4f, 0.4f));
+                    lineSpots.Add(c);
+                }
+            root.gameObject.AddComponent<LaundryLines>().Set(full.gameObject, empty.gameObject);
+            Box("DryYard_Path", new Vector3(-12.9f, -0.01f, LaundryDoorZ), new Vector3(1.2f, 0.04f, 1.4f), flagstone);
+            var hang = MakePoi("洗濯物を干している", lineSpots[0] + Vector3.up * 1.6f, lineSpots[0] + new Vector3(0.75f, 0f, 0f), lineSpots[2] + new Vector3(0.75f, 0f, 0f), lineSpots[3] + new Vector3(0.75f, 0f, 0f), lineSpots[5] + new Vector3(0.75f, 0f, 0f));
+            hang.outdoor = true;
+            pois.Add(hang);
+            Label(new Vector3(-15.7f, 2.2f, -6.4f), "物干し場");
+            AddArea("物干し場", DryYard, 0);
+        }
+
+        /// <summary>物干しの仮の形（依頼22 が届くまで）。</summary>
+        void ClothesLineBox(Transform parent, Vector3 c, bool clothes)
+        {
+            Box("Line_PostA", c + new Vector3(0f, 0.95f, -1.5f), new Vector3(0.08f, 1.9f, 0.08f), woodDark, parent);
+            Box("Line_PostB", c + new Vector3(0f, 0.95f, 1.5f), new Vector3(0.08f, 1.9f, 0.08f), woodDark, parent);
+            Box("Line_Pole", c + new Vector3(0f, 1.82f, 0f), new Vector3(0.04f, 0.04f, 3.0f), woodMid, parent);
+            if (!clothes) return;
+            Box("Line_Sheet", c + new Vector3(0f, 1.3f, -0.6f), new Vector3(0.02f, 1.0f, 1.3f), fabricWhite, parent);
+            Box("Line_Shirt", c + new Vector3(0f, 1.5f, 0.55f), new Vector3(0.02f, 0.6f, 0.5f), fabricWhite, parent);
+            Box("Line_Towel", c + new Vector3(0f, 1.55f, 1.15f), new Vector3(0.02f, 0.5f, 0.4f), rugMat, parent);
+        }
+
         // ================= 露天風呂（南東のすみ。浴場から出る） =================
         void NSpa()
         {
@@ -1347,7 +1429,9 @@ namespace LifeSimProto
             n0.Open(DoorNav(-2.5f, 13.6f, false, 0.9f));
             n0.Open(DoorNav(-5f, 8.0f, false, 0.9f));
             n0.Open(In(WingIn, FrontOut, WingOut, FrontZ));     // 先生の共用の部屋
-            n0.Open(In(-WingOut, FrontOut, -WingIn, FrontZ));   // 倉庫
+            n0.Open(In(-WingOut, FrontOut, -WingIn, FrontZ));   // ランドリー（もとの倉庫）
+            n0.Open(DoorNav(-WingOut, LaundryDoorZ, false, 0.9f)); // ランドリー→物干し場
+            n0.Open(In(DryYard.xMin, DryYard.yMin, DryYard.xMax, DryYard.yMax, 0.2f)); // 物干し場
             n0.Open(DoorNav(6.2f, FrontZ, true));
             n0.Open(DoorNav(-6.2f, FrontZ, true));
             // 先生の個室（塔）と扉
@@ -1380,7 +1464,7 @@ namespace LifeSimProto
                     n.Open(Rect.MinMaxRect(-WingCorr + 0.25f, BandZ0 - 0.25f, StairB0 - 0.05f, BandZ1 - 0.25f));
                     n.Open(Rect.MinMaxRect(PassX0 + 0.25f, SchoolWestZ - 0.8f, PassX1 - 0.25f, FrontZ + 0.3f)); // 入口の通路と渡り廊下（学校の2階の大廊下へ）
                     n.Open(In(-WingIn, FrontOut, PassX0, FrontZ));
-                    n.Open(DoorNav(-1.0f, FrontZ, true));
+                    n.Open(DoorNav(1.1f, FrontZ, true)); // 篤の部屋の扉
                     n.Open(In(PassX1, FrontOut, WingOut, FrontZ));
                     n.Open(DoorNav(6.2f, FrontZ, true));
                     n.Open(In(-WingOut, FrontOut, -WingIn, FrontZ));
@@ -1423,6 +1507,28 @@ namespace LifeSimProto
             foreach (var r in outsidePlaceNav) navs[0].Open(r); // 温室と工房の中（扉は ApplyPlaces）
             for (int f = 0; f <= 3; f++)
                 foreach (var r in blockers[f]) navs[f].Block(Rect.MinMaxRect(r.xMin - inflate, r.yMin - inflate, r.xMax + inflate, r.yMax + inflate));
+        }
+    }
+
+    /// <summary>物干し場：晴れた日の 7:00〜18:00 は洗濯物を干した形、雨の日と夜は取り込んだ形（2026-11-02 家具のチャット）。</summary>
+    public class LaundryLines : MonoBehaviour
+    {
+        GameObject full, empty;
+        float next;
+        int state = -1;
+        public void Set(GameObject f, GameObject e) { full = f; empty = e; }
+        void Update()
+        {
+            if (Time.unscaledTime < next) return;
+            next = Time.unscaledTime + 1f;
+            var w = LoungeWorld.Instance;
+            if (w == null || full == null || empty == null) return;
+            float m = w.MinuteOfDay;
+            int s = (!w.BadWeatherToday && m >= 7f * 60f && m < 18f * 60f) ? 1 : 0;
+            if (s == state) return;
+            state = s;
+            full.SetActive(s == 1);
+            empty.SetActive(s == 0);
         }
     }
 }

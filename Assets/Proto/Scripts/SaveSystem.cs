@@ -38,6 +38,7 @@ namespace LifeSimProto
         public int cupWins;
         public bool cupAnnounced;
         public int fClub = -1, dungeonBest;
+        public bool dungeonTrained; // 訓練の施設の事前研修を終えた（2026-11-01。ループで戻る）
         // いちばん新しい試験の結果（2026-11-01）
         public int examDay = -1;
         public string examDormRanking = "";
@@ -152,6 +153,7 @@ namespace LifeSimProto
             d.cupAnnounced = HouseCup.Announced;
             d.fClub = Clubs.FChoice;
             d.dungeonBest = DungeonDirector.BestFloor;
+            d.dungeonTrained = DungeonDirector.TrainingDone;
             d.examDay = Academics.lastExamDay;
             d.examDormRanking = Academics.LastDormRanking;
             if (d.subjectVersion == Academics.Version) Academics.SaveExam(d.exam);
@@ -188,6 +190,7 @@ namespace LifeSimProto
             HouseCup.Announced = d.cupAnnounced;
             Clubs.FChoice = d.fClub;
             DungeonDirector.BestFloor = d.dungeonBest;
+            DungeonDirector.TrainingDone = d.dungeonTrained;
             Loop.RefreshRewind();
             Pending = d;
             Loop.ReloadScene();

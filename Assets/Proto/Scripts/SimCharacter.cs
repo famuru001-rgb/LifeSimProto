@@ -1551,6 +1551,7 @@ namespace LifeSimProto
             SetVisible(true);
             string what = awayKind == AwayKind.Stroll ? "散歩" : (awayKind == AwayKind.Outing ? "おでかけ" : (awayKind == AwayKind.Job ? "アルバイト" : (awayKind == AwayKind.Club ? "部活" : (awayKind == AwayKind.Dungeon ? "ダンジョン実習" : (awayLabel == "試験を受けている" ? "試験" : "授業")))));
             if (awayLabel == "飛び出していった") what = "外";
+            if (awayLabel == "訓練の施設から帰っている") what = "訓練の施設"; // 事前研修（2026-11-02 家具のチャット）
             world.Log(displayName + "が" + what + "から帰ってきた");
             goal = Goal.Return;
             actionText = what + "から帰ってきた";

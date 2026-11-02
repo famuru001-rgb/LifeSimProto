@@ -96,9 +96,23 @@ namespace LifeSimProto
             if (dd == null) return;
             var run = dd.FRun;
             GUI.Label(new Rect(r.x + 14, y, r.width - 28, 26), "篤の組：" + (run != null ? run.MemberNames() + "（探索中）" : (dd.fPicks.Count > 0 ? "篤・" + PickNames(dd) : "篤だけ")) + "　いちばん深く行った階：" + DungeonDirector.BestFloor + "階", small); y += 32;
-            if (run == null)
+            if (run == null && DungeonDirector.NeedTraining)
             {
-                GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "寮生やほかの寮の学生を右クリック →「ダンジョン実習の組に入れる」で3人まで誘える。準備室から出発（8:00〜16:30）", tiny); y += 28;
+                // 事前研修（新しい学園の訓練の施設。2026-11-01 famuru）
+                GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "ダンジョン実習の前に、森の訓練の施設で事前研修を受ける（ダンジョンの再現。魔物は幻でけがはしない・戦利品はなし）", tiny); y += 26;
+                GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "終えるとダンジョン実習に出発できる。誘った子もいっしょに受けられる（研修を終えたことはループで戻る）", tiny); y += 28;
+                string why;
+                bool ok = dd.CanStartTraining(out why);
+                GUI.enabled = ok;
+                if (GUI.Button(new Rect(r.x + 14, y, 220, 34), "事前研修へ出発", button)) dd.StartF(true);
+                GUI.enabled = true;
+                if (dd.fPicks.Count > 0 && GUI.Button(new Rect(r.x + 244, y, 160, 34), "組を解散する", smallButton)) dd.fPicks.Clear();
+                if (!ok) GUI.Label(new Rect(r.x + 420, y + 6, r.width - 440, 24), why, tiny);
+                y += 44;
+            }
+            else if (run == null)
+            {
+                GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "寮生やほかの寮の学生を右クリック →「ダンジョン実習の組に入れる」で3人まで誘える。準備室から出発（8:00〜16:30）" + (LoungeWorld.NewLayout ? "　事前研修：済み" : ""), tiny); y += 28;
                 string why;
                 bool ok = dd.CanStartNow(out why);
                 GUI.enabled = ok;
@@ -110,7 +124,7 @@ namespace LifeSimProto
             }
             else
             {
-                GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), "今：" + run.floor + "階・" + run.room + "つ目の部屋　体力 " + Mathf.RoundToInt(Mathf.Max(0f, run.hp)) + "/" + Mathf.RoundToInt(run.maxHp) + "　銀貨 " + run.silver + "・宝 " + run.items.Count + "個", small); y += 28;
+                GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), (run.training ? "事前研修：" : "今：" + run.floor + "階・") + run.room + "つ目の部屋　体力 " + Mathf.RoundToInt(Mathf.Max(0f, run.hp)) + "/" + Mathf.RoundToInt(run.maxHp) + "　銀貨 " + run.silver + "・宝 " + run.items.Count + "個", small); y += 28;
                 if (GUI.Button(new Rect(r.x + 14, y, 200, 30), "ダンジョンを見る", smallButton)) { var c0 = run.members.Count > 0 ? run.members[0] : null; if (c0 != null) world.FollowInDungeon(c0); }
                 y += 38;
             }
@@ -156,7 +170,7 @@ namespace LifeSimProto
             var run = DungeonDirector.Instance.FRun;
             Rect r = DungeonChoiceRect;
             GUI.Box(r, GUIContent.none, panel);
-            GUI.Label(new Rect(r.x + 14, r.y + 8, r.width - 28, 26), "ダンジョン実習　" + run.floor + "階　体力 " + Mathf.RoundToInt(Mathf.Max(0f, run.hp)) + "/" + Mathf.RoundToInt(run.maxHp) + "　銀貨 " + run.silver + "・宝 " + run.items.Count, small);
+            GUI.Label(new Rect(r.x + 14, r.y + 8, r.width - 28, 26), (run.training ? "事前研修（訓練の施設）　体力 " : "ダンジョン実習　" + run.floor + "階　体力 ") + Mathf.RoundToInt(Mathf.Max(0f, run.hp)) + "/" + Mathf.RoundToInt(run.maxHp) + "　銀貨 " + run.silver + "・宝 " + run.items.Count, small);
             // 体力の棒
             var old = GUI.color;
             GUI.color = new Color(0.4f, 0.85f, 0.5f);

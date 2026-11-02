@@ -31,7 +31,7 @@ namespace LifeSimProto
             sceneLabel = null;
             awayKind = AwayKind.Dungeon;
             awayUntil = world.Now + 600;
-            awayLabel = "ダンジョン実習に出かけている";
+            awayLabel = r.training ? "訓練の施設で事前研修を受けている" : "ダンジョン実習に出かけている";
             if (IsMob || LoungeWorld.InSchool(transform.position))
             {
                 path.Clear();
@@ -42,7 +42,7 @@ namespace LifeSimProto
             }
             else
             {
-                StartLeave("ダンジョン実習に出かける");
+                StartLeave(r.training ? "訓練の施設に出かける" : "ダンジョン実習に出かける");
                 if (!IsMob) ShowBubble(Say("c_go", "いってきます"), 1.6f);
             }
         }
@@ -57,7 +57,7 @@ namespace LifeSimProto
             SetVisible(true);
             SetState(State.Idle);
             sceneLabel = null;
-            actionText = "ダンジョンに入った";
+            actionText = dRun != null && dRun.training ? "再現のダンジョンに入った" : "ダンジョンに入った";
         }
 
         /// <summary>次の部屋へ歩く。</summary>
@@ -123,7 +123,7 @@ namespace LifeSimProto
             }
             awayKind = AwayKind.Dungeon;
             awayUntil = world.Now + 10;
-            awayLabel = "ダンジョン実習から帰っている";
+            awayLabel = r.training ? "訓練の施設から帰っている" : "ダンジョン実習から帰っている";
             actionText = awayLabel;
             SetState(State.Away);
             SetVisible(false);

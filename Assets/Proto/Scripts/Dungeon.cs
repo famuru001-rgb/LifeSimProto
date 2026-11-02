@@ -11,14 +11,17 @@ namespace LifeSimProto
     /// ・結果は能力値（体力・魔力・器用さ・知力）と科目（剣術・魔法術・ダンジョン実習・魔物学・魔道具学）で決まる
     /// ・戦利品（銀貨・装飾品）は篤の組だけ。どの組も寮杯の点（進んだ階・倒した魔物・開けた宝箱）が入り、科目と能力が伸びる
     /// ・ダンジョンの場所は1つなので、使えるのは1組ずつ。ほかの組は見えない所で進む（結果だけ）。篤の組がいちばん先
+    /// ・事前研修（2026-11-01 famuru）：新しい学園では、篤が森の「訓練の施設」で事前研修（ダンジョンを再現した場所。1階・部屋3つ＝魔物・罠・宝箱、
+    ///   魔物は幻でけがはしない・戦利品と寮杯の点はなし）を終えると、ダンジョン実習に出発できる。研修を終えたことはループで戻る（セーブには残る）
     /// </summary>
     public class DungeonRun
     {
         public enum Phase { Gather, Walk, Event, Choice, Act, Done }
-        public enum Ev { None, Monster, Trap, Chest, Spring, Stairs, Altar }
+        public enum Ev { None, Monster, Trap, Chest, Spring, Stairs, Altar, TrainGoal }
 
         public readonly List<SimCharacter> members = new List<SimCharacter>();
         public bool withF;          // 篤の組（出来事を画面で選ぶ）
+        public bool training;       // 訓練の施設の事前研修（ダンジョンの再現。2026-11-01）
         public int dorm;            // 寮杯の点が入る寮
         public bool onStage;        // ダンジョンの場所にいる（見える）
         public int floor = 1, room;
@@ -57,9 +60,12 @@ namespace LifeSimProto
         public readonly List<SimCharacter> fPicks = new List<SimCharacter>();
         public const int MaxFloor = 5, MaxPicks = 3;
         public static int BestFloor;          // 篤の組がたどり着いたいちばん深い階（ループをまたいで残る）
+        public static bool TrainingDone;      // 篤が訓練の施設の事前研修を終えた（ループで戻る。2026-11-01）
+        /// <summary>ダンジョン実習の前に事前研修が要るか（訓練の施設がある新しい学園だけ）。</summary>
+        public static bool NeedTraining { get { return LoungeWorld.NewLayout && !TrainingDone; } }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetAll() { BestFloor = 0; }
+        static void ResetAll() { BestFloor = 0; TrainingDone = false; }
 
         void Start() { Instance = this; world = GetComponent<LoungeWorld>(); }
 
@@ -82,6 +88,18 @@ namespace LifeSimProto
             why = null;
             if (m < 8f * 60f || m > 16.5f * 60f) { why = "ダンジョン実習の準備室が開いているのは 8:00〜16:30（出発）"; return false; }
             if (FRun != null) { why = "篤はもう出かけている"; return false; }
+            if (NeedTraining) { why = "先に訓練の施設で事前研修を終えると、ダンジョン実習に出発できる"; return false; }
+            return true;
+        }
+
+        /// <summary>事前研修に出発できるか（訓練の施設：8:00〜16:30）。</summary>
+        public bool CanStartTraining(out string why)
+        {
+            float m = world.MinuteOfDay;
+            why = null;
+            if (!LoungeWorld.NewLayout) { why = "訓練の施設は新しい学園にある"; return false; }
+            if (m < 8f * 60f || m > 16.5f * 60f) { why = "訓練の施設が開いているのは 8:00〜16:30（出発）"; return false; }
+            if (FRun != null) { why = "篤はもう出かけている"; return false; }
             return true;
         }
 
@@ -94,13 +112,16 @@ namespace LifeSimProto
             world.Log(c.displayName + "をダンジョン実習の組に入れた（" + fPicks.Count + "人）");
         }
 
-        /// <summary>篤の組で出発（画面のボタン）。</summary>
-        public void StartF()
+        /// <summary>篤の組で出発（画面のボタン）。training＝訓練の施設の事前研修。</summary>
+        public void StartF() { StartF(false); }
+
+        public void StartF(bool training)
         {
             var f = world.RomanceTarget;
             string why;
-            if (f == null || !CanStartNow(out why)) { if (f != null) world.Log(WhyOr(out why)); return; }
-            var r = new DungeonRun { withF = true, dorm = 0, title = "篤の組" };
+            bool ok = training ? CanStartTraining(out why) : CanStartNow(out why);
+            if (f == null || !ok) { if (f != null) world.Log(why ?? "今は出発できない"); return; }
+            var r = new DungeonRun { withF = true, dorm = 0, title = training ? "篤の組（事前研修）" : "篤の組", training = training };
             if (!f.CanJoinDungeon()) { world.Log("篤は今は出かけられない（" + f.StateName() + "）"); return; }
             r.members.Add(f);
             foreach (var c in fPicks)
@@ -122,14 +143,14 @@ namespace LifeSimProto
         {
             r.started = world.Now;
             r.phase = DungeonRun.Phase.Gather;
-            r.until = world.Now + 45; // 集まるまで（寮から学校へ）
+            r.until = world.Now + 45; // 集まるまで（寮から学校へ。事前研修は訓練の施設へ）
             r.maxHp = 0f;
             foreach (var m in r.members) r.maxHp += 40f + m.Ab(Abilities.Body) * 0.6f;
             r.hp = r.maxHp;
             foreach (var m in r.members) m.JoinDungeon(r);
             runs.Add(r);
             if (!r.withF) { TodayHas(r.dorm); todayKeys.Add("d" + r.dorm); } // 寮ごとに1日1組まで
-            world.Log("ダンジョン実習へ出発：" + r.MemberNames() + (r.withF ? "" : "（" + HouseCup.Name(r.dorm) + "）"));
+            world.Log((r.training ? "訓練の施設の事前研修へ出発：" : "ダンジョン実習へ出発：") + r.MemberNames() + (r.withF ? "" : "（" + HouseCup.Name(r.dorm) + "）"));
         }
 
         /// <summary>寮生だけ・ほかの寮の学生だけの組（休日の昼・授業のない午後に、ときどき）。</summary>
@@ -201,17 +222,17 @@ namespace LifeSimProto
                     if (r.withF && r.members[0].state != SimCharacter.State.Away)
                     {
                         if (now < r.until + 30) return;
-                        Finish(r, "篤が準備室に来られなかった");
+                        Finish(r, r.training ? "篤が訓練の施設に来られなかった" : "篤が準備室に来られなかった");
                         return;
                     }
                     // 間に合わなかった子は置いていく
                     var late = r.members.FindAll(m => m.state != SimCharacter.State.Away);
-                    foreach (var m in late) { r.members.Remove(m); m.LeaveDungeon(r); world.Log(m.displayName + "はダンジョン実習に間に合わなかった"); }
+                    foreach (var m in late) { r.members.Remove(m); m.LeaveDungeon(r); world.Log(m.displayName + (r.training ? "は事前研修に間に合わなかった" : "はダンジョン実習に間に合わなかった")); }
                     if (r.members.Count == 0) { Finish(r, "だれも集まらなかった"); return; }
                     bool stage = stageRun == null && (r.withF || Random.value < 0.8f);
                     if (stage) EnterStage(r); else { r.onStage = false; r.Log("（見えない所で探索している）"); }
                     r.room = 0;
-                    r.Log(r.floor + "階に入った");
+                    r.Log(r.training ? "訓練の施設：再現のダンジョンに入った（魔物は幻。けがはしない）" : r.floor + "階に入った");
                     NextRoom(r);
                     break;
                 }
@@ -262,6 +283,15 @@ namespace LifeSimProto
         void StartEvent(DungeonRun r)
         {
             r.evFought = false; r.evInspected = false; r.evMimic = false;
+            if (r.training)
+            {
+                // 事前研修：魔物・罠・宝箱を1つずつ、最後に研修の終わり
+                r.ev = r.room == 1 ? DungeonRun.Ev.Monster : (r.room == 2 ? DungeonRun.Ev.Trap : (r.room == 3 ? DungeonRun.Ev.Chest : DungeonRun.Ev.TrainGoal));
+                if (r.ev == DungeonRun.Ev.Monster) { r.evCount = 1; r.evStr = MonsterStr(1, 1) * 0.7f; }
+                SetupChoice(r);
+                if (r.onStage && r.ev != DungeonRun.Ev.TrainGoal) world.DungeonShowEvent(r);
+                return;
+            }
             if (r.room >= 4) r.ev = r.floor >= MaxFloor ? DungeonRun.Ev.Altar : DungeonRun.Ev.Stairs;
             else
             {
@@ -283,20 +313,25 @@ namespace LifeSimProto
 
         void SetupChoice(DungeonRun r)
         {
-            string where = r.floor + "階・" + r.room + "つ目の部屋";
+            string where = r.training ? "事前研修・" + r.room + "つ目の部屋" : r.floor + "階・" + r.room + "つ目の部屋";
+            string back = r.training ? "研修をやめる" : "引き返して帰る";
             switch (r.ev)
             {
                 case DungeonRun.Ev.Monster:
-                    r.evText = where + "：" + MonsterName(r.floor) + "が" + r.evCount + "体いる（強さ " + Mathf.RoundToInt(r.evStr) + "）";
-                    r.choices = new[] { "戦う", "こっそり通り抜ける", "引き返して帰る" };
+                    r.evText = where + "：" + (r.training ? "幻の" : "") + MonsterName(r.floor) + "が" + r.evCount + "体いる（強さ " + Mathf.RoundToInt(r.evStr) + "）";
+                    r.choices = new[] { "戦う", "こっそり通り抜ける", back };
                     break;
                 case DungeonRun.Ev.Trap:
                     r.evText = where + "：床に罠の魔法陣がある（外す＝器用さ・魔道具学／駆け抜ける＝体力）";
-                    r.choices = new[] { "調べて外す", "一気に駆け抜ける", "引き返して帰る" };
+                    r.choices = new[] { "調べて外す", "一気に駆け抜ける", back };
                     break;
                 case DungeonRun.Ev.Chest:
-                    r.evText = where + "：古い宝箱がある（調べる＝魔道具学・知力。魔物の宝箱かもしれない）";
+                    r.evText = where + (r.training ? "：練習用の宝箱がある（調べてから開けるのが基本）" : "：古い宝箱がある（調べる＝魔道具学・知力。魔物の宝箱かもしれない）");
                     r.choices = new[] { "すぐ開ける", "調べてから開ける", "そのままにする" };
+                    break;
+                case DungeonRun.Ev.TrainGoal:
+                    r.evText = where + "：再現のダンジョンの出口。教官が待っている";
+                    r.choices = new[] { "研修を終える" };
                     break;
                 case DungeonRun.Ev.Spring:
                     r.evText = where + "：青く光る泉がある";
@@ -314,7 +349,7 @@ namespace LifeSimProto
             r.phase = DungeonRun.Phase.Choice;
             r.picked = -1;
             r.until = world.Now + (r.withF ? 0 : 3);
-            if (r.withF) world.Log("ダンジョン：" + r.evText + "（どうするか選ぶ）");
+            if (r.withF) world.Log((r.training ? "事前研修：" : "ダンジョン：") + r.evText + "（どうするか選ぶ）");
         }
 
         int AutoPick(DungeonRun r)
@@ -397,6 +432,9 @@ namespace LifeSimProto
                 case DungeonRun.Ev.Altar:
                     dur = 5;
                     break;
+                case DungeonRun.Ev.TrainGoal:
+                    dur = 3;
+                    break;
             }
             r.phase = DungeonRun.Phase.Act;
             r.until = world.Now + dur;
@@ -433,9 +471,9 @@ namespace LifeSimProto
                     {
                         Damage(r, r.evStr * Random.Range(0.1f, 0.3f));
                         r.monsters += r.evCount;
-                        int s = Random.Range(3, 10) * r.floor * r.evCount;
+                        int s = r.training ? 0 : Random.Range(3, 10) * r.floor * r.evCount;
                         r.silver += s;
-                        r.Log(MonsterName(r.floor) + "を倒した（体力 " + Mathf.RoundToInt(r.hp) + "/" + Mathf.RoundToInt(r.maxHp) + "・銀貨＋" + s + "）");
+                        r.Log((r.training ? "幻の" : "") + MonsterName(r.floor) + "を倒した（体力 " + Mathf.RoundToInt(r.hp) + "/" + Mathf.RoundToInt(r.maxHp) + (s > 0 ? "・銀貨＋" + s : "") + "）");
                         if (r.onStage) world.DungeonClearEvent(true);
                         if (r.hp <= 0f) { GoHome(r, "力を使い果たした"); return; }
                         NextRoom(r);
@@ -444,7 +482,7 @@ namespace LifeSimProto
                     {
                         Damage(r, r.evStr * Random.Range(0.5f, 0.9f));
                         r.Log(MonsterName(r.floor) + "に押し返された（体力 " + Mathf.RoundToInt(Mathf.Max(0f, r.hp)) + "/" + Mathf.RoundToInt(r.maxHp) + "）");
-                        if (r.hp <= 0f) { GoHome(r, "けがをして引き返した"); return; }
+                        if (r.hp <= 0f) { GoHome(r, r.training ? "幻の魔物に倒された（けがはない。もう一度挑める）" : "けがをして引き返した"); return; }
                         r.evStr *= 0.8f; // 弱ってはいる
                         SetupChoice(r);
                     }
@@ -453,10 +491,10 @@ namespace LifeSimProto
                 case DungeonRun.Ev.Trap:
                 {
                     float ok = r.act == 0 ? (Best(r, Abilities.Dex) * 0.6f + Best(r, -1, Academics.Tools) * 0.4f) / 100f + 0.2f : Avg(r, Abilities.Body) / 100f + 0.2f;
-                    if (Random.value < ok) { r.Log(r.act == 0 ? "罠を外した" : "罠を駆け抜けた"); if (r.act == 0) { r.silver += 5 * r.floor; Grow(r, Abilities.Dex, 0.3f, Academics.Tools, 0.4f); } }
+                    if (Random.value < ok) { r.Log(r.act == 0 ? "罠を外した" : "罠を駆け抜けた"); if (r.act == 0) { if (!r.training) r.silver += 5 * r.floor; Grow(r, Abilities.Dex, 0.3f, Academics.Tools, 0.4f); } }
                     else { float d = 12f + r.floor * 6f; Damage(r, d); r.Log("罠にかかった！（体力 " + Mathf.RoundToInt(Mathf.Max(0f, r.hp)) + "/" + Mathf.RoundToInt(r.maxHp) + "）"); if (r.onStage) world.DungeonFlash(); }
                     Grow(r, -1, 0f, Academics.Dungeon, 0.4f);
-                    if (r.hp <= 0f) { GoHome(r, "けがをして引き返した"); return; }
+                    if (r.hp <= 0f) { GoHome(r, r.training ? "罠で倒れた（けがはない。もう一度挑める）" : "けがをして引き返した"); return; }
                     NextRoom(r);
                     return;
                 }
@@ -485,6 +523,7 @@ namespace LifeSimProto
                         r.phase = DungeonRun.Phase.Choice; r.picked = -1; r.until = world.Now + (r.withF ? 0 : 2);
                         return;
                     }
+                    if (r.training) { r.Log(r.act == 1 ? "調べてから開けた。中は空っぽ（開け方の練習）" : "開けた。中は空っぽ（本番は魔物の宝箱もあるので、調べてから開けるとよい）"); if (r.act == 1) Grow(r, Abilities.Mind, 0.2f, Academics.Tools, 0.3f); NextRoom(r); return; }
                     Loot(r, r.act == 1 ? 1.2f : 1f);
                     r.chests++;
                     if (r.onStage) world.DungeonClearEvent(false);
@@ -515,6 +554,13 @@ namespace LifeSimProto
                     if (r.withF) Album.Add(world, "ダンジョン実習で最下層の祭壇にたどり着いた（" + r.MemberNames() + "）");
                     GoHome(r, "最下層まで探索した");
                     return;
+                case DungeonRun.Ev.TrainGoal:
+                    TrainingDone = true;
+                    Grow(r, Abilities.Body, 0.2f, Academics.Dungeon, 0.6f);
+                    r.Log("事前研修を終えた。ダンジョン実習に出発できるようになった");
+                    world.Log("訓練の施設の事前研修を終えた。これからダンジョン実習に出発できる");
+                    Finish(r, "事前研修を終えた");
+                    return;
             }
             NextRoom(r);
         }
@@ -522,7 +568,7 @@ namespace LifeSimProto
         void Damage(DungeonRun r, float d)
         {
             r.hp -= d;
-            foreach (var m in r.members) m.tired = Mathf.Min(100f, m.tired + d * 0.08f);
+            foreach (var m in r.members) m.tired = Mathf.Min(100f, m.tired + d * (r.training ? 0.03f : 0.08f)); // 事前研修の魔物は幻（けがはしない）
         }
 
         void Grow(DungeonRun r, int ability, float av, int subject, float sv)
@@ -557,7 +603,7 @@ namespace LifeSimProto
         // ================= 帰る =================
         void GoHome(DungeonRun r, string why)
         {
-            r.Log(why + "。準備室へ戻る");
+            r.Log(why + (r.training ? "。訓練の施設を出る" : "。準備室へ戻る"));
             Finish(r, why);
         }
 
@@ -566,6 +612,19 @@ namespace LifeSimProto
             r.phase = DungeonRun.Phase.Done;
             if (r.onStage) LeaveStage(r, true);
             int pts = r.floorsCleared * 8 + r.monsters * 2 + r.chests * 4;
+            if (r.training)
+            {
+                // 事前研修：戦利品・寮杯の点はなし。いっしょに受けた子とは少し仲良くなる
+                if (r.room > 0)
+                    foreach (var a in r.members) foreach (var b in r.members)
+                        {
+                            if (a.id >= b.id || a.IsMob || b.IsMob) continue;
+                            world.rel.Add(a.id, b.id, 2f, world.simTime);
+                        }
+                world.Log("事前研修の結果（" + r.title + "）：" + why);
+                foreach (var m in r.members) m.LeaveDungeon(r);
+                return;
+            }
             if (r.members.Count > 0 && (r.room > 0 || r.floor > 1))
             {
                 HouseCup.Add(world, r.dorm, pts, "ダンジョン実習（" + r.floor + "階まで）", r.dorm == 0);
