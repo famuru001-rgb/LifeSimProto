@@ -9,7 +9,8 @@ namespace LifeSimProto
     /// </summary>
     public class HPlan
     {
-        public static readonly string[] Poses = { "正常位", "騎乗位", "後背位", "対面座位" };
+        public static readonly string[] Poses = { "正常位", "騎乗位", "後背位", "対面座位", "立位" };
+        public const int BedPoseCount = 4;   // おまかせで選ぶのは前の4つ（立位はシャワーのとき。動きは今後作る 2026-11-03 famuru）
         public static readonly string[] DepthNames = { "キスだけ", "愛撫まで", "最後まで" };
         public static readonly string[] FinishNames = { "おまかせ", "中に", "外に" };
 
@@ -75,6 +76,14 @@ namespace LifeSimProto
                 if (a == null) continue;
                 add("place:" + place, place, new Vector3(a.rect.center.x, LoungeWorld.FloorY(a.floor), a.rect.center.y));
             }
+            // 寮のお風呂（浴場）・シャワー（2026-11-03 famuru「入浴中でも二人きりの時間は始まっていい」）
+            foreach (var a in world.areaList)
+            {
+                if (a == null || BathKindOf(a.name) == null || a.name.Contains("脱衣所")) continue;
+                var c = new Vector3(a.rect.center.x, LoungeWorld.FloorY(a.floor), a.rect.center.y);
+                if (LoungeWorld.InSchool(c)) continue;
+                add("area:" + a.name, a.name, c);
+            }
             var rooms = world.HSchoolRooms();
             for (int i = 0; i < rooms.Count; i++)
             {
@@ -114,6 +123,11 @@ namespace LifeSimProto
                 }
                 var a = world.areaList.Find(x => x.name == place);
                 return a != null ? AreaSpot(a, place, n) : null;
+            }
+            if (key.StartsWith("area:"))
+            {
+                var a = world.areaList.Find(x => x.name == key.Substring(5));
+                return a != null ? AreaSpot(a, a.name, n) : null;
             }
             if (key.StartsWith("school:"))
             {
@@ -156,7 +170,7 @@ namespace LifeSimProto
             Vector3 mid = Vector3.zero;
             foreach (var p in picked) mid += p;
             mid /= picked.Count;
-            var ps = new PrivateSpot { name = name };
+            var ps = new PrivateSpot { name = name, bathKind = BathKindOf(name) };
             foreach (var p in picked)
             {
                 Vector3 face = mid - p; face.y = 0f;
@@ -165,6 +179,36 @@ namespace LifeSimProto
                 ps.walkTo.Add(p);
             }
             return ps;
+        }
+
+        /// <summary>区画の名前から：シャワー → "shower"、浴場・脱衣所・風呂 → "bath"、ほか → null（2026-11-03）。</summary>
+        public static string BathKindOf(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            if (name.Contains("シャワー")) return "shower";
+            if (name.Contains("浴場") || name.Contains("脱衣所") || name.Contains("風呂")) return "bath";
+            return null;
+        }
+
+        /// <summary>その人がお風呂・シャワーにいるなら、そこでの二人きりの場所（脱衣所なら、となりの浴場）。いなければ null。</summary>
+        PrivateSpot BathSpotFor(SimCharacter c, int n)
+        {
+            if (c == null) return null;
+            var a = world.LifeAreaAt(c.transform.position);
+            if (a == null || BathKindOf(a.name) == null) return null;
+            if (a.name.Contains("脱衣所"))
+            {
+                Vector2 me = new Vector2(c.transform.position.x, c.transform.position.z);
+                AreaInfo best = null; float bd = float.MaxValue;
+                foreach (var b in world.areaList)
+                {
+                    if (b == null || b.floor != a.floor || !b.name.Contains("浴場")) continue;
+                    float d = (b.rect.center - me).magnitude;
+                    if (d < bd) { bd = d; best = b; }
+                }
+                if (best != null) a = best;
+            }
+            return AreaSpot(a, a.name, n);
         }
 
         /// <summary>おまかせのとき、学校にいるなら学校のいちばん近い部屋も候補にする。</summary>

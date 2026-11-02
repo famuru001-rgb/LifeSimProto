@@ -272,6 +272,45 @@ namespace LifeSimProto
             return true;
         }
 
+        // ================= 2026-11-03 famuru：入浴中の二人きり・発情期・ベッドで横になる =================
+        /// <summary>入浴中の相手でも、二人きりに誘ってよいか（篤と寮生のあいだの誘いだけ）。</summary>
+        bool BathInviteOk(SimCharacter other)
+        {
+            return other != null && other.state == State.Bathing && other.Present && intent == Intent.Private && (IsTarget || other.IsTarget) && (state == State.Approaching || state == State.Waiting || state == State.Walking || state == State.Idle);
+        }
+
+        /// <summary>発情期のあいだ（しるし「発情期」）。性欲のたまりがずっと100になる。</summary>
+        public bool LifeInHeat { get { return !IsTarget && LifeHasFlag("発情期"); } }
+
+        /// <summary>性欲のたまりを増やす・減らす（結果の言葉「たまり-40」）。</summary>
+        public void LifeAddHeat(float v) { desireBuild.value = Mathf.Clamp(desireBuild.value + v, 0f, 100f); }
+
+        bool lifeLie;   // 生活のできごと：ベッドで横になっている（姿勢「横になる」）
+
+        /// <summary>自分の部屋のベッドへ行って横になる（あいていなければ、その場所へ歩くだけ）。</summary>
+        public bool LifeLieBed(LifeRun r, Vector3 p, string text)
+        {
+            if (room == null || room.bed == null || (room.bed.occupant != null && room.bed.occupant != this)) return LifeGoTo(r, p, text);
+            lifeEv = r;
+            target = null;
+            sceneLabel = null;
+            var bed = room.bed;
+            Vector3 d = transform.position - bed.approach; d.y = 0f;
+            if (d.magnitude < 0.8f)
+            {
+                // もうベッドのそば：そのまま横になる
+                LeaveCurrentSpot();
+                path.Clear();
+                seat = bed; seat.occupant = this; act = Act.Rest; sitLabel = text;
+                SnapToSeat(); goal = Goal.None; SetState(State.Sitting); actionText = text;
+                lifeLie = true;
+                return true;
+            }
+            if (!StartSitAt(bed, Act.Rest, text)) { lifeEv = null; return LifeGoTo(r, p, text); }
+            lifeLie = true;
+            return true;
+        }
+
         /// <summary>そのまま（寝ている・入浴中など）で、できごとに加わる。</summary>
         public void LifeStay(LifeRun r)
         {
@@ -284,6 +323,13 @@ namespace LifeSimProto
         public bool LifeArrived(Vector3 p)
         {
             if (state == State.Sitting || state == State.Sleeping || state == State.Bathing) return true;
+            if (lifeLie)
+            {
+                // ベッドで横になる：ベッドに着くまで待つ（止まってしまったら、その場でベッドへ）
+                if (state == State.Walking && path.Count > 0) return false;
+                if (seat != null && room != null && seat == room.bed) { SnapToSeat(); goal = Goal.None; SetState(State.Sitting); return true; }
+                return false;
+            }
             if (path.Count > 0) return false;
             Vector3 d = transform.position - p; d.y = 0f;
             return d.magnitude < 1.6f;
@@ -292,6 +338,7 @@ namespace LifeSimProto
         /// <summary>できごとの最中：相手の方を向いて、場面の動き（料理・暖炉 など）をする。</summary>
         public void LifeHold(string scene, Vector3 look, string text)
         {
+            if (lifeLie && state != State.Sitting && seat != null && room != null && seat == room.bed) { path.Clear(); SnapToSeat(); goal = Goal.None; SetState(State.Sitting); }
             if (state == State.Walking) SetState(State.Idle);
             path.Clear();
             if (state == State.Idle || state == State.Activity)
@@ -315,6 +362,7 @@ namespace LifeSimProto
         {
             lifeEv = null;
             sceneLabel = null;
+            if (lifeLie) { lifeLie = false; if (state == State.Sitting) { LeaveCurrentSpot(); SetState(State.Idle); } }
             if (state == State.Sleeping || state == State.Bathing) return;
             if (IsTarget) { if (state == State.Walking && !hasOrder) { path.Clear(); SetState(State.Idle); } return; }
             if (toBed && room != null) { StartBed(); return; }

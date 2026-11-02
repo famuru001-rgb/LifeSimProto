@@ -15,6 +15,9 @@ namespace LifeSimProto
         public static float MaxSessionMin = 720f;         // どんな状態でも最長12時間
         public static float SickMaxMin = 120f;            // 風邪・発熱のとき（2人だけ）の最長
         public static float SickStartMin = 5f, SickMid1Min = 25f, SickAfterMin = 15f;
+        public static float ShowerMaxMin = 45f, ShowerAfterMin = 5f;   // シャワー：短め（2026-11-03 famuru）
+        public static float BathMaxMin = 120f, BathAfterMin = 10f;    // お風呂：長め
+        public static float BathTiredRelief = 20f;                     // お風呂のあとは疲れがとれる
         public static float NoOneEngagedEndMin = 60f;     // 全員が休憩のまま、この分だけ戻らなければ終わる
         public static float LowVigorEndLine = 10f;        // 篤の精力がこれ以下で、女性が全員「参加」か「休憩」なら、すぐ終わる（2026-11-01 famuru）
 
@@ -211,6 +214,7 @@ namespace LifeSimProto
             readonly int depth;        // 0 キスだけ・1 愛撫まで・2 最後まで
             readonly bool outside;     // フィニッシュを外に
             public readonly string pose; // 体位（モーションのチャットで動きを付ける）
+            readonly string bathKind;    // "shower"・"bath"・null（2026-11-03 famuru：入浴中の二人きり。シャワーとお風呂で分ける）
             string phase;
             double phaseUntil, nextRotate, nextJoin, noneSince = -1;
             int finishes;
@@ -227,7 +231,12 @@ namespace LifeSimProto
                 plan = pl;
                 depth = pl != null ? Mathf.Clamp(pl.depth, 0, 2) : 2;
                 outside = pl != null && pl.finish == 2;
-                pose = pl != null && !string.IsNullOrEmpty(pl.pose) ? pl.pose : HPlan.Poses[Random.Range(0, HPlan.Poses.Length)];
+                bathKind = sp != null ? sp.bathKind : null;
+                // おまかせの体位：シャワーは立位、お風呂は対面座位が中心。ほかは前の4つから
+                if (pl != null && !string.IsNullOrEmpty(pl.pose)) pose = pl.pose;
+                else if (bathKind == "shower") pose = Random.value < 0.7f ? "立位" : "後背位";
+                else if (bathKind == "bath") pose = Random.value < 0.7f ? "対面座位" : HPlan.Poses[Random.Range(0, HPlan.BedPoseCount)];
+                else pose = HPlan.Poses[Random.Range(0, HPlan.BedPoseCount)];
                 startAt = w.Now;
                 f.vigor = Mathf.Max(f.vigor, HBook.VigorMinAtStart);
                 int girls = 0;
@@ -235,6 +244,7 @@ namespace LifeSimProto
                 {
                     c.hs = this; c.hsEnded = false;
                     c.SetHBaseConds(e);
+                    if (bathKind != null && c.hBaseConds != null) c.hBaseConds.Add(bathKind); // せりふの条件 shower／bath
                     if (c.IsTarget) continue;
                     ps.Add(new HP { c = c, role = girls == 0 ? HRole.Direct : (girls < HBook.MaxEngaged ? HRole.Pet : HRole.Wait) });
                     girls++;
@@ -477,7 +487,7 @@ namespace LifeSimProto
                     case "mid3": len = HBook.Mid3Min; break;
                     case "finish": len = HBook.FinishMin; break;
                     case "resume": len = HBook.ResumeMin; break;
-                    case "after": len = sick ? HBook.SickAfterMin : HBook.AfterMin; break;
+                    case "after": len = sick ? HBook.SickAfterMin : (bathKind == "shower" ? HBook.ShowerAfterMin : (bathKind == "bath" ? HBook.BathAfterMin : HBook.AfterMin)); break;
                     default: len = 10f; break;
                 }
                 // ヒロインのスキル：篤の相手のとき、篤のフィニッシュまでの時間が短くなる
@@ -521,7 +531,8 @@ namespace LifeSimProto
                 }
 
                 // 最長の時間
-                if (now - startAt >= (sick ? HBook.SickMaxMin : HBook.MaxSessionMin)) { GoAfter(); return; }
+                float maxMin = sick ? HBook.SickMaxMin : (bathKind == "shower" ? HBook.ShowerMaxMin : (bathKind == "bath" ? HBook.BathMaxMin : HBook.MaxSessionMin));
+                if (now - startAt >= maxMin) { GoAfter(); return; }
 
                 // 全員が休憩のまま
                 if (Engaged == 0)
@@ -536,7 +547,7 @@ namespace LifeSimProto
                 // 順番の入れかえ
                 if (now >= nextRotate && phase != "finish") { Rotate(); nextRotate = now + HBook.RotateMin; }
                 // 途中参加
-                if (now >= nextJoin && !sick && (plan == null || !plan.solo)) { nextJoin = now + HBook.JoinCheckMin; TryJoin(); } // 二人きりなら加わらない
+                if (now >= nextJoin && !sick && bathKind != "shower" && (plan == null || !plan.solo)) { nextJoin = now + HBook.JoinCheckMin; TryJoin(); } // 二人きりなら加わらない
 
                 if (now >= phaseUntil) NextPhase();
                 Chatter(dt);
@@ -734,6 +745,13 @@ namespace LifeSimProto
                 foreach (var c in world.residents)
                 {
                     if (c.IsTarget || c.hs != null || joining.Contains(c) || !c.Present || c.privatePending || c.sickRest) continue;
+                    if (bathKind == "bath")
+                    {
+                        // お風呂：同じ浴場で入浴中の子が加わる（性欲55以上。2026-11-03 famuru）
+                        if (c.state != State.Bathing || c.lifeEv != null || world.AreaName(c.transform.position) != world.AreaName(spot.walkTo[0]) || c.desire < 55f) continue;
+                        cands.Add(c);
+                        continue;
+                    }
                     if (!c.AvailableForTalk) continue;
                     if (c.desire < (night ? 55f : 99.9f)) continue;
                     cands.Add(c);
@@ -780,6 +798,7 @@ namespace LifeSimProto
                 j.hs = this; j.hsEnded = false;
                 HLog.AddMember(entry, j);
                 j.SetHBaseConds(entry);
+                if (bathKind != null && j.hBaseConds != null) j.hBaseConds.Add(bathKind);
                 ps.Add(new HP { c = j, role = Engaged >= HBook.MaxEngaged ? HRole.Wait : HRole.Pet });
                 foreach (var p in ps) p.c.privateGroupSize = ps.Count + 1;
                 f.privateGroupSize = ps.Count + 1;
@@ -809,6 +828,7 @@ namespace LifeSimProto
                 foreach (var p in ps) all.Add(p.c);
                 all.Add(f);
                 foreach (var c in all) c.GrowAbility(Abilities.Sex, HSkill.GrowPerSession); // 性技：1回ごとに伸びる
+                if (bathKind == "bath") foreach (var c in all) c.tired = Mathf.Max(0f, c.tired - HBook.BathTiredRelief); // お風呂のあとは疲れがとれる
                 foreach (var c in all)
                 {
                     c.hs = null;

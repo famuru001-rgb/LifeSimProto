@@ -254,7 +254,7 @@ namespace LifeSimProto
                 d.coolDays = ParseF(h.Get(r, "間隔（日）"), 2f, where);
                 if (d.trigger != "二人きりのあと") d.length = ParseF(h.Get(r, "長さ（分）"), 0f, where);
                 d.pose = h.Get(r, "姿勢"); if (d.pose.Length == 0) d.pose = "立つ";
-                if (System.Array.IndexOf(new[] { "立つ", "座る", "そのまま" }, d.pose) < 0) Errors.Add(where + "：姿勢は「立つ・座る・そのまま」");
+                if (System.Array.IndexOf(new[] { "立つ", "座る", "そのまま", "横になる" }, d.pose) < 0) Errors.Add(where + "：姿勢は「立つ・座る・そのまま・横になる」");
                 d.scene = h.Get(r, "動き");
                 d.gesture = h.Get(r, "身ぶり");
                 d.result = LifeEffect.Parse(h.Get(r, "結果"), where + " 結果");
@@ -685,7 +685,7 @@ namespace LifeSimProto
                 }
                 if (FindNum(a, out e.key, out e.value) < 0) { LifeBook.Errors.Add(where + "：「" + a + "」が分からない"); continue; }
                 if (LifeCond.NeedIndex(e.key) >= 0) e.kind = "欲求";
-                else if (System.Array.IndexOf(new[] { "気持ち", "仲", "寝坊", "評判", "寮杯", "銀貨" }, e.key) >= 0) e.kind = e.key;
+                else if (System.Array.IndexOf(new[] { "気持ち", "仲", "寝坊", "評判", "寮杯", "銀貨", "たまり" }, e.key) >= 0) e.kind = e.key;
                 else { LifeBook.Errors.Add(where + "：「" + e.key + "」が分からない"); continue; }
                 res.Add(e);
             }

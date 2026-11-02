@@ -883,6 +883,7 @@ namespace LifeSimProto
             // 性欲のたまり：性欲60以上でたまり、60より下だと少しずつ減る。二人きりの時間・お風呂・睡眠・趣味で減る。［発情］のあいだはたまりやすい
             if (state == State.Private) buildDrain += 1.5f;
             desireBuild.Tick(gm, desire, GetStage(StatusLine.Desire), buildDrain * DrainMul(NeedKind.Desire), BuildMul(NeedKind.Desire));
+            if (LifeInHeat) desireBuild.value = 100f; // 発情期：性欲のたまりはずっと100（2026-11-03 famuru。SimCharacter.Life.cs）
             int dst = desireBuild.StageFor(GetStage(StatusLine.Desire));
             if (dst != GetStage(StatusLine.Desire) && !NightSleeping) SetStage(StatusLine.Desire, dst, true); // 眠っているあいだは起きてから変わる
             mana = Mathf.Clamp(mana, 0f, 100f);
@@ -2596,9 +2597,11 @@ namespace LifeSimProto
         void OrderApproach(SimCharacter g, Intent why)
         {
             if (g == null || g == this) return;
-            if (!CanTakeOrder()) { world.Log(displayName + "は今は動けない（" + BusyReason() + "）"); RefundGift(why); return; }
+            bool selfBath = why == Intent.Private && IsTarget && state == State.Bathing && Present; // 篤が入浴中でも誘いには行ける（2026-11-03 famuru）
+            if (!CanTakeOrder() && !selfBath) { world.Log(displayName + "は今は動けない（" + BusyReason() + "）"); RefundGift(why); return; }
+            bool bathOk = g.state == State.Bathing && why == Intent.Private && (IsTarget || g.IsTarget); // 入浴中の子も二人きりに誘える（2026-11-03 famuru）
             bool asleepOk = g.state == State.Sleeping && (g.sickRest || (why == Intent.Private && IsTarget)); // 篤が寝ている子を誘う：そばで起こしてから聞く（2026-11-02）
-            if (!g.Present || g.InPrivate || g.state == State.Bathing || (g.state == State.Sleeping && !asleepOk))
+            if (!g.Present || g.InPrivate || (g.state == State.Bathing && !bathOk) || (g.state == State.Sleeping && !asleepOk))
             {
                 ShowBubble(g.displayName + "は今いないみたい", 2.2f);
                 world.Log(g.displayName + "は今会えない（" + g.StateName() + "）");
@@ -2880,7 +2883,7 @@ namespace LifeSimProto
             bool sickOk = target != null && target.state == State.Sleeping && target.sickRest;
             // 篤が寝ている子を誘いに行く：そばまで行って起こし、起きてから聞く（2026-11-02 famuru。SimCharacter.Life.cs）
             bool wakeOk = target != null && target.state == State.Sleeping && !target.sickRest && intent == Intent.Private && IsTarget && hasOrder;
-            if (target == null || !target.Present || target.InPrivate || (target.state == State.Sleeping && !sickOk && !wakeOk) || target.state == State.Bathing) { GiveUp(); return; }
+            if (target == null || !target.Present || target.InPrivate || (target.state == State.Sleeping && !sickOk && !wakeOk) || (target.state == State.Bathing && !BathInviteOk(target))) { GiveUp(); return; }
             if (intent == Intent.Private && !PrivateNight) RecruitEscorts();
             approachTimer += dt;
             repathTimer -= dt;
@@ -2919,6 +2922,14 @@ namespace LifeSimProto
             {
                 // 夜中に起こして聞いたが、断られた：その子は寝に戻る（SimCharacter.Life.cs）
                 target.LifeWokenRefuse(this);
+                hasOrder = false; target = null; intent = Intent.Talk; ReleaseEscorts(); SetState(State.Idle); actionText = "ぼんやりしている";
+                return;
+            }
+            if (intent == Intent.Private && target.state == State.Bathing)
+            {
+                // 入浴中に誘ったが、今は気分ではない：話はせずに、そのまま入浴を続ける（2026-11-03）
+                target.ShowBubble(target.Say("refuse", "今はお風呂だから…"), 1.8f);
+                world.Log(target.displayName + "は、今はそういう気分ではないみたい（お風呂で）");
                 hasOrder = false; target = null; intent = Intent.Talk; ReleaseEscorts(); SetState(State.Idle); actionText = "ぼんやりしている";
                 return;
             }
@@ -3021,6 +3032,7 @@ namespace LifeSimProto
         public bool CanStartTalk(SimCharacter by)
         {
             if (IsMob) return by != null && by.IsTarget && by.hasOrder && Present && state != State.Talking && state != State.Private && !chatting;
+            if (state == State.Bathing && by != null && by.BathInviteOk(this) && !chatting) return true; // 入浴中でも、二人きりの誘いなら聞く（2026-11-03）
             if (!Present || state == State.Talking || state == State.Bathing || state == State.Private || chatting) return false;
             if (state == State.Sleeping && !sickRest) return false;
             if (hasOrder && target != by) return false;
@@ -3503,7 +3515,14 @@ namespace LifeSimProto
 
             // 場所を選ぶ：個室（女の子の部屋・篤の部屋）か、開いている場所（温室・図書室・屋上の天文台・中庭）で、ほかの人がいない所
             var spot = plan != null && plan.placeKey != null ? BuildPrivateSpot(plan.placeKey, group) : null;
+            // お風呂・シャワーにいるとき（入浴中に誘った・誘われた）は、その場で（2026-11-03 famuru）
+            if (spot == null) spot = BathSpotFor(girl, group.Count) ?? BathSpotFor(f, group.Count);
             if (spot == null) spot = PickPrivateSpot(group, f, girl);
+            // シャワーはふたりだけ（ほかの子は加わらない）
+            if (spot != null && spot.bathKind == "shower" && group.Count > 2)
+            {
+                for (int i = group.Count - 1; i >= 2; i--) { group[i].CancelPrivateSelf(); group.RemoveAt(i); }
+            }
             talkPartner = null;
             partner.talkPartner = null;
             if (spot == null) { CancelPrivate(group); yield break; }
@@ -3557,6 +3576,7 @@ namespace LifeSimProto
         {
             public string name;
             public RoomInfo room;
+            public string bathKind;   // "shower"（シャワー）・"bath"（お風呂）・null（2026-11-03）
             public readonly List<Vector3> walkTo = new List<Vector3>();
             public readonly List<Seat> seatList = new List<Seat>();
             public readonly List<Place> points = new List<Place>(); // 決まった席のない所（学校の部屋など。2026-10-31）
@@ -4244,6 +4264,7 @@ namespace LifeSimProto
             if (dozing && state == State.Sleeping) return onFloor ? Pose.SitFloor : Pose.Sit;
             if (state == State.Sleeping || (state == State.Talking && sickRest)) return onFloor ? Pose.LieFloor : Pose.Lie;
             if (state == State.Bathing) return Pose.Soak;
+            if (lifeLie && state == State.Sitting) return onFloor ? Pose.LieFloor : Pose.Lie; // 生活のできごと：ベッドで横になる（SimCharacter.Life.cs）
             if (state == State.Sitting || state == State.Eating) return onFloor ? Pose.SitFloor : Pose.Sit;
             if (state == State.Talking && seat != null && seat.kind == SeatKind.Sit && Flat(transform.position - seat.position).magnitude < 0.3f) return onFloor ? Pose.SitFloor : Pose.Sit;
             // 椅子のある場所（机など）では座って行う（2026-10-30 モーション。famuru「机で勉強は座って書く」）

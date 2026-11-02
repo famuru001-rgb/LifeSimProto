@@ -317,7 +317,7 @@ namespace LifeSimProto
 
             // ---- 加える ----
             string going = d.name + "（向かっている）";
-            if (r.mainMoves) { if (!(d.pose == "座る" ? main.LifeSitNear(r, r.pMain, going) : main.LifeGoTo(r, r.pMain, going))) { why = "主役が場所へ行けない"; return false; } }
+            if (r.mainMoves) { if (!(d.pose == "座る" ? main.LifeSitNear(r, r.pMain, going) : (d.pose == "横になる" ? main.LifeLieBed(r, r.pMain, going) : main.LifeGoTo(r, r.pMain, going)))) { why = "主役が場所へ行けない"; return false; } }
             else main.LifeStay(r);
             if (partner != null)
             {
@@ -412,6 +412,8 @@ namespace LifeSimProto
         {
             var f = w.RomanceTarget;
             if (f == null || !f.Present || f.InPrivate) return false;
+            // 部屋のできごと（ひとりの時間など）は、篤がその部屋に入ったときだけ（2026-11-03）
+            if ((r.def.place == "主役の部屋" || r.def.place == "相手の部屋") && r.area != null && w.LifeAreaAt(f.transform.position) != r.area) return false;
             if (r.partnerIsF) return Near(f, r.main, 8f);
             return Near(f, r.main, 6f);
         }
@@ -471,7 +473,7 @@ namespace LifeSimProto
             if (r.pendingH != null && f != null && !r.main.IsSick && (r.main.state != SimCharacter.State.Sleeping || r.pendingH == "起こして誘う"))
             {
                 if (r.pendingH == "エッチへ") r.main.LifeSeek(f);
-                else if ((r.pendingH == "誘う" || r.pendingH == "起こして誘う") && f.LifeAvailableAsF) f.OrderInvite(r.main, null);   // 寝ていれば、そばまで行って起こしてから聞く
+                else if ((r.pendingH == "誘う" || r.pendingH == "起こして誘う") && (f.LifeAvailableAsF || (f.state == SimCharacter.State.Bathing && f.lifeEv == null && f.Present))) f.OrderInvite(r.main, null);   // 篤が入浴中でも誘える（2026-11-03）   // 寝ていれば、そばまで行って起こしてから聞く
             }
         }
 
@@ -549,6 +551,7 @@ namespace LifeSimProto
                         case "寝坊": c.LifeOversleep(e.value); break;
                         case "起こす": c.LifeWake(); break;
                         case "寝る": if (c == r.main) r.bedMain = true; else if (c == r.partner) r.bedPartner = true; break;
+                        case "たまり": c.LifeAddHeat(e.value); break;
                         case "出かける": r.goOut.Add(new KeyValuePair<SimCharacter, float>(c, e.value)); break;
                     }
                 }
