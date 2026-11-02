@@ -21,7 +21,9 @@ namespace LifeSimProto
         public int chosen = -1;
         public bool choiceOpen;
         public string pendingH;   // エッチへ・誘う（終わってから）
-        public string Names { get { return main.displayName + (partner != null ? "・" + partner.displayName : ""); } }
+        public readonly List<SimCharacter> extras = new List<SimCharacter>();   // ほかに加わった寮生（複数人のできごと）
+        public readonly List<KeyValuePair<SimCharacter, float>> goOut = new List<KeyValuePair<SimCharacter, float>>();   // 終わったら出かける人と分
+        public string Names { get { string s = main.displayName + (partner != null ? "・" + partner.displayName : ""); foreach (var c in extras) s += "・" + c.displayName; return s; } }
     }
 
     /// <summary>
@@ -76,7 +78,57 @@ namespace LifeSimProto
             for (int i = runs.Count - 1; i >= 0; i--) Step(runs[i], now);
             runs.RemoveAll(r => r.phase == LifeRun.Phase.Done);
             if (now >= nextCheck) { nextCheck = now + CheckEvery; CheckTimed(now); }
-            if (now >= nextAreaCheck) { nextAreaCheck = now + 0.5; CheckFArea(); }
+            if (now >= nextAreaCheck) { nextAreaCheck = now + 0.5; CheckFArea(); CheckFBath(); CheckAfterPrivate(); }
+        }
+
+        // ================= きっかけ：篤が入浴・二人きりのあと =================
+        bool fWasBathing;
+        void CheckFBath()
+        {
+            var f = w.RomanceTarget;
+            bool bath = f != null && f.state == SimCharacter.State.Bathing;
+            bool started = bath && !fWasBathing;
+            fWasBathing = bath;
+            if (!started || runs.Count >= MaxRuns) return;
+            float m = w.MinuteOfDay;
+            foreach (var g in Groups("篤が入浴"))
+            {
+                var head = g[0];
+                if (!head.InTime(m) || !head.DayOk(w) || GroupBusy(head.group)) continue;
+                if (Random.value >= Mathf.Clamp01(head.rate)) continue;
+                string why;
+                if (TryStart(g, null, f, false, null, out why)) return;   // 1回の入浴に1つまで
+            }
+        }
+
+        readonly HashSet<SimCharacter> wasPrivate = new HashSet<SimCharacter>();
+        void CheckAfterPrivate()
+        {
+            foreach (var c in w.residents)
+            {
+                if (c.IsTarget || c.IsMob) continue;
+                bool now = c.InPrivate || c.InHSession;
+                if (now) { wasPrivate.Add(c); continue; }
+                if (!wasPrivate.Remove(c)) continue;
+                // 二人きりの時間が終わった子：「二人きりのあと」のできごと（その場で一瞬。結果だけ）
+                // 寝に行く途中などでも起きるように、集めずに結果だけをその場で足す
+                foreach (var g in Groups("二人きりのあと"))
+                {
+                    var head = g[0];
+                    if (!head.InTime(w.MinuteOfDay) || !head.DayOk(w)) continue;
+                    if (Random.value >= Mathf.Clamp01(head.rate)) continue;
+                    foreach (var d in g)
+                    {
+                        if (!d.mainCond.Test(c, null, w)) continue;
+                        var r = new LifeRun { def = d, main = c, startAt = w.Now };
+                        Apply(r, d.result);
+                        string text = Fill(d.logText.Length > 0 ? d.logText : "{主役}：" + d.name, r, null);
+                        w.Log(text);
+                        AddRecent(text);
+                        break;   // 同じグループは、合った最初の行だけ
+                    }
+                }
+            }
         }
 
         // ================= グループ =================
@@ -185,7 +237,8 @@ namespace LifeSimProto
         {
             if (d.partnerKind == "なし") return null;
             var list = new List<SimCharacter>();
-            if ((d.partnerKind == "篤" || d.partnerKind == "寮生か篤") && f != null && f.LifeAvailableAsF) list.Add(f);
+            bool fOk = f != null && (f.LifeAvailableAsF || (d.trigger == "篤が入浴" && f.state == SimCharacter.State.Bathing && f.lifeEv == null) || (d.trigger == "二人きりのあと" && f.lifeEv == null));
+            if ((d.partnerKind == "篤" || d.partnerKind == "寮生か篤") && fOk) list.Add(f);
             if (d.partnerKind == "寮生" || d.partnerKind == "寮生か篤")
                 foreach (var c in w.residents)
                     if (c != main && !c.IsTarget && !c.IsMob && c.LifeAvailable(d.partnerCond.WantsSleeping, d.partnerCond.WantsBathing)) list.Add(c);
@@ -272,6 +325,21 @@ namespace LifeSimProto
                 else if (r.partnerMoves) { if (!(d.pose == "座る" ? partner.LifeSitNear(r, r.pPartner, going) : partner.LifeGoTo(r, r.pPartner, going))) { main.LifeRelease(false); why = "相手が場所へ行けない"; return false; } }
                 else partner.LifeStay(r);
             }
+            // ほかに加わる寮生（複数人のできごと）
+            if (d.extraMax > 0 && !d.Instant)
+            {
+                var pool = new List<SimCharacter>();
+                foreach (var c in w.residents)
+                    if (c != main && c != partner && !c.IsTarget && !c.IsMob && c.LifeAvailable(false, false) && d.extraCond.Test(c, main, w)) pool.Add(c);
+                while (pool.Count > 0 && r.extras.Count < d.extraMax)
+                {
+                    var c = pool[Random.Range(0, pool.Count)];
+                    pool.Remove(c);
+                    Vector3 p = w.LifeNear(r.pMain, 1.4f);
+                    bool ok = d.pose == "座る" ? c.LifeSitNear(r, p, going) : c.LifeGoTo(r, p, going);
+                    if (ok) r.extras.Add(c);
+                }
+            }
             lastDay[d.group + "|" + main.letter] = w.Day;
             r.phase = LifeRun.Phase.Gather;
             runs.Add(r);
@@ -310,6 +378,7 @@ namespace LifeSimProto
             }
             bool okMain = StillIn(r.main, r);
             bool okPartner = r.partner == null || r.partnerIsF || StillIn(r.partner, r);
+            r.extras.RemoveAll(c => !StillIn(c, r));   // ほかの子は抜けてもよい
             if (!okMain || !okPartner) { Cancel(r, "とちゅうでやめた"); return; }
             if (r.phase == LifeRun.Phase.Gather)
             {
@@ -332,8 +401,9 @@ namespace LifeSimProto
             if (now >= r.nextTalk)
             {
                 r.nextTalk = now + Random.Range(12f, 20f);
-                bool byMain = r.partner == null || r.partnerIsF || Random.value < 0.5f;
-                Speak(r, "最中", byMain ? "主役" : "相手", 0f);
+                float rv = Random.value;
+                string role = r.extras.Count > 0 && rv < 0.3f ? "ほか" : (r.partner == null || r.partnerIsF || rv < 0.65f ? "主役" : "相手");
+                Speak(r, "最中", role, 0f);
             }
             if (now >= r.until) Finish(r);
         }
@@ -351,6 +421,7 @@ namespace LifeSimProto
             Vector3 lookM = r.partner != null ? r.partner.transform.position : r.main.transform.position + r.main.transform.forward;
             r.main.LifeHold(r.def.scene, lookM, r.def.name);
             if (r.partner != null && !r.partnerIsF) r.partner.LifeHold(r.def.scene, r.main.transform.position, r.def.name);
+            foreach (var c in r.extras) if (c.LifeArrived(c.transform.position) && !c.HasPath) c.LifeHold(r.def.scene, r.main.transform.position, r.def.name);
         }
 
         void Activate(LifeRun r)
@@ -362,6 +433,7 @@ namespace LifeSimProto
             r.main.LifeGesture(r.def.gesture, 2.5f);
             Speak(r, "始まり", "主役", 0f);
             if (r.partner != null) Speak(r, "始まり", r.partnerIsF ? "篤" : "相手", 1.8f);
+            if (r.extras.Count > 0) Speak(r, "始まり", "ほか", 3.4f);
             if (r.def.Instant) Finish(r);
         }
 
@@ -416,9 +488,12 @@ namespace LifeSimProto
             bool night = w.MinuteOfDay >= 21.5f * 60f || w.MinuteOfDay < 5f * 60f;
             if (r.main.lifeEv == r) r.main.LifeRelease(r.bedMain || (r.mainWasAsleep && night));
             if (r.partner != null && r.partner.lifeEv == r) r.partner.LifeRelease(r.bedPartner || (r.partnerWasAsleep && night));
+            foreach (var c in r.extras) if (c.lifeEv == r) c.LifeRelease(r.mainWasAsleep && night);
             var f = w.RomanceTarget;
             if (f != null && f.lifeEv == r) f.LifeRelease(false);
             r.fWatching = false;
+            foreach (var kv in r.goOut) kv.Key.LifeGoOut(kv.Value, r.def.name);
+            r.goOut.Clear();
         }
 
         void AddRecent(string s)
@@ -438,6 +513,8 @@ namespace LifeSimProto
                 if (e.who == "主役" || e.who == "ふたり") who.Add(r.main);
                 if ((e.who == "相手" || e.who == "ふたり") && r.partner != null) who.Add(r.partner);
                 if (e.who == "篤" && f != null) who.Add(f);
+                if (e.who == "みんな") { who.Add(r.main); if (r.partner != null) who.Add(r.partner); who.AddRange(r.extras); }
+                if (e.who == "ほか") who.AddRange(r.extras);
                 switch (e.kind)
                 {
                     case "仲":
@@ -472,6 +549,7 @@ namespace LifeSimProto
                         case "寝坊": c.LifeOversleep(e.value); break;
                         case "起こす": c.LifeWake(); break;
                         case "寝る": if (c == r.main) r.bedMain = true; else if (c == r.partner) r.bedPartner = true; break;
+                        case "出かける": r.goOut.Add(new KeyValuePair<SimCharacter, float>(c, e.value)); break;
                     }
                 }
             }
@@ -480,7 +558,7 @@ namespace LifeSimProto
         // ================= せりふ =================
         void Speak(LifeRun r, string scene, string role, float delay, string scene2 = null)
         {
-            SimCharacter who = role == "主役" ? r.main : (role == "相手" ? r.partner : w.RomanceTarget);
+            SimCharacter who = role == "主役" ? r.main : (role == "相手" ? r.partner : (role == "ほか" ? (r.extras.Count > 0 ? r.extras[Random.Range(0, r.extras.Count)] : null) : w.RomanceTarget));
             SimCharacter other = role == "主役" ? (r.partner ?? w.RomanceTarget) : r.main;
             if (who == null) return;
             string line = LifeBook.PickLine(r.def.group, scene, role, who, other, w);
@@ -503,6 +581,7 @@ namespace LifeSimProto
             s = s.Replace("{主役}", r.main.displayName);
             s = s.Replace("{相手}", r.partner != null ? r.partner.displayName : "");
             s = s.Replace("{篤}", f != null ? f.displayName : "篤");
+            if (s.Contains("{ほか}")) { var names = new List<string>(); foreach (var c in r.extras) names.Add(c.displayName); s = s.Replace("{ほか}", string.Join("・", names.ToArray())); }
             var p = speaker != null ? speaker.profile : r.main.profile;
             s = s.Replace("{呼び方}", p != null && !string.IsNullOrEmpty(p.callF) ? p.callF : "篤くん");
             return s;
@@ -556,6 +635,13 @@ namespace LifeSimProto
                         var r = runs[runs.Count - 1];
                         f.OrderMove(w.LifeNear(r.pMain, 1.5f));
                         return "life f: 篤が" + r.def.name + "の場所へ向かう";
+                    }
+                case "who":
+                    {
+                        // 試験用：life who 記号：その子の今のようす
+                        var c = a.Length > 2 ? w.characters.Find(x => x.letter == a[2].ToUpperInvariant()) : null;
+                        if (c == null) return "life who: 記号がない";
+                        return "life who: " + c.displayName + " " + c.LifeDebugText;
                     }
                 case "sleep":
                     {

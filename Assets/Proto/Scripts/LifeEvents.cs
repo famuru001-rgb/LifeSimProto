@@ -22,6 +22,20 @@ namespace LifeSimProto
         public static readonly List<string> Errors = new List<string>();
         /// <summary>キャラの型（キャラの型.csv：記号 → 型。条件「型:世話焼き」で使う。キャラデザで決める）。</summary>
         public static readonly Dictionary<string, string[]> Types = new Dictionary<string, string[]>();
+        /// <summary>周期（周期.csv：名前・対象の条件・何日ごと・何日間）。条件「周期:発情期」で使う。子ごとに始まる日がずれる。</summary>
+        public class Cycle { public string name; public LifeCond who; public int every, days; }
+        public static readonly List<Cycle> Cycles = new List<Cycle>();
+        public static bool InCycle(SimCharacter c, string name, LoungeWorld w)
+        {
+            foreach (var cy in Cycles)
+            {
+                if (cy.name != name) continue;
+                if (!cy.who.Test(c, null, w)) return false;
+                int off = 0; foreach (char ch in (c.letter ?? "") + "|" + name) off = (off * 31 + ch) & 0xFFFF;
+                return ((w.Day + off) % Mathf.Max(1, cy.every)) < cy.days;
+            }
+            return false;
+        }
         public static bool Loaded;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -32,9 +46,10 @@ namespace LifeSimProto
         {
             if (Loaded && !force) return;
             Loaded = true;
-            Events.Clear(); Lines.Clear(); Roles.Clear(); Errors.Clear(); Types.Clear();
+            Events.Clear(); Lines.Clear(); Roles.Clear(); Errors.Clear(); Types.Clear(); Cycles.Clear();
             LoadRoles(ReadTable("場所の役割"));
             LoadTypes(ReadTable("キャラの型"));
+            LoadCycles(ReadTable("周期"));
             LoadEvents(ReadTable("できごと"));
             LoadLines(ReadTable("せりふ"));
             if (Errors.Count > 0) Debug.LogWarning("生活のできごとの表：直したほうがよい所が " + Errors.Count + " か所（Logs\\life_check.txt / 命令 life check）");
@@ -136,6 +151,21 @@ namespace LifeSimProto
             }
         }
 
+        static void LoadCycles(List<string[]> t)
+        {
+            if (t.Count == 0) return;
+            var h = new Header(t[0]);
+            for (int i = 1; i < t.Count; i++)
+            {
+                var r = t[i];
+                if (Blank(r)) continue;
+                string n = h.Get(r, "名前");
+                if (n.Length == 0 || n.StartsWith("#")) continue;
+                string where = "周期.csv " + (i + 1) + "行目";
+                Cycles.Add(new Cycle { name = n, who = LifeCond.Parse(h.Get(r, "対象の条件"), where, false), every = Mathf.Max(1, Mathf.RoundToInt(ParseF(h.Get(r, "何日ごと"), 30f, where))), days = Mathf.Max(1, Mathf.RoundToInt(ParseF(h.Get(r, "何日間"), 3f, where))) });
+            }
+        }
+
         public static bool HasType(string letter, string type)
         {
             string[] ts;
@@ -160,6 +190,7 @@ namespace LifeSimProto
                     if (sc == "最中" && rows.TrueForAll(x => x.Instant)) continue;
                     scenes.Add(new KeyValuePair<string, string>(sc, "主役"));
                     if (withGirl) scenes.Add(new KeyValuePair<string, string>(sc, "相手"));
+                    if (rows.Exists(x => x.extraMax > 0)) scenes.Add(new KeyValuePair<string, string>(sc, "ほか"));
                     if (withF && sc != "最中") scenes.Add(new KeyValuePair<string, string>(sc, "篤"));
                 }
                 var labels = new List<string>();
@@ -174,11 +205,12 @@ namespace LifeSimProto
                     for (int k = 0; k < 2; k++) sb.Append(Csv(d.group) + "," + Csv(kv.Key) + "," + kv.Value + ",*,,," + Csv(memo) + "\r\n");
                 }
             }
-            foreach (var sc in new[] { "夜に起こす|起こす|篤", "夜に起こす|起こされた|主役", "夜に起こす|受ける|主役", "夜に起こす|断る|主役", "寝たふり|声かけ|篤", "寝たふり|受ける|主役" })
+            foreach (var sc in new[] { "夜に起こす|起こす|篤", "夜に起こす|起こされた|主役", "夜に起こす|受ける|主役", "夜に起こす|断る|主役", "夜に起こす|記録|主役", "夜に起こす|記録_断る|主役", "寝たふり|声かけ|篤", "寝たふり|受ける|主役", "寝たふり|記録|主役" })
             {
                 var a = sc.Split('|');
                 int have = 0; foreach (var l in Lines) if (l.group == a[0] && l.scene == a[1] && l.speaker == a[2]) have++;
                 string memo = a[0] == "寝たふり" ? "寝たふりで待っている子に篤が声をかけて、同意のひとことをもらうとき（本人は起きている）" : "篤が寝ている子を起こして誘うとき（どのできごとでも・右クリックの誘いでも）";
+                if (a[1].StartsWith("記録")) memo = "記録に出る文（せりふではない）。{主役}{篤} が使える。生活感のある言い方で／" + memo;
                 for (int k = 0; k < 2; k++) sb.Append(a[0] + "," + a[1] + "," + a[2] + ",*,,," + Csv(memo + "／今 " + have + "本") + "\r\n");
             }
             return sb.ToString();
@@ -205,7 +237,8 @@ namespace LifeSimProto
                 d.kind = h.Get(r, "種類");
                 d.name = h.Get(r, "名前"); if (d.name.Length == 0) d.name = d.id;
                 d.trigger = h.Get(r, "きっかけ"); if (d.trigger.Length == 0) d.trigger = "時間";
-                if (d.trigger != "時間" && d.trigger != "篤が来た") Errors.Add(where + "：きっかけは「時間」か「篤が来た」");
+                if (System.Array.IndexOf(new[] { "時間", "篤が来た", "篤が入浴", "二人きりのあと" }, d.trigger) < 0) Errors.Add(where + "：きっかけは「時間・篤が来た・篤が入浴・二人きりのあと」");
+                if (d.trigger == "二人きりのあと") d.length = 0f;
                 if (!ParseTime(h.Get(r, "時間"), out d.fromMin, out d.toMin)) Errors.Add(where + "：時間の書き方（例 22:00-25:00）");
                 d.days = h.Get(r, "日"); if (d.days.Length == 0) d.days = "全";
                 d.weather = h.Get(r, "天気"); if (d.weather.Length == 0) d.weather = "全";
@@ -215,9 +248,11 @@ namespace LifeSimProto
                 d.mainCond = LifeCond.Parse(h.Get(r, "主役の条件"), where + " 主役の条件", false);
                 d.partnerCond = LifeCond.Parse(h.Get(r, "相手の条件"), where + " 相手の条件", false);
                 d.pairCond = LifeCond.Parse(h.Get(r, "ふたりの条件"), where + " ふたりの条件", true);
+                d.extraMax = Mathf.Clamp(Mathf.RoundToInt(ParseF(h.Get(r, "ほかの人数"), 0f, where)), 0, 4);
+                d.extraCond = LifeCond.Parse(h.Get(r, "ほかの条件"), where + " ほかの条件", false);
                 d.rate = ParseF(h.Get(r, "起こりやすさ"), 0.5f, where);
                 d.coolDays = ParseF(h.Get(r, "間隔（日）"), 2f, where);
-                d.length = ParseF(h.Get(r, "長さ（分）"), 0f, where);
+                if (d.trigger != "二人きりのあと") d.length = ParseF(h.Get(r, "長さ（分）"), 0f, where);
                 d.pose = h.Get(r, "姿勢"); if (d.pose.Length == 0) d.pose = "立つ";
                 if (System.Array.IndexOf(new[] { "立つ", "座る", "そのまま" }, d.pose) < 0) Errors.Add(where + "：姿勢は「立つ・座る・そのまま」");
                 d.scene = h.Get(r, "動き");
@@ -360,7 +395,8 @@ namespace LifeSimProto
         public string id, group, kind, name, trigger, days, weather, place, partnerKind, pose, scene, gesture, logText;
         public bool enabled;
         public int fromMin, toMin, row;
-        public LifeCond mainCond, partnerCond, pairCond;
+        public LifeCond mainCond, partnerCond, pairCond, extraCond;
+        public int extraMax;   // ほかに加わる寮生の人数（0〜4。複数人のできごと）
         public float rate, coolDays, length;
         public LifeEffect[] result;
         public string[] choices;
@@ -375,9 +411,13 @@ namespace LifeSimProto
 
         public bool DayOk(LoungeWorld w)
         {
-            bool hol = w.IsHolidayToday;
-            if (days == "休日" && !hol) return false;
-            if ((days == "授業日" || days == "平日") && hol) return false;
+            // 日：全・授業日・休日・春・夏・秋・冬・試験の前日・行事の日・満月（「/」でどれか）
+            if (days != "全" && days.Length > 0)
+            {
+                bool any = false;
+                foreach (var dd in LifeBook.SplitList(days)) if (DayMatch(w, dd)) { any = true; break; }
+                if (!any) return false;
+            }
             var we = Calendar.WeatherOf(w.Day);
             switch (weather)
             {
@@ -389,6 +429,23 @@ namespace LifeSimProto
                 case "晴れかくもり": return we == Weather.Sunny || we == Weather.Cloudy;
             }
             return true;
+        }
+
+        static bool DayMatch(LoungeWorld w, string d)
+        {
+            bool hol = w.IsHolidayToday;
+            switch (d)
+            {
+                case "全": return true;
+                case "休日": return hol;
+                case "授業日": case "平日": return !hol;
+                case "試験の前日": return w.ExamEveToday;
+                case "行事の日": return Calendar.IsFestival(w.Day);
+                case "満月": return Calendar.IsFullMoon(w.Day);
+            }
+            int s = System.Array.IndexOf(Calendar.SeasonNames, d);
+            if (s >= 0) return Calendar.Season(w.Day) == s;
+            return false;
         }
 
         public bool HasEffect(string kind)
@@ -454,7 +511,7 @@ namespace LifeSimProto
             {
                 at.key = a.Substring(0, colon).Trim();
                 at.text = a.Substring(colon + 1).Trim();
-                if (System.Array.IndexOf(new[] { "状態", "好き", "嫌い", "趣味", "記号", "種族", "しるし", "型" }, at.key) < 0) { LifeBook.Errors.Add(where + "：「" + a + "」の「" + at.key + ":」が分からない"); return null; }
+                if (System.Array.IndexOf(new[] { "状態", "好き", "嫌い", "趣味", "記号", "種族", "しるし", "型", "周期" }, at.key) < 0) { LifeBook.Errors.Add(where + "：「" + a + "」の「" + at.key + ":」が分からない"); return null; }
                 StatusLine dl; int ds;
                 if (at.key == "状態" && !LifeStatus.Find(at.text, out dl, out ds)) { LifeBook.Errors.Add(where + "：状態「" + at.text + "」がない"); return null; }
                 return at;
@@ -515,7 +572,8 @@ namespace LifeSimProto
                 case "嫌い": return p != null && AnyHas(p.dislikes, at.text);
                 case "趣味": return p != null && (p.hobbyText ?? "").Contains(at.text);
                 case "記号": return System.Array.IndexOf(LifeBook.SplitList(at.text), c.letter) >= 0;
-                case "種族": return p != null && (p.race ?? "").Contains(at.text);
+                case "種族": { if (p == null) return false; foreach (var t in LifeBook.SplitList(at.text)) if ((p.race ?? "").Contains(t)) return true; return false; }
+                case "周期": return LifeBook.InCycle(c, at.text, w);
                 case "しるし": return c.LifeHasFlag(at.text);
                 case "型": { foreach (var t in LifeBook.SplitList(at.text)) if (LifeBook.HasType(c.letter, t)) return true; return false; }
                 case "恋人": return !c.IsTarget && c.IsLover;
@@ -590,7 +648,7 @@ namespace LifeSimProto
                 string a = raw.Trim();
                 if (a.Length == 0) continue;
                 var e = new LifeEffect();
-                foreach (var w in new[] { "主役", "相手", "ふたり", "篤" })
+                foreach (var w in new[] { "主役", "相手", "ふたり", "篤", "みんな", "ほか" })
                     if (a.StartsWith(w + ":")) { e.who = w; a = a.Substring(w.Length + 1).Trim(); break; }
                 if (a == "起こす" || a == "寝る" || a == "エッチへ" || a == "誘う" || a == "起こして誘う") { e.kind = a; res.Add(e); continue; }
                 int colon = a.IndexOf(':');
@@ -609,6 +667,11 @@ namespace LifeSimProto
                         var b = rest.Split(':');
                         e.text = b[0]; e.value = 3f;
                         if (b.Length > 1) float.TryParse(b[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out e.value);
+                        res.Add(e); continue;
+                    }
+                    if (e.kind == "出かける")
+                    {
+                        if (!float.TryParse(rest, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out e.value)) { LifeBook.Errors.Add(where + "：「" + a + "」（出かける:90 の形）"); continue; }
                         res.Add(e); continue;
                     }
                     if (e.kind == "能力")

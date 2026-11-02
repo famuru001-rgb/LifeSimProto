@@ -52,7 +52,7 @@ namespace LifeSimProto
             }
             string l = LifeBook.PickLine("寝たふり", "受ける", "主役", this, by, world);
             StartCoroutine(LifeSayLater(l ?? "…いいよ", 1.6f));
-            world.Log(displayName + "は寝たふりで待っていた（篤が声をかけて、同意した）");
+            LifeLog("寝たふり", "記録", by, "約束の夜、{篤}は{主役}の部屋の扉をそっと開けた");
         }
 
         /// <summary>寝たふりの遊びの場所と内容：その子の部屋・二人きり・横になって。</summary>
@@ -89,13 +89,30 @@ namespace LifeSimProto
             }
             string l = LifeBook.PickLine("夜に起こす", "起こされた", "主役", this, by, world);
             if (l != null) StartCoroutine(LifeSayLater(l, 1.6f));
-            world.Log(displayName + "が篤に起こされた");
+            LifeLog("夜に起こす", "記録", by, "{篤}がそっと{主役}の部屋を訪ねた");
+        }
+
+        /// <summary>記録の文（せりふ.csv の「記録」の行。なければ決まった文）。</summary>
+        void LifeLog(string group, string scene, SimCharacter by, string fallback)
+        {
+            string t = LifeBook.PickLine(group, scene, "主役", this, by, world) ?? fallback;
+            world.Log(t.Replace("{主役}", displayName).Replace("{篤}", by != null ? by.displayName : "篤"));
         }
 
         System.Collections.IEnumerator LifeSayLater(string text, float delay)
         {
             yield return new WaitForSeconds(delay);
             ShowBubble(text.Replace("{呼び方}", profile != null && !string.IsNullOrEmpty(profile.callF) ? profile.callF : "篤くん"), 2.2f);
+        }
+
+        /// <summary>試験用：今のようす（命令 life who 記号）。</summary>
+        public string LifeDebugText
+        {
+            get
+            {
+                return "state=" + state + " goal=" + goal + " away=" + awayKind + " until=" + ScheduleMaker.Clock(awayUntil) + " path=" + path.Count + " 「" + actionText + "」 lifeEv=" + (lifeEv != null ? lifeEv.def.id : "-")
+                    + " order=" + hasOrder + " mission=" + OnMission + " 場所=" + (world.LifeAreaAt(transform.position) != null ? world.LifeAreaAt(transform.position).name : "?");
+            }
         }
 
         /// <summary>試験用：今すぐ自分のベッドで寝かせる（命令 life sleep 記号）。</summary>
@@ -132,7 +149,7 @@ namespace LifeSimProto
         {
             string l = LifeBook.PickLine("夜に起こす", "断る", "主役", this, by, world);
             ShowBubble((l ?? "ん…眠いから、また今度ね").Replace("{呼び方}", profile != null && !string.IsNullOrEmpty(profile.callF) ? profile.callF : "篤くん"), 2.2f);
-            world.Log(displayName + "は眠そうに断って、また寝た（篤の誘い）");
+            LifeLog("夜に起こす", "記録_断る", by, "{主役}は眠そうに首をふって、また布団にもぐった");
             if (!IsTarget && LoveStage < 2) world.ChangeLove(this, -1f);
             lifeNightWoken = false;
             if (room != null) StartBed(); else SetState(State.Idle);
@@ -203,6 +220,18 @@ namespace LifeSimProto
         }
 
         /// <summary>篤ができごとの相手になれるか（篤は動かさない。話している・二人きりの時間・出かけている間はなれない）。</summary>
+        /// <summary>できごとのあとで出かける（買い出し など）。</summary>
+        public void LifeGoOut(float minutes, string label)
+        {
+            if (!Present || InPrivate || state == State.Sleeping) return;
+            lifeEv = null;
+            sceneLabel = null;
+            awayKind = AwayKind.Outing;
+            awayLabel = label + "に出かけている";
+            awayUntil = world.Now + Mathf.Max(10f, minutes);
+            StartLeave(label + "に出かける");
+        }
+
         public bool LifeAvailableAsF
         {
             get { return lifeEv == null && Present && !InDungeon && !chatting && !privatePending && hs == null && state != State.Talking && state != State.Private && state != State.Sleeping && state != State.Bathing; }
