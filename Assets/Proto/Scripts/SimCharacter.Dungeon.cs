@@ -13,7 +13,7 @@ namespace LifeSimProto
         /// <summary>ダンジョン実習に来られるか。</summary>
         public bool CanJoinDungeon()
         {
-            if (dRun != null || !Present || sickRest || profile == null || IsTeacher) return false;
+            if (dRun != null || !Present || sickRest || profile == null || IsTeacher || lifeEv != null) return false;
             if (state == State.Sleeping || state == State.Private || state == State.Talking || state == State.Bathing || state == State.Eating) return false;
             if (privatePending || chatting) return false;
             return true;

@@ -22,7 +22,7 @@ namespace LifeSimProto
         /// <summary>今から部活へ行く時間か（寮生・篤）。</summary>
         bool ClubDue(double now)
         {
-            if (club < 0 || IsTeacher || clubDay == world.Day || sickRest || hasOrder || privatePending) return false;
+            if (club < 0 || IsTeacher || clubDay == world.Day || sickRest || hasOrder || privatePending || lifeEv != null) return false;
             double m = now - ScheduleMaker.DayStart(world.Day);
             if (m < Clubs.StartMin - 10 || m > Clubs.EndMin - 30) return false;
             if (!Clubs.ActiveDay(world, world.Day)) return false;

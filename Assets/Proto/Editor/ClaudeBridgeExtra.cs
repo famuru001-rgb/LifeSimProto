@@ -88,6 +88,7 @@ namespace LifeSimProto.EditorTools
                 case "motionvideo":
                 case "usagevideo":
                 case "hpreview":
+                case "life":
                 case "hpreviewshot":
                 case "skirtlegshots":
                 case "skirtleg":
@@ -415,6 +416,12 @@ namespace LifeSimProto.EditorTools
                         else if (s1 == "render") log.AppendLine(LifeSimProto.PerfProbe.Render(a.Length > 2 ? a[2] : "reset", a.Length > 3 ? a[3] : ""));
                         else if (s1 == "clear") log.AppendLine(LifeSimProto.PerfProbe.Clear());
                         else log.AppendLine(LifeSimProto.PerfProbe.Begin(a.Length > 2 ? a[2] : "測定", float.Parse(s1, System.Globalization.CultureInfo.InvariantCulture)));
+                        break;
+                    }
+                    case "life":   // 生活のできごと（2026-11-02）：life [stat|reload|check|run ID 主役 相手|pick 番号|clear]
+                    {
+                        if (LifeSimProto.LifeEventDirector.Instance == null) { log.AppendLine("life: できごとの仕組みがない"); break; }
+                        log.AppendLine(LifeSimProto.LifeEventDirector.Instance.Command(a));
                         break;
                     }
                     case "hpreview":   // 確認用の場：hpreview [形] [場面 -1..3] [相手の記号] / hpreview close（2026-10-31 モーション）

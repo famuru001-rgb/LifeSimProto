@@ -168,6 +168,7 @@ namespace LifeSimProto
             get
             {
                 if (InDungeon) return false; // ダンジョン実習の間
+                if (lifeEv != null) return false; // 生活のできごとの間（2026-11-02）
                 if (IsMob) return MobInviteOk(); // 寮生以外の学生・先生は、篤が誘いに来たときだけ（会話なし）
                 if (!Present || state == State.Bathing || state == State.Talking || state == State.Private) return false;
                 if (state == State.Sleeping && !sickRest) return false;
@@ -1781,6 +1782,7 @@ namespace LifeSimProto
             if (inPlaceClass && now >= classUntil) EndPlaceClass();
             if (chatting) return; // その場での会話が終わるまで待つ
             if (InDungeon) return; // ダンジョン実習の間は、組の進み方に任せる（SimCharacter.Dungeon.cs）
+            if (lifeEv != null) return; // 生活のできごとの間は、その進み方に任せる（LifeEventDirector.cs。2026-11-02）
             CheckClubInterrupted();
             if (TryStartClubTrip(now)) return; // 部活へ（2026-11-01）
 

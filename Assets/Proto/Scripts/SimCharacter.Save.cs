@@ -18,6 +18,7 @@ namespace LifeSimProto
         public List<StatusSave> statuses = new List<StatusSave>();
         public List<ModSave> mods = new List<ModSave>();
         public int[] enrolled;
+        public List<string> lifeFlags;   // 生活のできごとのしるし（名前|いつまで。2026-11-02）
     }
 
     [System.Serializable] public class StatusSave { public int line, stage; public double until; public float timer; }
@@ -36,6 +37,7 @@ namespace LifeSimProto
                 hasAssignment = hasAssignment, desireMaxAtNight = desireMaxAtNight, assignSubject = assignSubject, assignDeadline = assignDeadline,
                 skill = (float[])skill.Clone(), ability = (float[])ability.Clone(), weekSubject = (float[])weekSubject.Clone(),
                 enrolled = profile != null ? (int[])profile.enrolled.Clone() : null,
+                lifeFlags = LifeFlagsSave(),
             };
             foreach (var st in statuses) s.statuses.Add(new StatusSave { line = (int)st.line, stage = st.stage, until = st.until, timer = st.timer });
             foreach (var m in mods) if (m.mod != null && m.mod.source != ModSource.Race) s.mods.Add(new ModSave { id = m.mod.id, until = m.until });
@@ -52,6 +54,7 @@ namespace LifeSimProto
             Copy(s.ability, ability);
             if (s.weekSubject != null && s.weekSubject.Length == weekSubject.Length) Copy(s.weekSubject, weekSubject);
             if (profile != null && s.enrolled != null && s.enrolled.Length > 0) profile.enrolled = (int[])s.enrolled.Clone();
+            LifeFlagsLoad(s.lifeFlags);
             statuses.Clear();
             if (s.statuses != null)
                 foreach (var st in s.statuses) statuses.Add(new ActiveStatus { line = (StatusLine)st.line, stage = st.stage, until = st.until, timer = st.timer });

@@ -98,6 +98,7 @@ namespace LifeSimProto
         {
             if (OverSlideTags(v)) return true;
             if (DungeonChoiceShown && DungeonChoiceRect.Contains(v)) return true;
+            if (LifeChoiceShown && LifeChoiceRect.Contains(v)) return true;
             if (TopBar.Contains(v) || TablePanel.Contains(v) || LogPanel.Contains(v) || RomancePanel.Contains(v)) return true;
             if (GearRect.Contains(v) || FloorButtonsRect.Contains(v) || (helpOpen && HelpPopup.Contains(v))) return true;
             if (selected != null && DetailPanel.Contains(v)) return true;
@@ -324,6 +325,7 @@ namespace LifeSimProto
             if (Loop.AskChoice) DrawChoice();
             if (saveOpen) DrawSave();
             DrawDungeonChoice(); // ダンジョン実習で、篤の組がどうするか（SimHud.Academy.cs）
+            DrawLifeChoice();    // 生活のできごとで、篤がどうするか（SimHud.Life.cs）
             DrawMenu(); // 右クリックの選択肢
             if (Story.IsActive) DrawStory();
         }
