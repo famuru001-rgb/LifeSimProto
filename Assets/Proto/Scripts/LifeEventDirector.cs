@@ -566,12 +566,14 @@ namespace LifeSimProto
                         return "life sleep: " + c.displayName + " " + c.LifeTestSleep(min);
                     }
                 case "promise":
+                case "pretend":
                     {
-                        // 試験用：life promise 記号：その子に「夜の約束」を付ける（1日）
+                        // 試験用：life promise 記号＝「夜の約束」／life pretend 記号＝「寝たふりの約束」（1日）
                         var c = a.Length > 2 ? w.characters.Find(x => x.letter == a[2].ToUpperInvariant()) : null;
-                        if (c == null) return "life promise: 記号がない";
-                        c.LifeSetFlag(SimCharacter.PromiseFlag, 1f);
-                        return "life promise: " + c.displayName + " に夜の約束";
+                        if (c == null) return "life " + sub + ": 記号がない";
+                        string fl = sub == "pretend" ? SimCharacter.PretendFlag : SimCharacter.PromiseFlag;
+                        c.LifeSetFlag(fl, 1f);
+                        return "life " + sub + ": " + c.displayName + " に" + fl;
                     }
                 case "lines":
                     {

@@ -2889,7 +2889,12 @@ namespace LifeSimProto
             bool sameFloor = Mathf.Abs(d3.y) < 0.5f;
             if (sameFloor && d <= (wakeOk ? 2.2f : 1.6f))
             {
-                if (wakeOk) target.LifeWakeAtNight(this);
+                if (wakeOk)
+                {
+                    // 寝たふりの約束：声をかけて、同意してから、その子の部屋で（SimCharacter.Life.cs）。それ以外は起こしてから聞く
+                    if (target.LifeHasFlag(PretendFlag)) { target.LifePretendRespond(this); invitePlan = target.LifePretendPlan(); }
+                    else target.LifeWakeAtNight(this);
+                }
                 if (target.CanStartTalk(this)) { BeginInteraction(); return; }
                 StartWaiting();
                 return;
@@ -2936,7 +2941,7 @@ namespace LifeSimProto
             // 篤が誘ったときは、恋人なら性欲が低くても受ける（2026-10-25）
             bool loverInvite = !IsTarget && by.IsTarget && by.hasOrder && IsLover;
             // 前もって約束している（しるし「夜の約束」）：篤が来たら受ける（2026-11-02 famuru。始めるのは起こしてから）
-            bool promised = !IsTarget && by.IsTarget && LifeHasFlag(PromiseFlag);
+            bool promised = !IsTarget && by.IsTarget && (LifeHasFlag(PromiseFlag) || (lifePretend && LifeHasFlag(PretendFlag)));
             return pair && !sickRest && state != State.Sleeping && (desire >= 40f || loverInvite || promised);
         }
 

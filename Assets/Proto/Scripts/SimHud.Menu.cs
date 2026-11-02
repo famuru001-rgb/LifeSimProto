@@ -228,7 +228,7 @@ namespace LifeSimProto
                 var g = girl;
                 items.Add(new MenuItem { label = Story.Pending.Contains(g.letter) ? g.displayName + "に話しかける ★" : g.displayName + "に話しかける", enabled = true, act = () => { f.OrderTalk(g); world.Log("篤への指示：「" + g.displayName + "と話す」"); CloseMenu(); } });
                 if (!c.IsTarget) items.Add(new MenuItem { label = "プレゼントする ▶", enabled = true, act = () => menuGift = true });
-                items.Add(new MenuItem { label = g.displayName + "をエッチに誘う ▶" + (g.state == SimCharacter.State.Sleeping && !g.IsSick ? "（起こして聞く）" : ""), enabled = !g.IsSick, act = OpenInvite });
+                items.Add(new MenuItem { label = g.displayName + "をエッチに誘う ▶" + (g.state == SimCharacter.State.Sleeping && !g.IsSick ? (g.LifeHasFlag(SimCharacter.PretendFlag) ? "（寝たふりで待っている）" : "（起こして聞く）") : ""), enabled = !g.IsSick, act = OpenInvite });
                 AddDungeonPickItem(items, g);
             }
             if (c.IsTarget && girl == null && DungeonDirector.Instance != null && DungeonDirector.Instance.FRun == null)

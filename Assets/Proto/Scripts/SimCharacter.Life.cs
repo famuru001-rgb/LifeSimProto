@@ -20,6 +20,48 @@ namespace LifeSimProto
         // ・寝込んでいる子：二人きりの時間は始まらない（軽いふれあい＝手を握る・髪をなでる などは、できごとの選択肢で）
         // ・断られたら、その子はまた寝に戻る。せりふは せりふ.csv のグループ「夜に起こす」（場面：起こす〈篤〉・起こされた・受ける・断る）
         public const string PromiseFlag = "夜の約束";
+        // ---- 寝たふりの遊び（2026-11-02 famuru）----
+        // 起きているときに二人で決める（しるし「寝たふりの約束」）。その子はベッドで寝たふりをして待つ（本当は起きている）。
+        // 篤がそばに来たら「始めていい？」と声をかけ、その子が同意のひとことを言ってから、その子の部屋で二人きりの時間が始まる（約束どおり受ける）。
+        // 始まった場面では、せりふの条件「pretend」（HLines）が使える。せりふ：せりふ.csv のグループ「寝たふり」（声かけ〈篤〉・受ける）
+        public const string PretendFlag = "寝たふりの約束";
+        /// <summary>寝たふりの遊びで始めるところ（二人きりの時間の条件 pretend に使い、使ったら消す）。</summary>
+        public bool lifePretend;
+
+        /// <summary>寝たふりで待っている子に、篤が声をかける。同意のひとことを言って起き上がる。</summary>
+        public void LifePretendRespond(SimCharacter by)
+        {
+            if (state != State.Sleeping || sickRest) return;
+            napping = false;
+            dozing = false;
+            if (seat != null && seat.occupant == this)
+            {
+                if (seat.kind == SeatKind.Bed) { transform.position = world.NearestFree(seat.approach); seat.occupant = null; }
+            }
+            if (seat != null && seat.kind == SeatKind.Bed) seat = null;
+            path.Clear();
+            goal = Goal.None;
+            SetState(State.Idle);
+            lifePretend = true;
+            actionText = "寝たふりで待っていた";
+            if (by != null)
+            {
+                Vector3 d = by.transform.position - transform.position; d.y = 0f;
+                if (d.sqrMagnitude > 0.01f) transform.rotation = Quaternion.LookRotation(d.normalized);
+                by.ShowBubble(LifeBook.PickLine("寝たふり", "声かけ", "篤", by, this, world) ?? "…始めていい？", 1.8f);
+            }
+            string l = LifeBook.PickLine("寝たふり", "受ける", "主役", this, by, world);
+            StartCoroutine(LifeSayLater(l ?? "…いいよ", 1.6f));
+            world.Log(displayName + "は寝たふりで待っていた（篤が声をかけて、同意した）");
+        }
+
+        /// <summary>寝たふりの遊びの場所と内容：その子の部屋・二人きり・横になって。</summary>
+        public HPlan LifePretendPlan()
+        {
+            var pl = new HPlan { depth = 2, solo = true, pose = "正常位" };
+            if (room != null) { pl.placeKey = "room:" + id; pl.placeName = room.AreaName; }
+            return pl;
+        }
         /// <summary>誘われて夜中に起こされた（断ったら寝に戻る）。</summary>
         public bool lifeNightWoken;
 
@@ -77,6 +119,7 @@ namespace LifeSimProto
         /// <summary>起こされた子が誘いを受けた（約束はここで使い終わる）。</summary>
         void LifeWokenAccept(SimCharacter by)
         {
+            if (lifePretend) LifeClearFlag(PretendFlag);
             if (!lifeNightWoken) return;
             lifeNightWoken = false;
             LifeClearFlag(PromiseFlag);

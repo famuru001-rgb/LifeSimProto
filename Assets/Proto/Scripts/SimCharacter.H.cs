@@ -169,6 +169,7 @@ namespace LifeSimProto
                 hBaseConds.Add(before ? "soul" : "first");
             }
             else if (n >= 5) hBaseConds.Add("used");
+            if (lifePretend) { hBaseConds.Add("pretend"); lifePretend = false; } // 寝たふりの遊び（2026-11-02。SimCharacter.Life.cs）
             string f = world.RomanceTarget != null ? world.RomanceTarget.letter : null;
             foreach (var e in HLog.Entries)
             {

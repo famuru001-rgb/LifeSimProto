@@ -174,11 +174,12 @@ namespace LifeSimProto
                     for (int k = 0; k < 2; k++) sb.Append(Csv(d.group) + "," + Csv(kv.Key) + "," + kv.Value + ",*,,," + Csv(memo) + "\r\n");
                 }
             }
-            foreach (var sc in new[] { "起こす|篤", "起こされた|主役", "受ける|主役", "断る|主役" })
+            foreach (var sc in new[] { "夜に起こす|起こす|篤", "夜に起こす|起こされた|主役", "夜に起こす|受ける|主役", "夜に起こす|断る|主役", "寝たふり|声かけ|篤", "寝たふり|受ける|主役" })
             {
                 var a = sc.Split('|');
-                int have = 0; foreach (var l in Lines) if (l.group == "夜に起こす" && l.scene == a[0] && l.speaker == a[1]) have++;
-                for (int k = 0; k < 2; k++) sb.Append("夜に起こす," + a[0] + "," + a[1] + ",*,,," + Csv("篤が寝ている子を起こして誘うとき（どのできごとでも・右クリックの誘いでも）／今 " + have + "本") + "\r\n");
+                int have = 0; foreach (var l in Lines) if (l.group == a[0] && l.scene == a[1] && l.speaker == a[2]) have++;
+                string memo = a[0] == "寝たふり" ? "寝たふりで待っている子に篤が声をかけて、同意のひとことをもらうとき（本人は起きている）" : "篤が寝ている子を起こして誘うとき（どのできごとでも・右クリックの誘いでも）";
+                for (int k = 0; k < 2; k++) sb.Append(a[0] + "," + a[1] + "," + a[2] + ",*,,," + Csv(memo + "／今 " + have + "本") + "\r\n");
             }
             return sb.ToString();
         }
