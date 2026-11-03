@@ -52,7 +52,7 @@ namespace LifeSimProto
             small.clipping = TextClipping.Overflow; tiny.clipping = TextClipping.Overflow;
 
             // ---- 上：基本と行動 ----
-            GUI.Box(top, GUIContent.none, panel);
+            Deco(top, GUIContent.none, panel);
             float y = top.y + 8;
             float tx = top.x + 14;
             var face = Portrait(c, "face");
@@ -108,7 +108,7 @@ namespace LifeSimProto
             GUI.EndScrollView();
 
             // ---- 下：見出しと中身 ----
-            GUI.Box(bottom, GUIContent.none, panel);
+            Deco(bottom, GUIContent.none, panel);
             y = bottom.y + 8;
             float tw = (bottom.width - 28f) / DetailTabs.Length;
             for (int i = 0; i < DetailTabs.Length; i++)
@@ -137,7 +137,7 @@ namespace LifeSimProto
         /// <summary>寮生以外の学生・先生の下の欄：能力・成績と、エッチの記録だけ。</summary>
         void DrawMobDetailBottom(SimCharacter c, Rect bottom)
         {
-            GUI.Box(bottom, GUIContent.none, panel);
+            Deco(bottom, GUIContent.none, panel);
             float y = bottom.y + 8;
             int[] tabs = { TabAbility, TabLog };
             if (detailTab != TabAbility && detailTab != TabLog) detailTab = TabAbility;
@@ -570,8 +570,8 @@ namespace LifeSimProto
         void DrawMemory()
         {
             Rect r = MemoryPanel;
-            GUI.Box(r, GUIContent.none, panel);
-            GUI.Box(r, GUIContent.none, panel); // 後ろの文字が透けないように重ねる
+            Deco(r, GUIContent.none, panel);
+            Deco(r, GUIContent.none, panel); // 後ろの文字が透けないように重ねる
             GUI.Label(new Rect(r.x + 14, r.y + 8, r.width - 120, 30), "思い出（" + Loop.Count + "周目）　ループしても残る", title);
             if (GUI.Button(new Rect(r.xMax - 92, r.y + 8, 80, 30), "閉じる", smallButton)) memoryOpen = false;
             float tw = (r.width - 28f) / MemoryTabs.Length;
@@ -720,8 +720,8 @@ namespace LifeSimProto
         void DrawSave()
         {
             Rect r = SavePanel;
-            GUI.Box(r, GUIContent.none, panel);
-            GUI.Box(r, GUIContent.none, panel);
+            Deco(r, GUIContent.none, panel);
+            Deco(r, GUIContent.none, panel);
             GUI.Label(new Rect(r.x + 14, r.y + 8, r.width - 120, 30), "セーブとロード", title);
             if (GUI.Button(new Rect(r.xMax - 92, r.y + 8, 80, 30), "閉じる", smallButton)) { saveOpen = false; loadConfirm = -1; }
             GUI.Label(new Rect(r.x + 14, r.y + 42, r.width - 28, 22), "自動セーブは毎朝6時。読み込むと、保存した日と時刻から続く（キャラの今の行動はやり直し）", tiny);
@@ -787,8 +787,8 @@ namespace LifeSimProto
         void DrawStory()
         {
             Rect r = StoryPanel;
-            GUI.Box(r, GUIContent.none, panel);
-            GUI.Box(r, GUIContent.none, panel); // 少し濃く
+            Deco(r, GUIContent.none, panel);
+            Deco(r, GUIContent.none, panel); // 少し濃く
             GUI.Label(new Rect(r.x + 18, r.y + 10, r.width - 36, 30), Story.ActiveTitle, title);
             var lines = Story.ActiveLines;
             int cur = Mathf.Clamp(Story.ActiveLine, 0, Mathf.Max(0, lines.Length - 1));

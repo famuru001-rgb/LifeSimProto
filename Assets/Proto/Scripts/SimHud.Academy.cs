@@ -169,7 +169,7 @@ namespace LifeSimProto
             if (!DungeonChoiceShown) return;
             var run = DungeonDirector.Instance.FRun;
             Rect r = DungeonChoiceRect;
-            GUI.Box(r, GUIContent.none, panel);
+            Deco(r, GUIContent.none, panel);
             GUI.Label(new Rect(r.x + 14, r.y + 8, r.width - 28, 26), (run.training ? "事前研修（訓練の施設）　体力 " : "ダンジョン実習　" + run.floor + "階　体力 ") + Mathf.RoundToInt(Mathf.Max(0f, run.hp)) + "/" + Mathf.RoundToInt(run.maxHp) + "　銀貨 " + run.silver + "・宝 " + run.items.Count, small);
             // 体力の棒
             var old = GUI.color;

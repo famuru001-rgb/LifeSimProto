@@ -41,8 +41,9 @@ namespace LifeSimProto
             awayUntil = now + 12;
             awayLabel = Clubs.NameOf(club) + "の活動に向かっている";
             // すでに学校にいる（実技の授業の場所など）なら、その場で向かう
+            if (LoungeWorld.InSchool(transform.position) && WalkToClub()) return true; // 学校の中からも歩いて行く（2026-11-04）
             if (LoungeWorld.InSchool(transform.position)) { LeaveCurrentSpot(); path.Clear(); goal = Goal.None; SetState(State.Away); SetVisible(false); actionText = awayLabel; return true; }
-            StartLeave(Clubs.NameOf(club) + "の活動に出かける");
+            if (!WalkToClub()) StartLeave(Clubs.NameOf(club) + "の活動に出かける"); // 部の場所まで歩く（SimCharacter.Outside.cs）
             ShowBubble(Say("c_go", "いってきます"), 1.6f);
             return true;
         }
@@ -56,6 +57,14 @@ namespace LifeSimProto
                 if (IsTarget && world.player != null) world.player.Earn(15 * classBlocks, "授業に出た");
                 AfterClass();
                 clubDay = world.Day;
+                if (leaveSet)
+                {
+                    // 教室から出てきて、部の場所まで歩く（2026-11-04）
+                    transform.position = leaveTo; leaveSet = false;
+                    SetVisible(true);
+                    SetState(State.Idle);
+                    if (WalkToClub()) return true;
+                }
                 AppearAtClub();
                 return true;
             }
@@ -118,7 +127,8 @@ namespace LifeSimProto
             }
             if (!goHome) return;
             if (IsMob) { SetState(State.Idle); actionText = "部活が終わった"; mobUntil = world.Now + Random.Range(1f, 6f); return; }
-            // 寮生・篤：寮へ帰る（見えなくなって、少しして寮の入口に戻る）
+            // 寮生・篤：寮へ歩いて帰る（SimCharacter.Outside.cs）。道が無ければ前のとおり見えなくなって、少しして寮の入口に戻る
+            if (WalkHomeFromClub()) return;
             LeaveCurrentSpot();
             path.Clear();
             goal = Goal.None;

@@ -215,6 +215,11 @@ namespace LifeSimProto
             readonly bool outside;     // フィニッシュを外に
             public readonly string pose; // 体位（モーションのチャットで動きを付ける）
             readonly string bathKind;    // "shower"・"bath"・null（2026-11-03 famuru：入浴中の二人きり。シャワーとお風呂で分ける）
+            // 動き（HMotion.cs。2026-11-04 famuru「二人きりの時間の動きを入れて」）：最後まで（depth 2）の前半〜フィニッシュで流す
+            readonly HMotionPlayer mp;
+            readonly string form2, form4;
+            Vector3 hAnchor; Quaternion hRot = Quaternion.identity;
+            readonly Dictionary<SimCharacter, string> rigs = new Dictionary<SimCharacter, string>();
             string phase;
             double phaseUntil, nextRotate, nextJoin, noneSince = -1;
             int finishes;
@@ -238,6 +243,12 @@ namespace LifeSimProto
                 else if (bathKind == "bath") pose = Random.value < 0.7f ? "対面座位" : HPlan.Poses[Random.Range(0, HPlan.BedPoseCount)];
                 else pose = HPlan.Poses[Random.Range(0, HPlan.BedPoseCount)];
                 startAt = w.Now;
+                if (depth >= 2)
+                {
+                    HMotionBook.FormsFor(pose, Random.Range(0, 1000), out form2, out form4);
+                    mp = new HMotionPlayer(form2, ProtoBody.FindClip);
+                    PlaceMotionAnchor();
+                }
                 f.vigor = Mathf.Max(f.vigor, HBook.VigorMinAtStart);
                 int girls = 0;
                 foreach (var c in who)
@@ -333,6 +344,86 @@ namespace LifeSimProto
                     }
                 }
             }
+
+            // ---------------- 動き（HMotion.cs。2026-11-04） ----------------
+            static int MotionPhaseOf(string p)
+            {
+                switch (p)
+                {
+                    case "mid1": return 0;
+                    case "mid2": return 1;
+                    case "mid3": case "resume": return 2;
+                    case "finish": return 3;
+                    default: return -1;   // 始まり・終わったあとは今までどおり（寄りそう・横になる）
+                }
+            }
+            bool MotionActive { get { return mp != null && MotionPhaseOf(phase) >= 0 && Direct != null; } }
+
+            /// <summary>速さ：発情・性欲が高いと速く、初めて・具合が悪いとゆっくり（仮。モーションの検討の「状況での変え方」）。</summary>
+            float MotionSpeed()
+            {
+                var d = Direct != null ? Direct.c : null;
+                float m = 1f;
+                if (d != null)
+                {
+                    if (d.GetStage(StatusLine.Desire) >= 3) m *= 1.2f;
+                    if (d.hBaseConds != null && d.hBaseConds.Contains("first")) m *= 0.8f;
+                }
+                if (sick) m *= 0.7f;
+                return m;
+            }
+
+            /// <summary>だれがどの役か：篤＝M、直接の相手＝F、ペッティングの子＝P・S・H（いるときは4人の形）。</summary>
+            void UpdateRigs()
+            {
+                rigs.Clear();
+                rigs[f] = "M";
+                var d = Direct;
+                if (d != null) rigs[d.c] = "F";
+                int k = 0;
+                foreach (var p in ps)
+                {
+                    if (p.role != HRole.Pet || k >= HMotionBook.GroupRigs.Length) continue;
+                    rigs[p.c] = HMotionBook.GroupRigs[k++];
+                }
+                mp.SetForm(k > 0 ? form4 : form2);
+            }
+
+            /// <summary>動きの基準の点：個室ならベッドの上の真ん中、ほかは場所の真ん中の床。</summary>
+            void PlaceMotionAnchor()
+            {
+                var room = spot != null ? spot.room : null;
+                if (room != null && room.bed != null)
+                {
+                    bool fb = room.bedSeatOffs != null;
+                    Vector3 c = room.bed.position - room.bedEdge * (fb ? 0.15f : 0.08f);
+                    hAnchor = new Vector3(c.x, room.bed.position.y + HMotionBook.BedTop, c.z);
+                    hRot = Quaternion.LookRotation(room.bed.forward) * Quaternion.Euler(0f, HMotionBook.YawBed, 0f);
+                    return;
+                }
+                var places = spot != null ? spot.Spots(2) : null;
+                if (places != null && places.Count > 0)
+                {
+                    var pl = places[0];
+                    hAnchor = pl.pos;
+                    Vector3 fw = pl.facing; fw.y = 0f; if (fw.sqrMagnitude < 0.01f) fw = Vector3.forward;
+                    hRot = Quaternion.LookRotation(fw.normalized) * Quaternion.Euler(0f, HMotionBook.YawFloor, 0f);
+                }
+                else if (f != null) { hAnchor = f.transform.position; hRot = f.transform.rotation; }
+            }
+
+            /// <summary>その人が今流す動き（無ければ false）。ProtoBody が毎コマ聞く。</summary>
+            public bool MotionFor(SimCharacter c, out string clip, out float time, out Vector3 pos, out Quaternion rot)
+            {
+                clip = null; time = 0f; pos = hAnchor; rot = hRot;
+                if (!MotionActive || ended) return false;
+                string rig;
+                if (!rigs.TryGetValue(c, out rig)) return false;
+                clip = mp.ClipFor(rig);
+                time = mp.t;
+                return true;
+            }
+            public string MotionDebug { get { return mp == null ? "動きなし（キスだけ・愛撫まで）" : (MotionActive ? mp.form + "・" + mp.Part + "・" + mp.t.ToString("0.00") : "動きは前半から（今：" + phase + "）"); } }
 
             // ---------------- 今の様子（キャラの情報の「ようす」に出す） ----------------
             static string PhaseName(string p)
@@ -490,6 +581,7 @@ namespace LifeSimProto
                     case "after": len = sick ? HBook.SickAfterMin : (bathKind == "shower" ? HBook.ShowerAfterMin : (bathKind == "bath" ? HBook.BathAfterMin : HBook.AfterMin)); break;
                     default: len = 10f; break;
                 }
+                if (mp != null) { int mi = MotionPhaseOf(p); if (mi >= 0) mp.SetPhase(mi); }
                 // ヒロインのスキル：篤の相手のとき、篤のフィニッシュまでの時間が短くなる
                 var dd = Direct;
                 if (dd != null && (p == "mid1" || p == "mid2" || p == "mid3" || p == "resume")) len *= HSkill.FinishTimeMul(dd.c.HLevel);
@@ -520,6 +612,7 @@ namespace LifeSimProto
 
                 UpdateGauges(gm);
                 UpdateJoining(dt);
+                if (MotionActive) { UpdateRigs(); mp.Update(dt, MotionSpeed()); }
                 if (RoleSig() != arrangedSig) Arrange(); // 順番の入れかえ・休憩・途中参加で並びを直す
                 UpdateActionTexts(); // 「今：」の表示を今の様子にする（2026-10-25 famuru「更新されない」）
 

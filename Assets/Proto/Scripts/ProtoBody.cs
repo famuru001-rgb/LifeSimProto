@@ -101,7 +101,7 @@ namespace LifeSimProto
         string LetterNow() { return testMode ? testLetter : sim.Letter; }
         string SceneNow() { return testMode ? testScene : sim.MotionScene; }
         string StyleNow() { return MotionBook.StyleOf(LetterNow(), testMode ? false : sim.IsMale); }
-        string talkVariant;
+        string talkVariant, listenVariant, sitTalkVariant;
         bool wasTalking;
         [System.NonSerialized] public string testSitFloorClip;
         [System.NonSerialized] public bool testStandUp;   // 確認用：床から立ち上がる途中のつもり
@@ -213,11 +213,13 @@ namespace LifeSimProto
         }
 
         // 一瞬の身ぶり（手を振る・喜ぶ）。立っているときだけ、その動きがあれば再生する
-        string gestureName;
+        string gestureName, seatedGestureName;
         float gestureUntil;
         public void Gesture(string clipName, float seconds)
         {
-            gestureName = clipName;
+            LoadClips();
+            gestureName = MotionBook.GestureVariant(clipName, Clip); // 言いかえの中からどれか（2026-11-04）
+            seatedGestureName = MotionBook.SeatedGesture(clipName, Clip);
             gestureUntil = Time.time + seconds;
         }
 
@@ -417,6 +419,9 @@ namespace LifeSimProto
         }
 
         // ================= 動き（Mixamo） =================
+        /// <summary>動きを名前で探す（無ければ null。読み直しはしない）。</summary>
+        public static AnimationClip FindClip(string n) { LoadClips(); AnimationClip c; return n != null && clipBook.TryGetValue(n, out c) ? c : null; }
+
         static void LoadClips()
         {
             if (clipBook != null) return;
@@ -607,6 +612,10 @@ namespace LifeSimProto
             if (!snapped) speed = Mathf.Lerp(speed, Mathf.Min(d.magnitude / dt, 3f), Mathf.Clamp01(dt * 10f));
 
             BodyPose pose = testMode ? testPose : sim.BodyPoseNow;
+            // 二人きりの時間・ひとりの時間の動き（HMotion.cs。2026-11-04）：基準の点に体を置き、時刻をそろえて流す
+            string hName = null; float hTime = 0f; Vector3 hPos = Vector3.zero; Quaternion hRot = Quaternion.identity;
+            bool hOn = !testMode && humanOk && sim.HMotionNow(out hName, out hTime, out hPos, out hRot) && Clip(hName) != null;
+            if (hOn) pose = BodyPose.Stand;
             string outfit = testMode ? testOutfit : sim.OutfitNow;
             if (string.IsNullOrEmpty(outfit)) outfit = pose == BodyPose.Soak ? "Towel" : "Uniform";
             bool talking = testMode ? testTalk : sim.IsTalkingNow;
@@ -617,7 +626,13 @@ namespace LifeSimProto
 
             // 体の置き方（寝るときは横にする）
             Quaternion frame = Quaternion.identity;
-            if (pose == BodyPose.Lie || pose == BodyPose.LieFloor)
+            if (hOn)
+            {
+                model.localRotation = Quaternion.Inverse(transform.rotation) * hRot * fix;
+                model.localPosition = transform.InverseTransformPoint(hPos);
+                snapOff = Vector3.zero; snapStart = Vector3.zero;
+            }
+            else if (pose == BodyPose.Lie || pose == BodyPose.LieFloor)
             {
                 frame = Quaternion.Euler(0f, 180f, 0f) * Quaternion.Euler(-90f, 0f, 0f);
                 model.localRotation = frame * fix;
@@ -636,6 +651,7 @@ namespace LifeSimProto
             {
                 // 床から立ち上がる途中（SimCharacter がその場で止めている間）：立つ動きを1回流す
                 if (testMode && !string.IsNullOrEmpty(testClip)) clip = Clip(testClip);
+                if (hOn) clip = Clip(hName);
                 AnimationClip upC = clip != null ? null : !string.IsNullOrEmpty(SitFloorClip) && (testMode ? testStandUp : sim.StandingUpNow) ? Clip(SitFloorClip + "_Up") : null;
                 if (clip != null) { }
                 else if (pose == BodyPose.Stand && upC != null)
@@ -663,20 +679,26 @@ namespace LifeSimProto
                     }
                     if (fullG != null) clip = fullG;
                     else if (gestureName != null && gestureName != "Wave" && gestureName != "Bow" && Time.time < gestureUntil && Clip(gestureName) != null && (gestureName == "Joy" || speed <= 0.25f)) clip = Clip(gestureName);
-                    else if (speed > 0.25f || snapOff.magnitude > 0.08f) clip = Clip(MotionBook.Walk(StyleNow(), testMode ? testMood : sim.WalkMood)) ?? Clip(MotionBook.Walk(StyleNow(), null)) ?? Clip("Walk");
+                    else if (speed > 0.25f || snapOff.magnitude > 0.08f) clip = Clip(MotionBook.WalkFor(StyleNow(), testMode ? testMood : sim.WalkMood, LetterNow(), Clip)) ?? Clip(MotionBook.Walk(StyleNow(), null)) ?? Clip("Walk");
                     else if (talking)
                     {
-                        // 話す身ぶりは会話ごとに Talk・Talk2〜4 から選ぶ（2026-10-30 モーション）
-                        if (!wasTalking || talkVariant == null) talkVariant = TalkVariants[Random.Range(0, TalkVariants.Length)];
-                        clip = Clip(talkVariant) ?? Clip("Talk") ?? Clip("Idle");
+                        // 話す身ぶりは会話ごとに選ぶ（2026-10-30 モーション。2026-11-04 HY・Mixamo の話す動きも足した）。相手が話している間は聞く動き
+                        if (!wasTalking || talkVariant == null) { var tc = MotionBook.PickFrom(MotionBook.TalkPool, Clip); talkVariant = tc != null ? tc.name : TalkVariants[Random.Range(0, TalkVariants.Length)]; }
+                        bool listening = !testMode && !sim.IsSpeakingNow && sim.PartnerSpeakingNow;
+                        if (listening) { if (listenVariant == null) { var lc = MotionBook.PickFrom(MotionBook.ListenPool, Clip); listenVariant = lc != null ? lc.name : talkVariant; } clip = Clip(listenVariant); }
+                        if (clip == null) clip = Clip(talkVariant) ?? Clip("Talk") ?? Clip("Idle");
                     }
                     else if ((sceneClip = MotionBook.StandClip(SceneNow(), LetterNow(), Clip)) != null) clip = sceneClip;   // 生活の場面（料理・魔法の練習など）
-                    else if (!testMode && sim.FaceNow == "Sad" && Clip("SadIdle") != null) clip = Clip("SadIdle");   // 気分が沈んでいるときの立ち方
+                    else if (!testMode && sim.FaceNow == "Sad" && MotionBook.SadIdle(LetterNow(), Clip) != null) clip = MotionBook.SadIdle(LetterNow(), Clip);   // 気分が沈んでいるときの立ち方
+                    else if (!testMode && sim.IsWaitingNow && Clip(MotionBook.WaitClip) != null) clip = Clip(MotionBook.WaitClip);      // 用事が終わるのを待っている
+                    else if (!testMode && sim.FlirtNow && Clip(MotionBook.FlirtClip) != null) clip = Clip(MotionBook.FlirtClip);        // 好きな人（篤）のそば
+                    else if (!testMode && sim.ElatedNow && Clip(MotionBook.HappyClip) != null) clip = Clip(MotionBook.HappyClip);      // 絶好調
                     else clip = Clip(MotionBook.Idle(LetterNow())) ?? Clip("Idle");
                 }
                 else if (pose == BodyPose.Sit)
                 {
-                    clip = talking ? (Clip("SitTalk") ?? Clip("Sit")) : Clip("Sit");
+                    if (talking && (!wasTalking || sitTalkVariant == null)) { var sc = MotionBook.PickFrom(MotionBook.SitTalkPool, Clip); sitTalkVariant = sc != null ? sc.name : "SitTalk"; }
+                    clip = talking ? (Clip(sitTalkVariant ?? "SitTalk") ?? Clip("SitTalk") ?? Clip("Sit")) : Clip("Sit");
                 }
                 else if ((pose == BodyPose.Lie || pose == BodyPose.LieFloor) && !string.IsNullOrEmpty(LieClip))
                 {
@@ -711,6 +733,7 @@ namespace LifeSimProto
                     mixer.SetInputWeight(1, 1f - fade);
                 }
                 if (upStartAt >= 0f && clip == curClip && mixer.GetInput(0).IsValid()) { mixer.GetInput(0).SetTime(upStartAt); upStartAt = -1f; }
+                if (hOn && clip == curClip && mixer.GetInput(0).IsValid()) mixer.GetInput(0).SetTime(hTime); // 全員の時刻をそろえる
                 bool waving = pose == BodyPose.Stand && gestureName == "Wave" && Time.time < gestureUntil && clip != Clip(MotionBook.Bye(StyleNow()));
                 SetUpper(waving ? Clip("Wave") : null, dt);
                 // 正座で話す：Mixamo の「座って話す」の上半身（腕・頭）だけを重ねる（famuru「上半身だけ使う」）
@@ -722,7 +745,8 @@ namespace LifeSimProto
                 AnimationClip seatedAct = null;
                 if (!talking && !dozingNow && (pose == BodyPose.Sit || (pose == BodyPose.SitFloor && floorPhase == FloorPhase.Seated)))
                     seatedAct = MotionBook.SeatedClip(SceneNow(), LetterNow(), Clip);
-                SetTalkUpper(gUpper ? Clip(gestureName) : (floorTalk ? Clip("SitTalk") : seatedAct), dt);
+                string gUp = gUpper && pose != BodyPose.Stand && seatedGestureName != null ? seatedGestureName : gestureName; // 座っているときの身ぶり（2026-11-04）
+                SetTalkUpper(gUpper ? (Clip(gUp) ?? Clip(gestureName)) : (floorTalk ? Clip("SitTalk") : seatedAct), dt);
             }
             else
             {
@@ -739,6 +763,7 @@ namespace LifeSimProto
             if (pose != BodyPose.SitFloor && floorPhase != FloorPhase.Up) floorPhase = FloorPhase.None;
             lastPose = pose;
             wasTalking = talking;
+            if (!talking) listenVariant = null;
             if (testMode && Mathf.Abs(testBow) > 0.01f)   // 確認用のおじぎ（ゲームの動きには無い。背骨3本に分けて前へ曲げる）
                 foreach (var bn in new[] { "Spine", "Spine1", "Spine2" })
                 {
@@ -750,7 +775,7 @@ namespace LifeSimProto
             string face = testMode ? testFace : sim.FaceNow;
             UpdateFace(dt, eyesClosed, speaking, face);
             UpdateCorrectives(dt, pose);
-            if (clip != null && pose == BodyPose.Stand) StraightenFeet();
+            if (clip != null && pose == BodyPose.Stand && !hOn) StraightenFeet();
             if (FastWatch) FastWatchStep(dt);
             if (TraceWho == sim && sim != null && Time.time < TraceUntil && hips != null && TraceLog.Length < 2000000)
             {

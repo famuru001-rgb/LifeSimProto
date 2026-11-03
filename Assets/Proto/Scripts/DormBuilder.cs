@@ -686,7 +686,9 @@ namespace LifeSimProto
             pois.Add(MakePoi("窓の外を眺めている", new Vector3(5.0f, 2f, FrontOut), new Vector3(5.0f, 0f, FrontOut + 1.4f)));
             // 魔法の練習場所（床の魔法陣）。趣味が「魔法の練習」のキャラだけが使う
             Vector3 mc = new Vector3(4.0f, 0f, 3.0f);
-            Cyl("MagicCircle", new Vector3(mc.x, 0.015f, mc.z), new Vector3(1.8f, 0.004f, 1.8f), Quaternion.identity, ProtoArt.Glow(new Color(0.4f, 0.55f, 1f), 0.6f));
+            // 魔法陣の家具（直径2m）。無ければ前の光る円（2026-11-04 famuru「青い丸を魔法陣の家具に置きかえる」）
+            if (PlaceFurn("Furn_MagicCircle", null, new Vector3(mc.x, 0.006f, mc.z), 0f) == null)
+                Cyl("MagicCircle", new Vector3(mc.x, 0.015f, mc.z), new Vector3(1.8f, 0.004f, 1.8f), Quaternion.identity, ProtoArt.Glow(new Color(0.4f, 0.55f, 1f), 0.6f));
             var magic = MakePoi("魔法の練習をしている", new Vector3(mc.x, 1.2f, mc.z), new Vector3(mc.x - 0.5f, 0f, mc.z + 0.4f), new Vector3(mc.x + 0.5f, 0f, mc.z + 0.5f));
             magic.hobby = (int)SimCharacter.HobbyKind.Magic;
             pois.Add(magic);
@@ -1228,6 +1230,10 @@ namespace LifeSimProto
             AddArea("娯楽室", Rect.MinMaxRect(-6f, BackZ, WingOut, BackOut), 1);
             Lamp(new Vector3(0f, y1 + 2.4f, 13.5f), 2.2f, 8f);
             Lamp(new Vector3(10f, y1 + 2.4f, 13.5f), 2.2f, 8f);
+            // 楽器と歌の場所（2026-11-04 famuru「入れた動きを全部使う」：R_PlayingGuitar・R_PlayingPiano・R_Singer。楽器の模型はまだ無いのでオルゴールだけ置く）
+            PlaceFurn("Furn_DecorMusicBox", null, new Vector3(14f, y1, BackOut - 0.5f), 180f);
+            pois.Add(MakePoi("楽器を弾いている", new Vector3(14f, y1 + 1.2f, BackOut - 0.5f), new Vector3(14f, y1, BackOut - 1.4f)));
+            pois.Add(MakePoi("歌の練習をしている", new Vector3(11.5f, y1 + 1.4f, 15.0f), new Vector3(11f, y1, 14.2f), new Vector3(12f, y1, 14.2f)));
             Label(new Vector3(-11.5f, y1 + 2.4f, 13.5f), "トイレ");
             AddArea("トイレ", Rect.MinMaxRect(-WingOut, BackZ, -6f, BackOut), 1);
             Lamp(new Vector3(-11.5f, y1 + 2.4f, 13.5f), 1.8f, 7f);

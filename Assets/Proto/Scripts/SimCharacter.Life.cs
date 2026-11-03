@@ -111,7 +111,8 @@ namespace LifeSimProto
             get
             {
                 return "state=" + state + " goal=" + goal + " away=" + awayKind + " until=" + ScheduleMaker.Clock(awayUntil) + " path=" + path.Count + " 「" + actionText + "」 lifeEv=" + (lifeEv != null ? lifeEv.def.id : "-")
-                    + " order=" + hasOrder + " mission=" + OnMission + " 場所=" + (world.LifeAreaAt(transform.position) != null ? world.LifeAreaAt(transform.position).name : "?");
+                    + " order=" + hasOrder + " mission=" + OnMission + " 場所=" + (world.LifeAreaAt(transform.position) != null ? world.LifeAreaAt(transform.position).name : "?")
+                    + (hs != null ? " 動き=" + hs.MotionDebug : "") + (soloMp != null ? " 動き=" + soloMp.form + "・" + soloMp.Part : "") + (strolling ? " 散歩中（" + ScheduleMaker.Clock(strollUntil) + "まで）" : "");
             }
         }
 
@@ -286,6 +287,49 @@ namespace LifeSimProto
         public void LifeAddHeat(float v) { desireBuild.value = Mathf.Clamp(desireBuild.value + v, 0f, 100f); }
 
         bool lifeLie;   // 生活のできごと：ベッドで横になっている（姿勢「横になる」）
+
+        // ---- 動き（HMotion.cs。2026-11-04 famuru「自慰の動きを入れて」）----
+        HMotionPlayer soloMp;
+        int soloFrame = -1;
+
+        /// <summary>
+        /// 今流す二人きりの時間・ひとりの時間の動き（ProtoBody が毎コマ聞く）。pos・rot は動きの基準の点。
+        /// </summary>
+        public bool HMotionNow(out string clip, out float time, out Vector3 pos, out Quaternion rot)
+        {
+            clip = null; time = 0f; pos = transform.position; rot = transform.rotation;
+            if (hs != null) { soloMp = null; return state == State.Private && hs.MotionFor(this, out clip, out time, out pos, out rot); }
+            return LifeSoloMotion(out clip, out time, out pos, out rot);
+        }
+
+        /// <summary>ひとりの時間（できごとのグループ solo_…）：自分のベッドの上で、あおむけか横向き（キャラごと）。</summary>
+        bool LifeSoloMotion(out string clip, out float time, out Vector3 pos, out Quaternion rot)
+        {
+            clip = null; time = 0f; pos = transform.position; rot = transform.rotation;
+            var r = lifeEv;
+            if (!lifeLie || r == null || r.def == null || !r.def.group.StartsWith("solo") || state != State.Sitting || room == null || room.bed == null || seat != room.bed) { soloMp = null; return false; }
+            if (soloMp == null)
+            {
+                int h = 0; foreach (char ch in (letter ?? "") + "solo") h = h * 31 + ch;
+                soloMp = new HMotionPlayer((h & 1) == 0 ? "SoloBack" : "SoloSide", ProtoBody.FindClip);
+                soloMp.SetPhase(0);
+            }
+            // できごとの進み具合で、前半→中盤→後半→フィニッシュ
+            if (soloFrame != Time.frameCount)
+            {
+                soloFrame = Time.frameCount;
+                float frac = r.phase == LifeRun.Phase.Active && r.def.length > 0f ? 1f - (float)((r.until - world.Now) / r.def.length) : 0f;
+                int ph = frac < 0.4f ? 0 : frac < 0.75f ? 1 : frac < 0.92f ? 2 : 3;
+                if (ph != soloMp.phaseNow) soloMp.SetPhase(ph);
+                soloMp.Update(Time.deltaTime, GetStage(StatusLine.Desire) >= 3 ? 1.2f : 1f);
+            }
+            var bed = room.bed;
+            pos = new Vector3(bed.position.x, bed.position.y + HMotionBook.BedTop, bed.position.z) - room.bedEdge * 0.1f;
+            rot = Quaternion.LookRotation(bed.forward) * Quaternion.Euler(0f, HMotionBook.YawSolo, 0f);
+            clip = soloMp.ClipFor("F");
+            time = soloMp.t;
+            return true;
+        }
 
         /// <summary>自分の部屋のベッドへ行って横になる（あいていなければ、その場所へ歩くだけ）。</summary>
         public bool LifeLieBed(LifeRun r, Vector3 p, string text)

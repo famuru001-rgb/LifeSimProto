@@ -640,6 +640,12 @@ namespace LifeSimProto
                         f.OrderMove(w.LifeNear(r.pMain, 1.5f));
                         return "life f: 篤が" + r.def.name + "の場所へ向かう";
                     }
+                case "stroll":
+                    {
+                        var c = a.Length > 2 ? w.characters.Find(x => x.letter == a[2].ToUpperInvariant()) : null;
+                        if (c == null) return "life stroll: 記号がない";
+                        return "life stroll: " + c.displayName + " " + c.LifeTestStroll();
+                    }
                 case "who":
                     {
                         // 試験用：life who 記号：その子の今のようす

@@ -25,7 +25,7 @@ namespace LifeSimProto
             var run = d != null ? d.ChoiceRun : null;
             if (run == null) return;
             Rect r = LifeChoiceRect;
-            GUI.Box(r, GUIContent.none, panel);
+            Deco(r, GUIContent.none, panel);
             string who = run.main.displayName + (run.partner != null && !run.partnerIsF ? "と" + run.partner.displayName : "");
             GUI.Label(new Rect(r.x + 14, r.y + 8, r.width - 28, 26), run.def.name + "（" + who + "）　篤はどうする？", small);
             int n = run.def.choices.Length;

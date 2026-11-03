@@ -254,7 +254,7 @@ namespace LifeSimProto
             if (!menuChar.Present) { CloseMenu(); return; }
             var items = BuildMenu();
             var r = MenuRect;
-            GUI.Box(r, GUIContent.none, panel);
+            Deco(r, GUIContent.none, panel);
             string head = menuGift ? menuChar.displayName + "に渡す物" : menuChar.displayName + "（" + menuChar.StateName() + "）";
             if (menuInvite == 1) head = "どこでする？（近い順）";
             else if (menuInvite == 2) head = "どんなふうに？（押すと変わる）";

@@ -45,11 +45,89 @@ namespace LifeSimProto
             if (s == "active") s = "happy";
             return "BN_walk_" + s;
         }
+
+        /// <summary>
+        /// 歩く動き（Mixamo の歩きも混ぜる。2026-11-04 famuru「入れた動きを全部使う」）。キャラごとに決まった1つ。
+        /// 沈んでいる→BN_walk_sad か M_SadWalk／女らしい→BN_walk_feminine か M_FemaleWalk／自信家→BN_walk_proud か M_Catwalk／ふつう→BN_walk_normal か M_Walking
+        /// </summary>
+        public static string WalkFor(string style, string mood, string letter, Func<string, AnimationClip> find)
+        {
+            string bn = Walk(style, mood);
+            string[] alt = null;
+            string key = string.IsNullOrEmpty(mood) ? style : mood;
+            switch (key)
+            {
+                case "sad": alt = new[] { bn, "M_SadWalk" }; break;
+                case "feminine": alt = new[] { bn, "M_FemaleWalk" }; break;
+                case "proud": alt = new[] { bn, "M_CatwalkWalk", "M_CatwalkWalking" }; break;
+                case "normal": alt = new[] { bn, "M_Walking", "M_Walking_1" }; break;
+            }
+            if (alt == null) return bn;
+            string pick = alt[Pick(letter, "walk_" + key, alt.Length)];
+            return find(pick) != null ? pick : bn;
+        }
+
+        // ---- 気持ちの身ぶりの言いかえ（2026-11-04 famuru「入れた動きを全部使う」）。同じ身ぶりでも、毎回この中からどれかを選ぶ ----
+        static readonly Dictionary<string, string[]> GesturePool = new Dictionary<string, string[]>
+        {
+            { "Nod", new[] { "Nod", "HY_Nod_a", "HY_Nod_b", "M_Acknowledging" } },
+            { "HeadShake", new[] { "HeadShake", "HY_HeadShake_a", "HY_HeadShake_b", "M_No", "M_ShakingHeadNo", "M_AnnoyedHeadShake", "M_ThoughtfulHeadShake" } },
+            { "Surprised", new[] { "Surprised", "HY_Surprised_a", "HY_Surprised_b", "M_Surprised", "M_Reacting", "R_DoubleTakes" } },
+            { "Troubled", new[] { "Troubled", "HY_Troubled_a", "HY_Troubled_b" } },
+            { "Shy", new[] { "Shy", "HY_Shy_a", "HY_Shy_b", "M_Bashful" } },
+            { "Angry", new[] { "Angry", "M_Angry", "M_AngryGesture", "M_AngryPoint", "HY_Annoyed_a", "HY_Annoyed_b", "M_StandingArguing" } },
+            { "Cry", new[] { "Cry", "M_Crying" } },
+            { "Thanks", new[] { "Thanks", "M_Thankful" } },
+            { "Think", new[] { "Think", "M_Thinking" } },
+        };
+        // 座っているときの身ぶり（上半身に重ねる）
+        static readonly Dictionary<string, string[]> SeatedGesturePool = new Dictionary<string, string[]>
+        {
+            { "Angry", new[] { "M_SittingAngry", "M_SittingAngry_1", "M_SittingAngry_2" } },
+            { "Surprised", new[] { "M_SittingDisbelief" } },
+            { "Surprised2", new[] { "M_SittingDisbelief" } },
+        };
+
+        static string FromPool(Dictionary<string, string[]> pool, string g, Func<string, AnimationClip> find)
+        {
+            string[] list;
+            if (string.IsNullOrEmpty(g) || !pool.TryGetValue(g, out list)) return g;
+            int start = UnityEngine.Random.Range(0, list.Length);
+            for (int i = 0; i < list.Length; i++) { var n = list[(start + i) % list.Length]; if (find(n) != null) return n; }
+            return g;
+        }
+        /// <summary>身ぶりの名前を、言いかえの中からどれか1つに（無ければそのまま）。</summary>
+        public static string GestureVariant(string g, Func<string, AnimationClip> find) { return FromPool(GesturePool, g, find); }
+        /// <summary>座っているときの身ぶり（無ければそのまま）。</summary>
+        public static string SeatedGesture(string g, Func<string, AnimationClip> find) { return FromPool(SeatedGesturePool, g, find); }
+
+        /// <summary>立って話すときの身ぶり（会話ごとに1つ）。</summary>
+        public static readonly string[] TalkPool = { "Talk", "Talk2", "Talk3", "Talk4", "HY_Talk1_a", "HY_Talk1_b", "HY_Talk2_a", "HY_Talk2_b", "M_Talking", "M_Talking_1", "M_Talking_2", "M_Talking_3", "M_TalkingAtWatercooler", "M_TellingASecret" };
+        /// <summary>相手の話を聞いているとき（立って）。</summary>
+        public static readonly string[] ListenPool = { "HY_Listen_a", "HY_Listen_b" };
+        /// <summary>座って話すとき。</summary>
+        public static readonly string[] SitTalkPool = { "SitTalk", "M_SittingTalking" };
+        /// <summary>気分が沈んでいるときの立ち方（キャラごとに1つ）。</summary>
+        static readonly string[] SadPool = { "SadIdle", "HY_Sad_a", "HY_Sad_b", "M_SadIdle", "M_SadIdle_1", "M_Disappointed", "M_Rejected" };
+        public static AnimationClip SadIdle(string letter, Func<string, AnimationClip> find)
+        {
+            int start = Pick(letter, "sad", SadPool.Length);
+            for (int i = 0; i < SadPool.Length; i++) { var c = find(SadPool[(start + i) % SadPool.Length]); if (c != null) return c; }
+            return null;
+        }
+        public static AnimationClip PickFrom(string[] pool, Func<string, AnimationClip> find)
+        {
+            int start = UnityEngine.Random.Range(0, pool.Length);
+            for (int i = 0; i < pool.Length; i++) { var c = find(pool[(start + i) % pool.Length]); if (c != null) return c; }
+            return null;
+        }
         public static string Bow(string style) { return "BN_bow_" + style; }
         public static string Bye(string style) { return "BN_bye_" + style; }
 
         // ---- 待機（キャラごとに1つ）----
-        static readonly string[] Idles = { "Idle", "R_RegularLight", "R_RegularMedium", "R_Light", "R_Medium" };
+        static readonly string[] Idles = { "Idle", "R_RegularLight", "R_RegularMedium", "R_Light", "R_Medium", "R_HeadTilts" };
+        // ほかの立ち方：待っているとき（足でとんとん）・絶好調（踊る）・好きな人のそば（ちょっと気を引く）。R_RegularHeavyCHECK は名前に CHECK（要確認）とあるので使わない
+        public const string WaitClip = "R_FootTapping", HappyClip = "R_HappyDance", FlirtClip = "R_Flirty";
         public static string Idle(string letter) { return Idles[Pick(letter, "idle", Idles.Length)]; }
 
         // ---- 立って行う生活の場面（場所の名前に含まれる言葉 → 候補）。上から順に見る ----
@@ -73,6 +151,9 @@ namespace LifeSimProto
             P("薬草", "HY_Herbs_a", "HY_Herbs_b", "M_watering", "M_pullplant", "M_plantaplant", "M_pickfruit", "M_digandplantseeds"),
             P("工房", "HY_Tinker_a", "HY_Tinker_b"),
             P("使い魔", "HY_PetFamiliar_a", "HY_PetFamiliar_b"),
+            P("歌の練習", "R_Singer"),                                  // 娯楽室（2026-11-04）
+            P("楽器", "R_PlayingGuitar", "R_PlayingPiano"),            // 娯楽室（楽器の模型はまだ無い）
+            P("職員室で仕事", "R_ClipboardLeverComputer"),            // 先生
         };
 
         // ---- 座って行う場面（上半身だけ重ねる）----
@@ -81,8 +162,8 @@ namespace LifeSimProto
             P("#食べる", "HY_Eat_a", "HY_Eat_b", "R_SomethingBehindMeEating"),
             P("#お茶", "HY_Tea_a", "HY_Tea_b", "M_Drinking"),
             P("#読書", "HY_Read_a", "HY_Read_b"),
-            P("#勉強", "HY_Write_a", "HY_Write_b"),
-            P("机で", "HY_Write_a", "HY_Write_b"),
+            P("#勉強", "HY_Write_a", "HY_Write_b", "R_TypingUsingMouse"),
+            P("机で", "HY_Write_a", "HY_Write_b", "R_SitDownUseLaptop"),
         };
 
         static KeyValuePair<string, string[]> P(string k, params string[] v) { return new KeyValuePair<string, string[]>(k, v); }

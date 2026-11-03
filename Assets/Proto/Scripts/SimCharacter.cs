@@ -14,7 +14,7 @@ namespace LifeSimProto
     {
         public enum State { Idle, Walking, Sitting, Activity, Approaching, Waiting, Talking, Eating, Bathing, Sleeping, Away, Private }
         public enum HobbyKind { Reading, Magic, Tea, Walk }
-        enum Goal { None, Seat, Poi, Wander, Counter, DiningSeat, Bath, Bed, Nap, Exit, Return, Private, Gather, Hover, Follow, MoveTo }
+        enum Goal { None, Seat, Poi, Wander, Counter, DiningSeat, Bath, Bed, Nap, Exit, Return, Private, Gather, Hover, Follow, MoveTo, Club }
         enum Act { None, Rest, Fun, Study, Hobby, Meal, Snack, Tea, Work }
         enum Intent { Talk, Love, Private, Bake, Give, Request, Heal }
         enum Choice { None, Social, Rest, Fun, Snack, Study, Hobby, Love, Nap, Private, Hover, Cling }
@@ -778,6 +778,7 @@ namespace LifeSimProto
             if (HasTrait(CharTrait.Lonely)) lonelyMul *= 1.4f;
             tiredMul *= Mathf.Clamp(1.25f - Ab(Abilities.Body) / 200f, 0.7f, 1.3f); // 体力があるほど疲れにくい
             GrowFromActivity(dt, gm);
+            StrollNeeds(gm); // 散歩中（SimCharacter.Outside.cs）
             if (HasTrait(CharTrait.WinterWeak) && Calendar.Season(world.Day) == 3) tiredMul *= 1.3f;
             if (HasTrait(CharTrait.RainWings) && Calendar.WeatherOf(world.Day) == Weather.Rain) tiredMul *= 1.3f;
             if (HasTrait(CharTrait.FullMoon) && Calendar.IsFullMoon(world.Day)) boredMul *= 1.5f;
@@ -1350,7 +1351,8 @@ namespace LifeSimProto
             {
                 if (it.done) continue;
                 bool earlyBed = it.kind == TaskKind.Bed && sleepy > 70f && now >= it.start - 75;
-                if (it.start > now && !earlyBed) return false;
+                double lead = it.kind == TaskKind.Class ? ClassLeadMin : 0; // 教室まで歩くので少し早く出る（2026-11-04）
+                if (it.start - lead > now && !earlyBed) return false;
                 switch (it.kind)
                 {
                     case TaskKind.Class:
@@ -1541,15 +1543,23 @@ namespace LifeSimProto
 
         void StartLeave(string text)
         {
+            if (StartStroll(text)) return; // 新しい学園の散歩：見えたまま屋外を歩く（SimCharacter.Outside.cs）
             LeaveCurrentSpot();
             goal = Goal.Exit;
             actionText = text;
+            // 行き先：街へは正門・授業は教室（SimCharacter.Outside.cs）。道が無ければ寮の出口
+            leaveTo = LeavePointFor();
+            leaveSet = true;
+            if (GoTo(leaveTo, State.Walking)) return;
+            leaveTo = world.exitPoint;
+            goal = Goal.Exit;
             if (!GoTo(world.exitPoint, State.Walking)) { goal = Goal.None; SetState(State.Idle); }
         }
 
         void ReturnHome()
         {
-            transform.position = world.exitPoint;
+            transform.position = leaveSet ? leaveTo : world.exitPoint; // 見えなくなった所（正門・教室・寮の出口）から出てくる
+            leaveSet = false;
             SetVisible(true);
             string what = awayKind == AwayKind.Stroll ? "散歩" : (awayKind == AwayKind.Outing ? "おでかけ" : (awayKind == AwayKind.Job ? "アルバイト" : (awayKind == AwayKind.Club ? "部活" : (awayKind == AwayKind.Dungeon ? "ダンジョン実習" : (awayLabel == "試験を受けている" ? "試験" : "授業")))));
             if (awayLabel == "飛び出していった") what = "外";
@@ -1786,6 +1796,7 @@ namespace LifeSimProto
             if (lifeEv != null) return; // 生活のできごとの間は、その進み方に任せる（LifeEventDirector.cs。2026-11-02）
             if (LifeNightBack()) return; // 夜中に起こされて断った・何もしていない：寝に戻る
             CheckClubInterrupted();
+            CheckClubGoing(); // 部の場所へ向かう途中で止まったら、もう一度（SimCharacter.Outside.cs）
             if (TryStartClubTrip(now)) return; // 部活へ（2026-11-01）
 
             switch (state)
@@ -1875,6 +1886,7 @@ namespace LifeSimProto
             if (privatePending) return;
             if (escortLeader != null && UpdateEscort()) return;
             if (HandleSchedule(now)) return;
+            if (StrollThink(now)) return; // 散歩中（SimCharacter.Outside.cs）
             if (state == State.Approaching || state == State.Waiting || state == State.Walking) return;
             if (hasOrder) return; // プレイヤーの指示を実行中
 
@@ -4113,6 +4125,9 @@ namespace LifeSimProto
                     }
                     else SetState(State.Idle);
                     break;
+                case Goal.Club: // 学校の部の場所に着いた（SimCharacter.Outside.cs）
+                    if (clubPhase == ClubPhase.Going) StartClubActive(); else SetState(State.Idle);
+                    break;
                 case Goal.Exit:
                     SetState(State.Away);
                     actionText = awayLabel ?? "出かけている";
@@ -4208,6 +4223,7 @@ namespace LifeSimProto
                     if (act == Act.Tea) return "#お茶";
                     if (act == Act.Hobby) return hobby == HobbyKind.Tea ? "#お茶" : "#読書";
                 }
+                if (IsMob && state == State.Idle && actionText != null && actionText.StartsWith("職員室で仕事")) return actionText; // 先生（2026-11-04）
                 return null;
             }
         }
@@ -4223,6 +4239,25 @@ namespace LifeSimProto
             }
         }
         public bool IsTalkingNow { get { return state == State.Talking || chatting; } }
+        // ---- 動きの使い分けの追加（2026-11-04 famuru「入れた動きを全部使う」）----
+        /// <summary>話している相手が今しゃべっている（聞く動き）。</summary>
+        public bool PartnerSpeakingNow { get { var o = chatting ? chatPartner : talkPartner; return o != null && o.IsSpeakingNow; } }
+        /// <summary>だれかの用事が終わるのを待っている（足でとんとん）。</summary>
+        public bool IsWaitingNow { get { return state == State.Waiting; } }
+        /// <summary>絶好調で、ひまにしている（踊る）。</summary>
+        public bool ElatedNow { get { return state == State.Idle && GetStage(StatusLine.MoodUp) >= 3; } }
+        /// <summary>篤が好きで、篤がそばにいる（ちょっと気を引く）。</summary>
+        public bool FlirtNow
+        {
+            get
+            {
+                if (IsTarget || IsMob || state != State.Idle || LoveStage < 2) return false;
+                var f = world.RomanceTarget;
+                if (f == null || !f.Present) return false;
+                Vector3 d = f.transform.position - transform.position;
+                return Mathf.Abs(d.y) < 1f && d.sqrMagnitude < 3.5f * 3.5f;
+            }
+        }
         public bool IsEatingNow { get { return state == State.Eating; } }
         public bool IsDozingNow { get { var p = CurrentPose(); return dozing && (p == Pose.Sit || p == Pose.SitFloor); } }
         public bool EyesClosedNow { get { return state == State.Sleeping || dozing; } }

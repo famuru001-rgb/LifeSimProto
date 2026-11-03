@@ -330,6 +330,16 @@ namespace LifeSimProto
             if (Story.IsActive) DrawStory();
         }
 
+        // 飾りの箱（欄の地・名札・吹き出し）は、操作の番号（control ID）を使わずに描く（2026-11-04）。
+        // GUI.Box は番号を1つずつ使うので、キャラが画面に出入りしたり吹き出しが出たり消えたりすると、あとのボタンの番号がずれ、
+        // 「押したとき」と「離したとき」で別のボタンの扱いになってクリックが効かないことがあった（何度かすばやく押すと効く）。
+        static readonly GUIContent decoTmp = new GUIContent();
+        static void Deco(Rect r, GUIContent c, GUIStyle st)
+        {
+            if (Event.current.type == EventType.Repaint) st.Draw(r, c, false, false, false, false);
+        }
+        static void Deco(Rect r, string text, GUIStyle st) { decoTmp.text = text; Deco(r, decoTmp, st); }
+
         bool ToGui(Vector3 world3, float s, out Vector2 g)
         {
             Vector3 sp = world.mainCamera.WorldToScreenPoint(world3);
@@ -389,7 +399,7 @@ namespace LifeSimProto
                 string tag = c.displayName + (c.IsTarget ? "（あなた）" : "") + "  " + c.actionText;
                 Vector2 size = nameTag.CalcSize(new GUIContent(tag));
                 r = new Rect(g.x - size.x / 2f, g.y - size.y, size.x, size.y);
-                GUI.Box(r, tag, nameTag);
+                Deco(r, tag, nameTag);
                 var face = Portrait(c, "face");
                 if (face != null) GUI.DrawTexture(new Rect(r.x - r.height - 2, r.y, r.height, r.height), face, ScaleMode.ScaleToFit, true);
                 GUI.color = c.color;
@@ -411,7 +421,7 @@ namespace LifeSimProto
                 {
                     Vector2 bs = bubble.CalcSize(new GUIContent(c.bubble));
                     Rect br = new Rect(g.x - bs.x / 2f, r.y - bs.y - 6, bs.x, bs.y);
-                    GUI.Box(br, c.bubble, bubble);
+                    Deco(br, c.bubble, bubble);
                     GUI.color = new Color(1f, 0.98f, 0.93f, 0.95f);
                     GUI.DrawTexture(new Rect(g.x - 4, br.yMax, 8, 6), ProtoArt.White);
                     GUI.color = old;
@@ -422,7 +432,7 @@ namespace LifeSimProto
         void DrawTopBar()
         {
             Rect r = TopBar;
-            GUI.Box(r, GUIContent.none, panel);
+            Deco(r, GUIContent.none, panel);
             GUI.Label(new Rect(r.x + 14, r.y + 10, 260, 30), world.Day + "日目 " + ScheduleMaker.Clock(world.Now) + "（" + world.TimeOfDayName() + "）", clock);
             float x = r.x + 280;
             float cur = world.userSpeed;
@@ -494,7 +504,7 @@ namespace LifeSimProto
             if (priv.Count > 0) parts.Add("エッチしている：" + string.Join("・", priv.ToArray()));
             string text = string.Join("　｜　", parts.ToArray());
             Vector2 size = small.CalcSize(new GUIContent(text));
-            GUI.Box(new Rect(r.x, r.y, size.x + 28, r.height), GUIContent.none, panel);
+            Deco(new Rect(r.x, r.y, size.x + 28, r.height), GUIContent.none, panel);
             GUI.Label(new Rect(r.x + 14, r.y + 5, size.x + 10, 24), text, small);
         }
 
@@ -526,7 +536,7 @@ namespace LifeSimProto
         void DrawTable()
         {
             Rect r = TablePanel;
-            GUI.Box(r, GUIContent.none, panel);
+            Deco(r, GUIContent.none, panel);
             GUI.Label(new Rect(r.x + 14, r.y + 8, 180, 30), "関係表（好感度）", title);
             DrawGroupTabs(r);
             var members = GroupMembers(groupTab, true);
@@ -593,7 +603,7 @@ namespace LifeSimProto
             var f = world.RomanceTarget;
             if (rom == null || f == null) return;
             Rect r = RomancePanel;
-            GUI.Box(r, GUIContent.none, panel);
+            Deco(r, GUIContent.none, panel);
             GUI.Label(new Rect(r.x + 14, r.y + 8, 180, 30), f.displayName + "への気持ち", title);
             DrawGroupTabs(r);
             var members = GroupMembers(groupTab, false);
@@ -647,7 +657,7 @@ namespace LifeSimProto
         void DrawLog()
         {
             Rect r = LogPanel;
-            GUI.Box(r, GUIContent.none, panel);
+            Deco(r, GUIContent.none, panel);
             GUI.Label(new Rect(r.x + 14, r.y + 8, 140, 30), "できごと", title);
 
             // 見出し（右上に並べる）
@@ -755,7 +765,7 @@ namespace LifeSimProto
         void DrawHelp()
         {
             Rect r = HelpPopup;
-            GUI.Box(r, GUIContent.none, panel);
+            Deco(r, GUIContent.none, panel);
             GUI.Label(new Rect(r.x + 14, r.y + 8, 300, 30), "操作", title);
             string[] lines =
             {
@@ -779,7 +789,7 @@ namespace LifeSimProto
             var pc = Player;
             if (pc == null) return;
             Rect r = ShopPanel;
-            GUI.Box(r, GUIContent.none, panel);
+            Deco(r, GUIContent.none, panel);
             GUI.Label(new Rect(r.x + 14, r.y + 8, 400, 30), "購買部（銀貨 " + pc.money + "）", title);
             if (GUI.Button(new Rect(r.xMax - 92, r.y + 8, 80, 30), "閉じる", smallButton)) shopOpen = false;
             // 棚（種類）のタブ
@@ -811,7 +821,7 @@ namespace LifeSimProto
         void DrawChoice()
         {
             Rect r = ChoicePanel;
-            GUI.Box(r, GUIContent.none, panel);
+            Deco(r, GUIContent.none, panel);
             GUI.Label(new Rect(r.x + 14, r.y + 10, r.width - 28, 30), "ループを抜けた。これからどうする？", title);
             if (GUI.Button(new Rect(r.x + 20, r.y + 80, 270, 50), "このまま日常を続ける", button))
             { Loop.EndlessDays = true; Loop.AskChoice = false; world.Log("★ 終わりのない日常を続けることにした"); SetSpeed(speedBeforePause); }
@@ -823,7 +833,7 @@ namespace LifeSimProto
         void DrawExam()
         {
             Rect r = ExamPanel;
-            GUI.Box(r, GUIContent.none, panel);
+            Deco(r, GUIContent.none, panel);
             string when = Academics.lastExamDay > 0 ? "（" + Academics.lastExamDay + "日目の試験）" : "（まだ試験がありません。土の日の午前に試験・18:00 に結果発表）";
             GUI.Label(new Rect(r.x + 14, r.y + 8, r.width - 530, 30), academyTab == 0 ? "成績表" + when : "学園：" + AcademyTabs[academyTab], academyTab == 0 ? tiny : title);
             if (GUI.Button(new Rect(r.xMax - 92, r.y + 8, 80, 30), "閉じる", smallButton)) examOpen = false;
