@@ -564,8 +564,9 @@ namespace LifeSimProto
             SimCharacter who = role == "主役" ? r.main : (role == "相手" ? r.partner : (role == "ほか" ? (r.extras.Count > 0 ? r.extras[Random.Range(0, r.extras.Count)] : null) : w.RomanceTarget));
             SimCharacter other = role == "主役" ? (r.partner ?? w.RomanceTarget) : r.main;
             if (who == null) return;
-            string line = LifeBook.PickLine(r.def.group, scene, role, who, other, w);
-            if (line == null && scene2 != null) line = LifeBook.PickLine(r.def.group, scene2, role, who, other, w);
+            string lg = LifeBook.LineGroup(r.def);   // その行（ID）だけのせりふがあれば、そちら
+            string line = LifeBook.PickLine(lg, scene, role, who, other, w);
+            if (line == null && scene2 != null) line = LifeBook.PickLine(lg, scene2, role, who, other, w);
             if (line == null) return;
             line = Fill(line, r, who);
             if (delay <= 0f) who.LifeSay(line, 2.4f);

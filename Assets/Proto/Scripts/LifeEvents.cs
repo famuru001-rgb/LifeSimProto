@@ -364,11 +364,19 @@ namespace LifeSimProto
             sb.AppendLine();
             sb.AppendLine("■ できごと");
             foreach (var d in Events)
-                sb.AppendLine("・" + d.id + "（" + d.kind + "・" + d.name + "）" + (d.enabled ? "" : "［使わない］") + "　グループ " + d.group + "・場所 " + d.place + "・相手 " + d.partnerKind + "・せりふ " + LineCount(d.group) + "本");
+                sb.AppendLine("・" + d.id + "（" + d.kind + "・" + d.name + "）" + (d.enabled ? "" : "［使わない］") + "　グループ " + d.group + "・場所 " + d.place + "・相手 " + d.partnerKind + "・せりふ " + LineCount(LineGroup(d)) + "本" + (LineGroup(d) != d.group ? "（この行だけ）" : ""));
             return sb.ToString();
         }
 
         static int LineCount(string g) { int n = 0; foreach (var l in Lines) if (l.group == g) n++; return n; }
+
+        /// <summary>せりふを探すグループ。せりふ.csv の「グループ」にその行の ID が書いてあれば、その行だけのせりふを使う（なければグループのせりふ）。2026-11-03 キャラデザ</summary>
+        public static string LineGroup(LifeEventDef d)
+        {
+            string id = d.id.ToLowerInvariant();
+            if (id != d.group) foreach (var l in Lines) if (l.group == id) return id;
+            return d.group;
+        }
 
         /// <summary>せりふを1本選ぶ（グループ・場面・言う人・記号・条件が合う物から。なければ null）。</summary>
         public static string PickLine(string group, string scene, string speakerRole, SimCharacter who, SimCharacter other, LoungeWorld w)
