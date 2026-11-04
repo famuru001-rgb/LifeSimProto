@@ -1340,6 +1340,8 @@ namespace LifeSimProto
             };
             foreach (var s in seats) ms(s);
             foreach (var s in mobSeats) ms(s);
+            foreach (var s in classSeats) ms(s);
+            foreach (var s in teachSpots) ms(s);
             foreach (var p in pois) mp(p);
             foreach (var kv in placeSeats) foreach (var s in kv.Value) ms(s);
             foreach (var kv in placePois) foreach (var p in kv.Value) mp(p);

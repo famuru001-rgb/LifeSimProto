@@ -14,7 +14,7 @@ namespace LifeSimProto
     {
         public enum State { Idle, Walking, Sitting, Activity, Approaching, Waiting, Talking, Eating, Bathing, Sleeping, Away, Private }
         public enum HobbyKind { Reading, Magic, Tea, Walk }
-        enum Goal { None, Seat, Poi, Wander, Counter, DiningSeat, Bath, Bed, Nap, Exit, Return, Private, Gather, Hover, Follow, MoveTo, Club }
+        enum Goal { None, Seat, Poi, Wander, Counter, DiningSeat, Bath, Bed, Nap, Exit, Return, Private, Gather, Hover, Follow, MoveTo, Club, Teach }
         enum Act { None, Rest, Fun, Study, Hobby, Meal, Snack, Tea, Work }
         enum Intent { Talk, Love, Private, Bake, Give, Request, Heal }
         enum Choice { None, Social, Rest, Fun, Snack, Study, Hobby, Love, Nap, Private, Hover, Cling }
@@ -1366,6 +1366,8 @@ namespace LifeSimProto
                         bool examItem = it.Label.EndsWith("試験");
                         bool teach = profile != null && profile.teacher; // 先生は教える側（2026-10-30）
                         if (!examItem && !teach && TryClassInPlace(it)) return true;
+                        // 教室へ歩いて行って座る・先生は前に立って教える（2026-11-04 SimCharacter.Classroom.cs）
+                        if (TryClassroom(it, examItem, teach)) { ShowBubble(Say(examItem ? "c_exam" : "c_go", examItem ? "がんばろう" : "いってきます"), 1.6f); return true; }
                         awayLabel = teach ? (examItem ? "試験の監督をしている" : "授業をしている") : (examItem ? "試験を受けている" : "授業に出ている");
                         StartLeave(teach ? (examItem ? "試験の監督に行く" : "授業をしに行く") : (examItem ? it.Label + "を受けに行く" : "授業に出かける"));
                         ShowBubble(Say(examItem ? "c_exam" : "c_go", examItem ? "がんばろう" : "いってきます"), 1.6f);
@@ -1617,6 +1619,7 @@ namespace LifeSimProto
             AfterClass();
             string ck = Loop.Count + ":" + world.Day + ":" + (classSlots.Count > 0 ? classSlots[0] : 0);
             if (classEndLogged.Add(ck)) world.Log(world.AreaName(transform.position) + "での" + SubjectName(classSubjects.Count > 0 ? classSubjects[0] : -1) + "の授業が終わった");
+            if (classRoom) { EndClassroom(); return; } // 教室の授業：席を立って寮へ歩いて帰る
             if (state == State.Activity && act == Act.Study) { LeaveCurrentSpot(); SetState(State.Idle); actionText = "授業が終わった"; }
         }
 
@@ -1791,6 +1794,7 @@ namespace LifeSimProto
             }
             else bedWalkStart = -1;
             if (inPlaceClass && now >= classUntil) EndPlaceClass();
+            if (ClassroomThink(now)) return; // 教室で授業中（座っている・教えている）
             if (chatting) return; // その場での会話が終わるまで待つ
             if (InDungeon) return; // ダンジョン実習の間は、組の進み方に任せる（SimCharacter.Dungeon.cs）
             if (lifeEv != null) return; // 生活のできごとの間は、その進み方に任せる（LifeEventDirector.cs。2026-11-02）
@@ -4062,6 +4066,9 @@ namespace LifeSimProto
                     break;
                 case Goal.Follow:
                     SetState(State.Idle);
+                    break;
+                case Goal.Teach:
+                    ArriveTeach();
                     break;
                 case Goal.MoveTo:
                     hasOrder = false;

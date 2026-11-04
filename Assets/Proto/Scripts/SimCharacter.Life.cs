@@ -112,7 +112,7 @@ namespace LifeSimProto
             {
                 return "state=" + state + " goal=" + goal + " away=" + awayKind + " until=" + ScheduleMaker.Clock(awayUntil) + " path=" + path.Count + " 「" + actionText + "」 lifeEv=" + (lifeEv != null ? lifeEv.def.id : "-")
                     + " order=" + hasOrder + " mission=" + OnMission + " 場所=" + (world.LifeAreaAt(transform.position) != null ? world.LifeAreaAt(transform.position).name : "?")
-                    + (hs != null ? " 動き=" + hs.MotionDebug : "") + (soloMp != null ? " 動き=" + soloMp.form + "・" + soloMp.Part : "") + (strolling ? " 散歩中（" + ScheduleMaker.Clock(strollUntil) + "まで）" : "");
+                    + (hs != null ? " 動き=" + hs.MotionDebug : "") + (soloMp != null ? " 動き=" + soloMp.form + "・" + soloMp.Part : "") + (strolling ? " 散歩中（" + ScheduleMaker.Clock(strollUntil) + "まで）" : "") + ClassroomDebug();
             }
         }
 

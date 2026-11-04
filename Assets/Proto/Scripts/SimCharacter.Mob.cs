@@ -109,6 +109,7 @@ namespace LifeSimProto
                     break;
             }
             if (chatting || privatePending || hasOrder) return; // 篤に誘われて動いている
+            if (MobClassroomThink(now)) return; // 教室で授業中（SimCharacter.Classroom.cs）
             if (state == State.Approaching || state == State.Waiting) return;
             // 歩いている途中でも、ひまつぶし・昼食へ向かう途中なら授業を優先する（授業へ・寮へ向かう途中はそのまま）
             bool walkingFree = state == State.Walking && goal != Goal.Exit;
@@ -205,6 +206,7 @@ namespace LifeSimProto
             awayUntil = it.end;
             awayLabel = IsTeacher ? (exam ? "試験の監督をしている" : "授業をしている") : (exam ? "試験を受けている" : "授業に出ている");
             int s0 = it.subjects.Count > 0 ? it.subjects[0] : -1;
+            if (MobTryClassroom(it, exam)) return; // 教室で座る・教える（2026-11-04）
             Vector3 p;
             if (!MobClassPoint(exam, s0, out p)) { MobVanish(); return; }
             goal = Goal.Exit;
@@ -368,6 +370,14 @@ namespace LifeSimProto
         /// <summary>着いたとき（寮生以外の学生・先生だけの行き先）。true なら処理した。</summary>
         bool MobArrive()
         {
+            if (classRoom && (goal == Goal.Seat || goal == Goal.Teach))
+            {
+                // 教室に着いた：席に座る・前に立つ
+                var g = goal; goal = Goal.None;
+                if (g == Goal.Seat && seat != null) { SnapToSeat(); act = Act.Study; SetState(State.Sitting); actionText = sitLabel ?? "授業を受けている"; }
+                else ArriveTeach();
+                return true;
+            }
             switch (goal)
             {
                 case Goal.Exit:

@@ -154,6 +154,7 @@ namespace LifeSimProto
             P("歌の練習", "R_Singer"),                                  // 娯楽室（2026-11-04）
             P("楽器", "R_PlayingGuitar", "R_PlayingPiano"),            // 娯楽室（楽器の模型はまだ無い）
             P("職員室で仕事", "R_ClipboardLeverComputer"),            // 先生
+            P("授業をして", "Talk", "Talk2", "Talk3", "Talk4", "M_Talking", "M_Talking_1", "M_Talking_2", "M_Talking_3"), // 教室の前で教える（2026-11-04）
         };
 
         // ---- 座って行う場面（上半身だけ重ねる）----

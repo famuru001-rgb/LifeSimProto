@@ -231,6 +231,20 @@ namespace LifeSimProto
             else FBlock(x0, sy0, f, u - su / 2f, v - sv / 2f, u + su / 2f, v + sv / 2f);
         }
 
+        /// <summary>授業・試験で座る席（教室の机の椅子・大講堂の長いす）と、先生が立つ所（2026-11-04 famuru「教室では座って授業を受ける。先生も授業に参加」）。</summary>
+        public readonly List<Seat> classSeats = new List<Seat>();
+        public readonly List<Seat> teachSpots = new List<Seat>();
+
+        void ClassSeat(float x0, float sy0, int f, float u, float v, Vector3 forward, Vector3 approach, string area)
+        {
+            classSeats.Add(new Seat { kind = SeatKind.Sit, label = area + "の席", area = area, position = RU(x0, sy0, u, v, FloorY(f)), forward = forward, approach = approach });
+        }
+
+        void TeachSpot(Vector3 pos, Vector3 forward, string area)
+        {
+            teachSpots.Add(new Seat { kind = SeatKind.Sit, label = area + "の教壇", area = area, position = pos, forward = forward, approach = pos });
+        }
+
         /// <summary>寮生以外の学生・先生が座る席（学食の長いす）。寮生の席さがし（seats）には入れない。</summary>
         public readonly List<Seat> mobSeats = new List<Seat>();
 
@@ -299,7 +313,11 @@ namespace LifeSimProto
                 FBox("Teacher_Desk", x0, sy0, f, 2.0f, D / 2f, 0f, 0.8f, 0.8f, 1.8f, woodDark, true);
                 for (float u = 4.0f; u <= W - 1.5f; u += 1.9f)
                     for (float v = vSafe0; v <= vSafe1 + 0.01f; v += 2.0f)
+                    {
                         FDesk(x0, sy0, f, u, v, 0);
+                        ClassSeat(x0, sy0, f, u + 0.55f, v, SDir(-1f, 0f), RU(x0, sy0, u + 1.15f, v, FloorY(f)), n); // 授業で座る席（2026-11-04）
+                    }
+                TeachSpot(RU(x0, sy0, 1.0f, D / 2f, FloorY(f)), SDir(1f, 0f), n); // 先生が立つ所（黒板と机のあいだ）
                 FShelf(x0, sy0, f, W, D, 1, D / 2f, 3.0f, 1.2f, paperMat, woodFloor, seed); // 後ろの低い棚
                 return;
             }
@@ -497,7 +515,10 @@ namespace LifeSimProto
                         FBox("Pew_Back", sx0, 0f, 0, (u0 + u1) / 2f, v + 0.25f, 0.4f, u1 - u0, 0.55f, 0.06f, woodDark);
                         FBox("Pew_Legs", sx0, 0f, 0, (u0 + u1) / 2f, v, 0f, u1 - u0 - 0.2f, 0.4f, 0.3f, woodDark);
                         FBlock(sx0, 0f, 0, u0, v - 0.3f, u1, v + 0.35f);
+                        for (float uu = u0 + 0.35f; uu <= u1 - 0.35f + 0.01f; uu += 0.7f)
+                            ClassSeat(sx0, 0f, 0, uu, v, SDir(0f, -1f), RU(sx0, 0f, uu, v - 0.7f, FloorY(0)), name); // 試験で座る席（2026-11-04）
                     }
+                TeachSpot(RU(sx0, 0f, W / 2f, 3.8f, FloorY(0)), SDir(0f, 1f), name); // 試験の監督が立つ所（演台）
                 FBox("Lectern", sx0, 0f, 0, W / 2f, 4.6f, 0.6f, 0.7f, 1.1f, 0.5f, woodDark);
                 FBox("Hall_Banner", sx0, 0f, 0, W / 2f - 4f, 0.1f, 2.5f, 1.4f, 3.0f, 0.03f, fabricRed);
                 FBox("Hall_Banner", sx0, 0f, 0, W / 2f + 4f, 0.1f, 2.5f, 1.4f, 3.0f, 0.03f, fabricGreen);
