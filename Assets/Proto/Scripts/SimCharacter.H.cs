@@ -217,7 +217,7 @@ namespace LifeSimProto
             readonly string bathKind;    // "shower"・"bath"・null（2026-11-03 famuru：入浴中の二人きり。シャワーとお風呂で分ける）
             // 動き（HMotion.cs。2026-11-04 famuru「二人きりの時間の動きを入れて」）：最後まで（depth 2）の前半〜フィニッシュで流す
             readonly HMotionPlayer mp;
-            readonly string form2, form4;
+            string form2, form4;   // form2 は立位なら置く所（壁・机）で選び直す（2026-11-04 モーション）
             Vector3 hAnchor; Quaternion hRot = Quaternion.identity;
             readonly Dictionary<SimCharacter, string> rigs = new Dictionary<SimCharacter, string>();
             string phase;
@@ -381,17 +381,19 @@ namespace LifeSimProto
                 var d = Direct;
                 if (d != null) rigs[d.c] = "F";
                 int k = 0;
-                foreach (var p in ps)
-                {
-                    if (p.role != HRole.Pet || k >= HMotionBook.GroupRigs.Length) continue;
-                    rigs[p.c] = HMotionBook.GroupRigs[k++];
-                }
+                if (form4 != null)   // 立位は2人だけの形（ペッティングの子は今までどおり）
+                    foreach (var p in ps)
+                    {
+                        if (p.role != HRole.Pet || k >= HMotionBook.GroupRigs.Length) continue;
+                        rigs[p.c] = HMotionBook.GroupRigs[k++];
+                    }
                 mp.SetForm(k > 0 ? form4 : form2);
             }
 
             /// <summary>動きの基準の点：個室ならベッドの上の真ん中、ほかは場所の真ん中の床。</summary>
             void PlaceMotionAnchor()
             {
+                if (pose == "立位") { PlaceStandAnchor(); return; }
                 var room = spot != null ? spot.room : null;
                 if (room != null && room.bed != null)
                 {
@@ -410,6 +412,68 @@ namespace LifeSimProto
                     hRot = Quaternion.LookRotation(fw.normalized) * Quaternion.Euler(0f, HMotionBook.YawFloor, 0f);
                 }
                 else if (f != null) { hAnchor = f.transform.position; hRot = f.transform.rotation; }
+            }
+
+            /// <summary>立位の置き方（2026-11-04 モーション）：床に立つ。個室は机（机の形）か、ベッドの前の床。
+            /// シャワーなどは近くの壁（壁の形）か、場所の真ん中。動きの前（女が向く方）は Unity の -Z。</summary>
+            void PlaceStandAnchor()
+            {
+                var room = spot != null ? spot.room : null;
+                Vector3 p, fw;
+                if (room != null && room.bed != null)
+                {
+                    Vector3 c = room.bed.position + room.bedEdge * (room.bedEdgeDist + 0.9f);
+                    p = new Vector3(c.x, LoungeWorld.FloorY(room.floor), c.z); fw = room.bedEdge;
+                }
+                else
+                {
+                    var places = spot != null ? spot.Spots(2) : null;
+                    if (places != null && places.Count > 0) { p = places[0].pos; fw = places[0].facing; }
+                    else if (f != null) { p = f.transform.position; fw = f.transform.forward; }
+                    else { p = Vector3.zero; fw = Vector3.forward; }
+                }
+                fw.y = 0f; if (fw.sqrMagnitude < 0.01f) fw = Vector3.forward; fw.Normalize();
+                hAnchor = p; hRot = Quaternion.LookRotation(fw);
+                Vector3 wp, wn;
+                var desk = room != null ? room.desk : null;
+                if (desk != null && desk.slots != null && desk.slots.Length > 0 && Random.value < HMotionBook.StandDeskChance)
+                {
+                    Vector3 outw = desk.slots[0] - desk.lookAt; outw.y = 0f;   // 机の真ん中から椅子の方（部屋の中）
+                    if (outw.sqrMagnitude > 0.01f)
+                    {
+                        outw.Normalize();
+                        Vector3 a = desk.lookAt + outw * (0.30f + HMotionBook.StandDeskEdge);   // 机の奥行きは約0.6m
+                        hAnchor = new Vector3(a.x, p.y, a.z); hRot = Quaternion.LookRotation(outw);
+                        form2 = "StandDesk";
+                    }
+                }
+                else if (Random.value < (bathKind == "shower" ? HMotionBook.StandWallChanceShower : HMotionBook.StandWallChance) && FindWall(p, out wp, out wn))
+                {
+                    Vector3 a = wp + wn * HMotionBook.StandWallBack;
+                    hAnchor = new Vector3(a.x, p.y, a.z); hRot = Quaternion.LookRotation(wn);
+                    form2 = "StandWall";
+                }
+                if (mp != null) mp.SetForm(form2);
+            }
+
+            /// <summary>立った人の胸の高さで、まわり（1.6m 以内）のいちばん近い壁を探す（人と低い物は除く）。</summary>
+            static bool FindWall(Vector3 p, out Vector3 point, out Vector3 normal)
+            {
+                point = normal = Vector3.zero; float best = 1.6f; bool ok = false;
+                Vector3 o = p + Vector3.up * 1.2f;
+                for (int i = 0; i < 12; i++)
+                {
+                    Vector3 d = Quaternion.Euler(0f, i * 30f, 0f) * Vector3.forward;
+                    foreach (var h in Physics.RaycastAll(o, d, best))
+                    {
+                        if (h.collider == null || h.collider.isTrigger) continue;
+                        if (h.collider.GetComponentInParent<SimCharacter>() != null) continue;
+                        if (h.collider.bounds.size.y < 1.6f) continue;
+                        Vector3 n = h.normal; n.y = 0f; if (n.sqrMagnitude < 0.5f) continue;
+                        if (h.distance < best) { best = h.distance; point = h.point; normal = n.normalized; ok = true; }
+                    }
+                }
+                return ok;
             }
 
             /// <summary>その人が今流す動き（無ければ false）。ProtoBody が毎コマ聞く。</summary>
@@ -612,7 +676,12 @@ namespace LifeSimProto
 
                 UpdateGauges(gm);
                 UpdateJoining(dt);
-                if (MotionActive) { UpdateRigs(); mp.Update(dt, MotionSpeed()); }
+                if (MotionActive)
+                {
+                    UpdateRigs();
+                    mp.soundPos = hAnchor; mp.voiceLetter = Direct != null ? Direct.c.letter : null;   // 効果音と声（HSound.cs。2026-11-05 モーション）
+                    mp.Update(dt, MotionSpeed());
+                }
                 if (RoleSig() != arrangedSig) Arrange(); // 順番の入れかえ・休憩・途中参加で並びを直す
                 UpdateActionTexts(); // 「今：」の表示を今の様子にする（2026-10-25 famuru「更新されない」）
 

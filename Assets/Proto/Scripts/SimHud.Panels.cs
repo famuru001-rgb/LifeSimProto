@@ -159,8 +159,8 @@ namespace LifeSimProto
             var f = selected;
             GUI.Label(new Rect(r.x + 14, y, r.width - 28, 22), "床を右クリックで移動・キャラを右クリックで話しかける・誘う・渡す", tiny); y += 24;
             if (GUI.Button(new Rect(r.x + 14, y, 180, 32), "寮の手伝い（+20）", smallButton)) f.OrderWork();
-            if (GUI.Button(new Rect(r.x + 202, y, 200, 32), "街のアルバイト（+70）", smallButton)) f.OrderPartTime();
-            if (GUI.Button(new Rect(r.x + 410, y, 150, 32), "購買部を開く", smallButton)) shopOpen = true;
+            if (LoungeWorld.OutingsEnabled && GUI.Button(new Rect(r.x + 202, y, 200, 32), "街のアルバイト（+70）", smallButton)) f.OrderPartTime();   // 2026-11-07 外出はなし
+            if (GUI.Button(new Rect(r.x + (LoungeWorld.OutingsEnabled ? 410 : 202), y, 150, 32), "購買部を開く", smallButton)) shopOpen = true;
             y += 38;
             // 篤の魔法（自分に・まわりに使うもの。1日1回ずつ）
             float mx = r.x + 14;

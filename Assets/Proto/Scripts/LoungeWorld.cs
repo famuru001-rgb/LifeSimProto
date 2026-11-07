@@ -69,7 +69,11 @@ namespace LifeSimProto
         public string area;         // 集まる区画（外出なら空）
         public Vector3 focus;       // 集まる中心
         public double start, end;
-        public bool outing;         // 外出の行事なら true
+        public bool outing;         // 外出の行事なら true（2026-11-07 から外出はなし。CampusVenues.cs で敷地の中の会場にする）
+        public float spread;        // 集まる広さ（中心からの半径。0 なら 2.2m）
+        public string altArea;      // 2か所に分かれるときのもう1つの区画（野外実習の森と浜辺）
+        public Vector3 altFocus;
+        public float altSpread;
         public List<SimCharacter> invited;  // null ならだれでも参加できる
         public float joinChance = 0.85f;
         public SimCharacter honoree;

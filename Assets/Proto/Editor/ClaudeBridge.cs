@@ -254,21 +254,21 @@ namespace LifeSimProto.EditorTools
                         CharCheck.Run();
                         log.AppendLine("checkchars: ok");
                         break;
-                    case "sway": case "sway before": case "sway after": case "sway after2": case "sway after3": case "sway after4": case "sway after5":
+                    case "sway f": case "sway": case "sway before": case "sway after": case "sway after2": case "sway after3": case "sway after4": case "sway after5":
                         // 2026-10-26：揺れの連続写真（仮モデル\\Unity確認\\揺れ_（名前）\\）
                         if (EditorApplication.isPlaying)
                         {
-                            LifeSimProto.SwayShots.Tag = cmd.Length > 5 ? cmd.Substring(5) : "now";
+                            LifeSimProto.SwayShots.Tag = cmd.Length > 5 ? cmd.Substring(5) : "now"; LifeSimProto.SwayShots.Letters = cmd == "sway f" ? "F" : "FIKJGB";
                             new GameObject("SwayShots").AddComponent<LifeSimProto.SwayShots>();
                             log.AppendLine("sway: started " + LifeSimProto.SwayShots.Tag);
                         }
                         else log.AppendLine("sway: not playing");
                         break;
-                    case "sitshots": case "sitshots i": case "sitshots i2":
+                    case "sitshots": case "sitshots i": case "sitshots i2": case "sitshots f":
                         // 2026-10-27：座ったときのスカートの写真（仮モデル\\Unity確認\\座り_（名前）\\）
                         if (EditorApplication.isPlaying)
                         {
-                            LifeSimProto.SitShots.Tag = cmd == "sitshots i2" ? "i2" : "i"; LifeSimProto.SitShots.Letters = "I";
+                            LifeSimProto.SitShots.Tag = cmd == "sitshots i2" ? "i2" : cmd == "sitshots f" ? "f" : "i"; LifeSimProto.SitShots.Letters = cmd == "sitshots f" ? "F" : "I";
                             new GameObject("SitShots").AddComponent<LifeSimProto.SitShots>();
                             log.AppendLine("sitshots: started");
                         }

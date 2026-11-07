@@ -1732,6 +1732,13 @@ namespace LifeSimProto
         void JoinGathering(Gathering g)
         {
             g.members.Add(this);
+            // 外出はなし（2026-11-07 famuru）：出かける集まりが残っていたら、敷地の中で行う
+            if (g.outing && !LoungeWorld.OutingsEnabled)
+            {
+                string[] alt0;
+                if (!world.PlaceOnCampus(g, LoungeWorld.CampusVenueOf(g.key != null && g.key.StartsWith("year_") ? g.key.Substring(5) : g.key, out alt0), alt0))
+                { g.outing = false; g.area = "談話室"; g.focus = LoungeWorld.LoungeCenter; }
+            }
             if (g.outing)
             {
                 gathering = g;
@@ -1741,16 +1748,29 @@ namespace LifeSimProto
                 StartLeave(g.key == "date" ? "デートに出かける" : "出かける");
                 return;
             }
-            gatherFocus = g.focus;
+            // 2か所に分かれる行事（野外実習の森と浜辺）：半分はもう1つの場所へ
+            bool useAlt = g.altArea != null && (id % 2 == 1);
+            string gArea = useAlt ? g.altArea : g.area;
+            Vector3 gFocus = useAlt ? g.altFocus : g.focus;
+            float gSpread = useAlt ? g.altSpread : g.spread;
+            gatherFocus = gFocus;
             Seat best = null;
             float bestScore = float.MinValue;
             foreach (var s in world.seats)
             {
-                if (s.kind != SeatKind.Sit || s.area != g.area || (s.occupant != null && s.occupant != this)) continue;
-                float score = -Vector3.Distance(s.position, g.focus) * 0.6f + PlaceBonus(s.position) * 0.5f + Random.value;
+                if (s.kind != SeatKind.Sit || s.area != gArea || (s.occupant != null && s.occupant != this)) continue;
+                float score = -Vector3.Distance(s.position, gFocus) * 0.6f + PlaceBonus(s.position) * 0.5f + Random.value;
                 if (score > bestScore) { bestScore = score; best = s; }
             }
-            if (best != null && Vector3.Distance(best.position, g.focus) < 4.5f)
+            // 大講堂の長いすなど、授業の席も使う
+            if (best == null && gArea != null)
+                foreach (var s in world.classSeats)
+                {
+                    if ((s.occupant != null && s.occupant != this) || !(gArea == s.area || gArea.EndsWith(s.area))) continue;
+                    float score = -Vector3.Distance(s.position, gFocus) * 0.3f + Random.value;
+                    if (score > bestScore) { bestScore = score; best = s; }
+                }
+            if (best != null && Vector3.Distance(best.position, gFocus) < Mathf.Max(4.5f, gSpread + 1f) + (world.classSeats.Contains(best) ? 30f : 0f))
             {
                 StartSitAt(best, Act.Fun, g.label);
                 gathering = g;
@@ -1759,7 +1779,7 @@ namespace LifeSimProto
             LeaveCurrentSpot();
             gathering = g;
             float a = Random.value * Mathf.PI * 2f;
-            Vector3 p = world.NearestFree(g.focus + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * Random.Range(1.2f, 2.2f));
+            Vector3 p = world.NearestFree(gFocus + new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * Random.Range(1.2f, gSpread > 2.2f ? gSpread : 2.2f));
             goal = Goal.Gather;
             act = Act.Fun;
             sitLabel = g.label;
@@ -2648,6 +2668,7 @@ namespace LifeSimProto
 
         public void OrderPartTime()
         {
+            if (!LoungeWorld.OutingsEnabled) { world.Log("街のアルバイトは今はない（外出はなし）"); return; }   // 2026-11-07 famuru
             if (!CanTakeOrder() || !BreakTalkForOrder()) { world.Log(displayName + "は今は出かけられない"); return; }
             float m = world.MinuteOfDay;
             if (m < 480f || m > 1140f) { world.Log("アルバイトは 8:00〜19:00 の間だけ"); return; }

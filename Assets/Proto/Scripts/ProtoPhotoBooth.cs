@@ -77,6 +77,7 @@ namespace LifeSimProto
                     if (pb == null) { report.AppendLine("見本：" + letter + " のモデルを作れませんでした"); Destroy(go); continue; }
                     if (i == 0) report.AppendLine("見本 " + letter + "：" + pb.DebugInfo);
                     pb.testMode = true;
+                    pb.testLetter = letter;   // 2026-11-06：キャラごとの歩き方（篤は男性の歩き方）で撮る
                     pb.testPose = BodyPose.Stand;
                     pb.testOutfit = "Uniform";
                     pb.testFace = "";
@@ -244,7 +245,7 @@ namespace LifeSimProto
                     go.transform.position = new Vector3(60f + li * 4f, 0f, 140f);
                     var pb = ProtoBody.Create(go, CharLook.Get(letter, false, Color.gray), letter);
                     if (pb == null) { Destroy(go); continue; }
-                    pb.testMode = true; pb.testPose = BodyPose.Sit; pb.testOutfit = "Uniform"; pb.testFace = ""; pb.testSkirtSit = k;
+                    pb.testMode = true; pb.testLetter = letter; pb.testPose = BodyPose.Sit; pb.testOutfit = "Uniform"; pb.testFace = ""; pb.testSkirtSit = k;
                     foreach (var r in go.GetComponentsInChildren<Renderer>(true)) r.gameObject.layer = PhotoLayer;
                     if (Tag == "i2") foreach (var sm in go.GetComponentsInChildren<SkinnedMeshRenderer>(true)) sm.updateWhenOffscreen = true;   // 試し：表示の範囲（bounds）のずれで消えていないか
                     for (float w = 0f; w < 1.2f; w += Time.deltaTime) yield return null;   // 座る動きと揺れが落ち着くまで
@@ -296,7 +297,7 @@ namespace LifeSimProto
                 go.transform.position = new Vector3(60f + mi * 4f, 0f, 170f);
                 var pb = ProtoBody.Create(go, CharLook.Get(Letter, false, Color.gray), Letter);
                 if (pb == null) { Destroy(go); continue; }
-                pb.testMode = true; pb.testPose = BodyPose.Stand; pb.testOutfit = "Uniform"; pb.testFace = "";
+                pb.testMode = true; pb.testLetter = Letter; pb.testPose = BodyPose.Stand; pb.testOutfit = "Uniform"; pb.testFace = "";
                 foreach (var r in go.GetComponentsInChildren<Renderer>(true)) r.gameObject.layer = PhotoLayer;
                 for (int w = 0; w < 5; w++) yield return null;
                 if (mode == "Talk") pb.testTalk = true; else pb.Gesture(mode, 9999f);
@@ -341,6 +342,7 @@ namespace LifeSimProto
     public class SwayShots : MonoBehaviour
     {
         public static string Tag = "now";
+        public static string Letters = "FIKJGB";   // 撮るキャラ（2026-11-06：命令 sway f は篤だけ）
         const int PhotoLayer = 31;
 
         IEnumerator Start()
@@ -354,14 +356,15 @@ namespace LifeSimProto
             var lamp = new GameObject("SwayLamp").AddComponent<Light>(); lamp.type = LightType.Point; lamp.range = 10f; lamp.intensity = 4f;
             var list = new List<KeyValuePair<string, ProtoBody>>();
             int li = 0;
-            foreach (var letter in new[] { "I", "K", "J", "G", "B" })
+            foreach (char lc in Letters)
             {
+                string letter = lc.ToString();
                 if (Resources.Load<GameObject>("Chars/" + letter + "/Char" + letter) == null) continue;
                 var go = new GameObject("Sway_" + letter);
                 go.transform.position = new Vector3(60f + li * 4f, 0f, 120f);
                 var pb = ProtoBody.Create(go, CharLook.Get(letter, false, Color.gray), letter);
                 if (pb == null) { Destroy(go); continue; }
-                pb.testMode = true; pb.testPose = BodyPose.Stand; pb.testOutfit = "Uniform"; pb.testFace = ""; pb.testSpeed = 0f;
+                pb.testMode = true; pb.testLetter = letter; pb.testPose = BodyPose.Stand; pb.testOutfit = "Uniform"; pb.testFace = ""; pb.testSpeed = 0f;
                 foreach (var r in go.GetComponentsInChildren<Renderer>(true)) r.gameObject.layer = PhotoLayer;
                 list.Add(new KeyValuePair<string, ProtoBody>(letter, pb));
                 li++;
@@ -369,6 +372,8 @@ namespace LifeSimProto
             // 段取り（秒）：0〜0.6 立つ、0.6〜3.6 歩く（1.4m/秒）、3.6〜5.6 止まる、5.6〜6.0 その場で90度振り向く、6.0〜7.4 止まる、
             // 7.4〜8.0 おじぎ（45度まで）、8.0〜8.8 そのまま、8.8〜9.4 起き上がる、9.4〜10.4 止まる（おじぎはゲームの動きには無い確認用）
             const float End = 10.4f;
+            float keepCapture = Time.captureDeltaTime;
+            Time.captureDeltaTime = 1f / 30f;   // 2026-11-06：撮影が重いと1コマが0.1秒を超えて揺れが毎回元に戻るので、1コマを1/30秒に決め打ち
             float t = 0f, nextShot = 0f; int frame = 0;
             var csv = new StringBuilder("秒,キャラ,胸の上下(度),胸の伸び(%),髪の角度(度)\n");
             while (t < End)
@@ -403,6 +408,7 @@ namespace LifeSimProto
                 }
                 yield return null;
             }
+            Time.captureDeltaTime = keepCapture;
             File.WriteAllText(Path.Combine(dir, "揺れの数値.csv"), csv.ToString(), Encoding.UTF8);
             File.WriteAllText(Path.Combine(dir, "済み.txt"), System.DateTime.Now + " " + frame + "コマ");
             foreach (var kv in list) Destroy(kv.Value.gameObject);

@@ -41,6 +41,12 @@ namespace LifeSimProto
             new Form("SoloBack", "自慰：あおむけ", "solo", "F"),
             new Form("SoloSide", "自慰：横向き", "solo", "F"),
             new Form("SoloSit", "自慰：もたれて座る", "solo", "F"),
+            new Form("StandFront", "立位：正面", "mis", "M", "F"),
+            new Form("StandWall", "立位：背面（壁）", "mis", "M", "F"),
+            new Form("StandDesk", "立位：背面（机）", "mis", "M", "F"),
+            new Form("StandSide", "立位：側面", "mis", "M", "F"),
+            new Form("StandCarry", "立位：駅弁", "mis", "M", "F"),
+            new Form("StandSplit", "立位：片脚上げ（I字）", "mis", "M", "F"),
         };
         static readonly string[] PhaseNames = { "前半", "中盤", "後半", "フィニッシュ" };
         static List<Step>[] Phases(string family)
@@ -89,26 +95,37 @@ namespace LifeSimProto
         class Body { public string rig; public ProtoBody pb; public GameObject go; }
         readonly List<Body> bodies = new List<Body>();
         Transform stage, anchor, headboard;
+        GameObject bedGo, wallGo, deskGo;   // 立位：床に立つ。壁・机は動きを作ったときの位置（2026-11-04 モーション）
         Camera cam; Light lamp;
         float yaw = 210f, pitch = 25f, dist = 3.2f;
         float sitFixAt = -1f;
+        readonly HVoice voice = new HVoice(); bool insertPending = true;   // 効果音と声（HSound.cs。2026-11-05）
         public static readonly Vector3 StagePos = new Vector3(600f, 0f, 600f);
         const float BedTop = 0.45f;
 
         void Awake()
         {
-            Instance = this;
+            Instance = this; HSound.Flat = true;
             stage = new GameObject("HPreviewStage").transform; stage.SetParent(transform); stage.position = StagePos;
             var floor = GameObject.CreatePrimitive(PrimitiveType.Plane); floor.transform.SetParent(stage); floor.transform.localPosition = Vector3.zero; floor.transform.localScale = Vector3.one * 1.2f;
             Tint(floor, new Color(0.42f, 0.4f, 0.38f));
             var bed = GameObject.CreatePrimitive(PrimitiveType.Cube); bed.name = "Bed"; bed.transform.SetParent(stage);
             bed.transform.localScale = new Vector3(2.8f, BedTop, 2.8f); bed.transform.localPosition = new Vector3(0f, BedTop / 2f, 0f);
-            Tint(bed, new Color(0.86f, 0.84f, 0.8f));
+            Tint(bed, new Color(0.86f, 0.84f, 0.8f)); bedGo = bed;
             headboard = GameObject.CreatePrimitive(PrimitiveType.Cube).transform; headboard.name = "Headboard"; headboard.SetParent(stage);
             headboard.localScale = new Vector3(1.2f, 1.0f, 0.08f); Tint(headboard.gameObject, new Color(0.55f, 0.42f, 0.3f));
             headboard.gameObject.SetActive(false);
             foreach (var c in stage.GetComponentsInChildren<Collider>()) Destroy(c);
             anchor = new GameObject("Anchor").transform; anchor.SetParent(stage); anchor.localPosition = new Vector3(0f, BedTop, 0f); anchor.localRotation = Quaternion.identity;
+            // 立位の壁と机（Blender の (x, y, z) は Unity の (-x, z, -y)）
+            wallGo = GameObject.CreatePrimitive(PrimitiveType.Cube); wallGo.name = "Wall"; wallGo.transform.SetParent(stage);
+            wallGo.transform.localScale = new Vector3(1.6f, 2.2f, 0.06f); wallGo.transform.localPosition = new Vector3(0f, 1.1f, -(HMotionBook.StandWallBack + 0.03f));
+            Tint(wallGo, new Color(0.7f, 0.68f, 0.62f));
+            deskGo = new GameObject("Desk"); deskGo.transform.SetParent(stage); deskGo.transform.localPosition = new Vector3(0f, 0f, -0.49f);
+            var top = GameObject.CreatePrimitive(PrimitiveType.Cube); top.transform.SetParent(deskGo.transform); top.transform.localScale = new Vector3(1.2f, 0.04f, 0.7f); top.transform.localPosition = new Vector3(0f, 0.72f, 0f); Tint(top, new Color(0.55f, 0.4f, 0.28f));
+            var leg = GameObject.CreatePrimitive(PrimitiveType.Cube); leg.transform.SetParent(deskGo.transform); leg.transform.localScale = new Vector3(1.1f, 0.7f, 0.6f); leg.transform.localPosition = new Vector3(0f, 0.35f, 0f); Tint(leg, new Color(0.45f, 0.33f, 0.24f));
+            foreach (var c in stage.GetComponentsInChildren<Collider>()) Destroy(c);
+            wallGo.SetActive(false); deskGo.SetActive(false);
             cam = new GameObject("HPreviewCam").AddComponent<Camera>(); cam.transform.SetParent(transform);
             cam.depth = 50; cam.clearFlags = CameraClearFlags.SolidColor; cam.backgroundColor = new Color(0.3f, 0.32f, 0.36f); cam.nearClipPlane = 0.05f; cam.fieldOfView = 40f;
             lamp = new GameObject("HPreviewLamp").AddComponent<Light>(); lamp.transform.SetParent(transform);
@@ -117,7 +134,7 @@ namespace LifeSimProto
             lamp2.type = LightType.Point; lamp2.range = 8f; lamp2.intensity = 1.2f; lamp2.transform.position = StagePos + new Vector3(-1.5f, 2.0f, 1.5f);
             Build();
         }
-        void OnDestroy() { if (Instance == this) Instance = null; }
+        void OnDestroy() { if (Instance == this) Instance = null; HSound.Flat = false; }
         static void Tint(GameObject g, Color c)
         {
             var r = g.GetComponent<Renderer>(); if (r == null) return;
@@ -132,7 +149,7 @@ namespace LifeSimProto
         {
             for (int i = 0; i < Letters.Length; i++) if (string.Equals(Letters[i], l, System.StringComparison.OrdinalIgnoreCase)) { letterIx = i; Build(); return; }
         }
-        public void SetPhase(int p) { phase = p; phaseNow = p < 0 ? 0 : p; stepIx = 0; rep = 0; t = 0f; holdUntil = -1f; }
+        public void SetPhase(int p) { phase = p; phaseNow = p < 0 ? 0 : p; stepIx = 0; rep = 0; t = 0f; holdUntil = -1f; insertPending = phaseNow == 0; }
 
         void Build()
         {
@@ -140,6 +157,9 @@ namespace LifeSimProto
             bodies.Clear();
             var f = Forms[formIx];
             phases = Phases(f.family);
+            bool stand = f.key.StartsWith("Stand");
+            bedGo.SetActive(!stand); wallGo.SetActive(f.key == "StandWall"); deskGo.SetActive(f.key == "StandDesk");
+            anchor.localPosition = new Vector3(0f, stand ? 0f : BedTop, 0f);
             foreach (var rig in f.rigs)
             {
                 bool male = rig == "M";
@@ -179,7 +199,7 @@ namespace LifeSimProto
             if (stepIx >= l.Count)
             {
                 stepIx = 0;
-                if (phase < 0) { phaseNow = (phaseNow + 1) % 4; }
+                if (phase < 0) { phaseNow = (phaseNow + 1) % 4; if (phaseNow == 0) insertPending = true; }
             }
             t = 0f;
         }
@@ -191,7 +211,13 @@ namespace LifeSimProto
                 if (holdUntil > 0f) { if (Time.time >= holdUntil) { holdUntil = -1f; Advance(); } }
                 else
                 {
+                    var f0 = Forms[formIx]; float len0 = CurLen(), t0 = t;
+                    if (insertPending && f0.family != "solo") HSound.Play("insert", anchor.position, 0.8f);
+                    insertPending = false;
                     t += Time.deltaTime * Cur.speed * speedMul * FpsFix();
+                    HSound.Events(f0.key, Cur.part, t0 / len0, Mathf.Min(t, len0) / len0, Cur.speed * speedMul, anchor.position);
+                    var girl = bodies.Find(b => b.rig == "F");
+                    voice.Tick(girl != null ? Letters[letterIx] : null, phaseNow, Time.deltaTime, anchor.position);
                     float len = CurLen();
                     if (t >= len)
                     {
@@ -218,7 +244,7 @@ namespace LifeSimProto
         }
         void PlaceCam()
         {
-            Vector3 target = anchor.position + Vector3.up * 0.35f;
+            Vector3 target = anchor.position + Vector3.up * (Forms[formIx].key.StartsWith("Stand") ? 0.95f : 0.35f);
             cam.transform.rotation = Quaternion.Euler(pitch, yaw, 0f);
             cam.transform.position = target - cam.transform.forward * dist;
         }

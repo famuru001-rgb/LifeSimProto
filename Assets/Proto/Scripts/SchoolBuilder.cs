@@ -161,6 +161,11 @@ namespace LifeSimProto
             for (int i = 1; i < north.Length; i++) SWall(y, y + FloorH, north[i].x0, 25, north[i].x0, SCor0);
             for (int i = 1; i < south.Length; i++) SWall(y, y + FloorH, south[i].x0, SCor1, south[i].x0, SBack);
 
+            // 2026-11-07 家具のチャット：外壁の外側に依頼28 の石の壁の部品を張る（新しい学園だけ。NewDorm.cs の Outer）
+            Outer(wN, y, y + FloorH, SDir(0, -1), SG(gapsN.ToArray()), f == 2);
+            Outer(wS, y, y + FloorH, SDir(0, 1), SG(gapsS.ToArray()), f == 2);
+            Outer(wW, y, y + FloorH, SDir(-1, 0), f == 0 || (f == 1 && NewLayout) ? SG(new[] { new Vector4(35.5f - 25f - 0.8f, 35.5f - 25f + 0.8f, y, y + 2.5f) }) : new Vector4[0], f == 2);
+            Outer(wE, y, y + FloorH, SDir(1, 0), f == 0 && NewLayout ? SG(new[] { new Vector4(35.5f - 25f - 0.8f, 35.5f - 25f + 0.8f, y, y + 2.5f) }) : new Vector4[0], f == 2);
             // 窓
             foreach (var r in north) if (r.kind != SKind.Pass) Window(wN, S3(r.Mid, 25, y), SDir(0, 1), 1.0f, 1.2f, 1.4f);
             foreach (var r in south) if (r.kind != SKind.Hall || f > 0) Window(wS, S3(r.Mid, SBack, y), SDir(0, -1), 1.0f, 1.2f, 1.4f);
@@ -334,16 +339,20 @@ namespace LifeSimProto
             SPath(new Vector2(fx, fy), new Vector2(44.3f, 5.2f), 1.2f);
             // 噴水
             var c = S3(fx, fy, 0f);
-            bool fnt = PlaceFurn("Furn_Fountain", null, c, 0f) != null; // 本番の家具（水はこのまま）
+            // 2026-11-06 新しい学園：依頼25 の噴水（Blender 版。Logs\tripo_compare.txt があると Tripo 版）。水の面・落ちる水・水晶は材質を替える
+            GameObject f2 = NewLayout ? PlaceFurn(CourtyardName("Fountain2"), null, c, 0f) : null;
+            if (f2 != null) FixCourtyardMats(f2);
+            bool fnt = f2 != null || PlaceFurn("Furn_Fountain", null, c, 0f) != null; // 本番の家具（水はこのまま）
             if (!fnt) Cyl("Fountain_Rim", c + Vector3.up * 0.25f, new Vector3(7.2f, 0.25f, 7.2f), Quaternion.identity, mortarDark);
-            Cyl("Fountain_Water", c + Vector3.up * 0.48f, new Vector3(6.5f, 0.02f, 6.5f), Quaternion.identity, waterMat);
+            if (f2 == null) Cyl("Fountain_Water", c + Vector3.up * 0.48f, new Vector3(6.5f, 0.02f, 6.5f), Quaternion.identity, waterMat);
             if (!fnt) Cyl("Fountain_Pillar", c + Vector3.up * 0.9f, new Vector3(0.5f, 0.9f, 0.5f), Quaternion.identity, mortarDark);
             if (!fnt) Cyl("Fountain_Bowl", c + Vector3.up * 1.8f, new Vector3(1.6f, 0.12f, 1.6f), Quaternion.identity, mortarDark);
             blockers[0].Add(new Rect(c.x - 3.7f, c.z - 3.7f, 7.4f, 7.4f));
             // 噴水や休憩所でくつろぐ場所は、授業のしくみを作るときに足す（今は寮から遠くへ行きすぎないように）
             // 丸い休憩所（壁なし。柱6本と丸い屋根、まわりにベンチ）
             var g = S3(46f, 3.6f, 0f);
-            bool gz = PlaceFurn("Furn_Gazebo", null, g, 0f) != null; // 本番の家具（柱・屋根・机も入っている）
+            GameObject g2 = NewLayout ? PlaceFurn(CourtyardName("Gazebo2"), null, g, 0f) : null; // 依頼25 の東屋（2026-11-06）
+            bool gz = g2 != null || PlaceFurn("Furn_Gazebo", null, g, 0f) != null; // 本番の家具（柱・屋根・机も入っている）
             if (!gz) Cyl("Gazebo_Floor", g + Vector3.up * 0.05f, new Vector3(5.4f, 0.05f, 5.4f), Quaternion.identity, flagstone);
             for (int i = 0; i < 6; i++)
             {
@@ -363,6 +372,38 @@ namespace LifeSimProto
             Label(S3(26f, 17f, 2.2f), "本館の中庭");
             Label(g + Vector3.up * 2.2f, "休憩所");
             AddArea("本館の中庭", SR(18f, 0, 52f, SVer0), 0);
+        }
+
+        /// <summary>依頼25 の中庭の模型の名前（Resources\Furniture\Courtyard2）。famuru 2026-11-06 決定で Tripo 版。Logs\blender_compare.txt があると Blender 版（見比べ用）。</summary>
+        static string CourtyardName(string n)
+        {
+            bool blender = System.IO.File.Exists(System.IO.Path.GetFullPath(System.IO.Path.Combine(Application.dataPath, "../Logs/blender_compare.txt")));
+            return "Courtyard2/Furn_" + n + (blender ? "" : "_Tripo");
+        }
+
+        /// <summary>噴水の水の面・落ちる水・水晶を、ゲームの材質に替える（模型では色を塗っていないため）。</summary>
+        static Material cyWater, cyFall, cyCrystal;
+        void FixCourtyardMats(GameObject go)
+        {
+            if (cyWater == null)
+            {
+                cyWater = ProtoArt.MatNew(new Color(0.32f, 0.66f, 0.72f, 1f), null, null, 0.85f); cyWater.name = "CY_Water";
+                cyFall = ProtoArt.Glow(new Color(0.75f, 0.92f, 1f), 0.6f); cyFall.name = "CY_Fall";
+                cyCrystal = ProtoArt.Glow(new Color(0.45f, 0.9f, 1f), 1.6f); cyCrystal.name = "CY_Crystal";
+            }
+            foreach (var r in go.GetComponentsInChildren<Renderer>())
+            {
+                var ms = r.sharedMaterials;
+                for (int i = 0; i < ms.Length; i++)
+                {
+                    if (ms[i] == null) continue;
+                    string n = ms[i].name;
+                    if (n.StartsWith("Water_Surface")) ms[i] = cyWater;
+                    else if (n.StartsWith("Water_Fall")) ms[i] = cyFall;
+                    else if (n.StartsWith("Crystal")) ms[i] = cyCrystal;
+                }
+                r.sharedMaterials = ms;
+            }
         }
 
         void SPath(Vector2 a, Vector2 b, float w)

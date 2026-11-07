@@ -114,7 +114,7 @@ namespace LifeSimProto
 
         void Build()
         {
-            if (NewLayout) { BuildNew(); return; } // 新しい寮（NewDorm.cs。Logs\new_campus_play.txt があるときだけ）
+            if (NewLayout) { BuildNew(); return; } // 新しい寮（NewDorm.cs。2026-11-05 からふだんはこちら。Logs\old_campus_play.txt を置くと前の寮）
             root = new GameObject("Dorm").transform;
             CreateMaterials();
             SetupSun();
@@ -393,6 +393,7 @@ namespace LifeSimProto
         /// <summary>縦長のアーチ窓。inward は部屋の内側を向く方向。</summary>
         void Window(WallSeg w, Vector3 basePos, Vector3 inward, float sill = 1.2f, float width = 1.1f, float height = 2.2f)
         {
+            RecordSkinWindow(w, basePos); // 2026-11-07 家具のチャット：外壁の石の部品（NewDorm.cs の SkinAll）に窓の位置を教える
             if (sharedWindowMat == null) { sharedWindowMat = ProtoArt.Glow(new Color(0.45f, 0.6f, 0.9f), 0.9f); windowMats.Add(sharedWindowMat); }
             var mat = sharedWindowMat;
             float yaw = Quaternion.LookRotation(inward).eulerAngles.y;

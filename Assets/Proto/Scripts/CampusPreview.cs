@@ -6,7 +6,7 @@ namespace LifeSimProto
 {
     /// <summary>
     /// 新しい学園（作り直しの第5案。famuru 2026-10-31 決定）の外側。
-    /// ・新しい学園で遊ぶとき（Logs\new_campus_play.txt があるとき＝LoungeWorld.NewLayout）は、寮と学校の本当の場所に合わせて組む（配置図の座標→CampusPlan.G）。
+    /// ・新しい学園で遊ぶとき（ふだん＝LoungeWorld.NewLayout。Logs\old_campus_play.txt を置くと前の学園）は、寮と学校の本当の場所に合わせて組む（配置図の座標→CampusPlan.G）。
     ///   寮と学校の中（NewDorm.cs・SchoolBuilder）は組まず、島・崖・城壁・正門・街・中庭を囲む渡り廊下・地上の廊下・ほかの寮・離れ・森・道だけ
     /// ・そうでなく Logs\new_campus.txt があるときは、今までどおり別の場所（x＋2000）に全部を試しに組む（ゲームの流れには関わらない）
     /// ・写真：Logs\campus_cmd.txt に1行1枚「shot 名前 x z 高さ 向き 見下ろし 距離」（x・z は配置図の座標。正門が 0,0、北が +z）→ Logs\campus_名前.png
@@ -113,11 +113,39 @@ namespace LifeSimProto
                         fm.SetFloat("_UpNormal", leaf ? 0f : 0.5f);
                         fm.SetFloat("_Translucency", leaf ? 0.9f : 0.5f);
                         fm.SetFloat("_Cull", leaf ? 2f : 0f);
+                        if (k == "Grass_Blade") { fm.SetColor("_BaseColor", new Color(0.5f, 0.66f, 0.36f)); fm.SetFloat("_Translucency", 0.1f); } // 草むらの画像が白っぽく、雑草に見えたため（2026-11-06）
                         mats[k] = fm;
                     }
                 }
             }
+            if (game)
+            {
+                // 依頼27 の植物：葉っぱの板（切り抜き）・頂点の色（rgb＝内側の暗さ、a＝風）・面の向きは作りこみ済み
+                var fol = Shader.Find("LifeSim/Foliage");
+                plants2 = fol != null && Resources.Load<GameObject>("Furniture/Plants2/Furn_Tree2_Broad_A") != null;
+                if (plants2)
+                    foreach (var k in new[] { "Leaf_Card", "Leaf_Card_Fine", "Leaf_Card_Ivy", "Leaf_Card_Dark", "Blossom_Card" })
+                    {
+                        var tx = Resources.Load<Texture2D>("Furniture/Plants2/Textures/" + k);
+                        if (tx == null) continue;
+                        var fm = new Material(fol) { name = "Foliage2_" + k, enableInstancing = true };
+                        fm.SetTexture("_BaseMap", tx);
+                        fm.SetFloat("_Cutoff", 0.55f);
+                        fm.SetFloat("_UseVertexColor", 1f); fm.SetFloat("_UseVertexAlpha", 1f);
+                        bool ivy = k == "Leaf_Card_Ivy";
+                        fm.SetFloat("_WindStrength", ivy ? 0.015f : 0.06f);
+                        fm.SetFloat("_WindSpeed", 1.2f);
+                        fm.SetFloat("_Wrap", 0.35f);
+                        fm.SetFloat("_UpNormal", 0f);
+                        fm.SetFloat("_Translucency", 0.3f);
+                        fm.SetFloat("_Cull", 0f);
+                        // 葉の画像は黄みが強いので少し落ち着かせる。森の木はさらに暗く青みに（遠く）
+                        fm.SetColor("_BaseColor", k == "Leaf_Card_Fine" ? new Color(0.74f, 0.84f, 0.8f) : (k == "Blossom_Card" ? Color.white : new Color(0.8f, 0.9f, 0.76f)));
+                        mats[k] = fm;
+                    }
+            }
             mats["Glow_Fire"] = ProtoArt.Glow(new Color(1f, 0.55f, 0.2f), 2.6f);
+            if (T("Tile_PoolTile") != null) mats["Pool_Tile"] = TilePBR.Apply(ProtoArt.Mat(Color.white, T("Tile_PoolTile"), null, 0.7f), "Tile_PoolTile"); // 依頼29 のプールの中のタイル
             lampGlass = ProtoArt.Glow(new Color(1f, 0.75f, 0.45f), 1.5f);
             bannerOurs = ProtoArt.Mat(new Color(0.18f, 0.29f, 0.62f), null, null, 0.1f);
             bannerKnight = ProtoArt.Mat(new Color(0.62f, 0.14f, 0.13f), null, null, 0.1f);
@@ -132,9 +160,68 @@ namespace LifeSimProto
 
         // ---------------- 部品を置く ----------------
         /// <summary>配置図の (x, 高さ, y) に部品を置く。yaw は Unity の向き（0 で部品の正面が北）。</summary>
+        /// <summary>部品の読み込み。Furniture のほか、依頼27 の植物（Plants2）・依頼25 の中庭（Courtyard2）も探す（同じ名前の画像がぶつからないよう別のフォルダにした）。</summary>
+        static GameObject LoadFurn(string n)
+        {
+            var pf = Resources.Load<GameObject>("Furniture/Furn_" + n);
+            if (pf == null) pf = Resources.Load<GameObject>("Furniture/Plants2/Furn_" + n);
+            if (pf == null) pf = Resources.Load<GameObject>("Furniture/Courtyard2/Furn_" + n);
+            if (pf == null) pf = Resources.Load<GameObject>("Furniture/Buildings3/Furn_" + n); // 依頼28 の建物（建物_v3）
+            if (pf == null) pf = Resources.Load<GameObject>("Furniture/PoolBeach/Furn_" + n);  // 依頼29 のプールと浜辺
+            return pf;
+        }
+
+        /// <summary>依頼23 の木と茂みを、依頼27 の植物（葉っぱの板・famuru 2026-11-05「場所で3案を使い分け」）に置きかえる。学園の中＝案1、森と島のふち＝案3。</summary>
+        string PlantAlias(string name, float x, float y, ref Vector3? scale)
+        {
+            if (!game || plants2 == false) return name;
+            int hsh = Mathf.Abs((int)(x * 13f) * 31 + (int)(y * 7f));
+            Vector3 sc = scale ?? Vector3.one;
+            bool forest = y > 108f || !Inside(Island, new Vector2(x, y) + new Vector2(0f, 8f));
+            switch (name)
+            {
+                case "Tree_Pine":
+                    if (sc.x < 0.6f) { scale = new Vector3(1f, sc.y * 0.85f, 1f); return hsh % 3 == 0 ? "Tree2_Cypress_S" : "Tree2_Cypress_L"; } // 細く伸ばした針葉樹＝糸杉の代わりだった
+                    scale = sc * 0.85f; return hsh % 2 == 0 ? "Tree2_Forest_A" : "Tree2_Forest_B";
+                case "Tree": scale = sc * 0.8f; return "Tree2_Forest_B";
+                case "Tree_Oak":
+                    if (forest) { scale = sc * 0.85f; return hsh % 2 == 0 ? "Tree2_Forest_A" : "Tree2_Forest_B"; }
+                    scale = sc * 0.9f; return hsh % 2 == 0 ? "Tree2_Broad_A" : "Tree2_Broad_B";
+                case "Tree_Blossom": scale = sc * 0.85f; return "Tree2_Blossom";
+                case "Bush_Round": return hsh % 4 == 0 ? "Topiary_Ball" : "Shrub2_A";
+                case "Bush_Flower": return "Shrub2_B";
+            }
+            return name;
+        }
+        bool plants2;
+
+        // ---------------- 依頼28 の建物（建物_v3。famuru 2026-11-07「進めていい」） ----------------
+        /// <summary>新しい建物を使うか。Logs\old_buildings.txt を置くと前の建物（見比べ用）。</summary>
+        bool v3;
+        Dictionary<string, float> tune;
+        /// <summary>大きさなどの調整値。Logs\buildings3.txt に「名前 数字」を1行ずつ書くと、組み直したときにその値を使う（無ければ決めた値）。</summary>
+        float Tune(string key, float def)
+        {
+            if (tune == null)
+            {
+                tune = new Dictionary<string, float>();
+                string f = Path.Combine(LogsDir, "buildings3.txt");
+                if (File.Exists(f))
+                    foreach (var line in File.ReadAllLines(f))
+                    {
+                        var w = line.Split(new[] { ' ', '\t' }, System.StringSplitOptions.RemoveEmptyEntries);
+                        float v;
+                        if (w.Length >= 2 && float.TryParse(w[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out v)) tune[w[0]] = v;
+                    }
+            }
+            float r;
+            return tune.TryGetValue(key, out r) ? r : def;
+        }
+
         GameObject Put(string name, float x, float h, float y, float yaw, Vector3? scale = null, Material banner = null)
         {
-            var pf = Resources.Load<GameObject>("Furniture/Furn_" + name);
+            name = PlantAlias(name, x, y, ref scale);
+            var pf = LoadFurn(name);
             if (pf == null) { Debug.LogWarning("[新しい学園] 部品がない：" + name); return null; }
             // 入れ物（向きと大きさ：x＝部品の横、y＝高さ、z＝奥行き）の中に部品を入れる（FBX の根元の回転に左右されない）
             var holder = new GameObject(name).transform;
@@ -148,7 +235,7 @@ namespace LifeSimProto
             foreach (var r in go.GetComponentsInChildren<Renderer>())
             {
                 var sm = r.sharedMaterials;
-                if (game) LeafNormals(r, sm);
+                if (game && !name.StartsWith("Tree2_") && !name.StartsWith("Shrub2_") && !name.StartsWith("Topiary_") && !name.StartsWith("Ivy_")) LeafNormals(r, sm); // 依頼27 の植物は面の向きを作りこみ済み
                 for (int i = 0; i < sm.Length; i++)
                 {
                     string n = sm[i] != null ? sm[i].name : "";
@@ -156,6 +243,7 @@ namespace LifeSimProto
                     if (n.StartsWith("Fabric_Banner")) m = banner != null ? banner : bannerOurs;
                     else if (n.StartsWith("Metal_Iron") && name == "Roof_Dome") m = copper;
                     else if (n.StartsWith("Glass_Window") && name == "Lamp_Garden" && lampGlass != null) m = lampGlass; // 庭の灯りのガラスは夜に光る
+                    else if (mats.TryGetValue(n, out var exact)) m = exact; // 名前がぴったりの材質を先に（Leaf_Card と Leaf_Card_Fine など）
                     else foreach (var kv in mats) if (n.StartsWith(kv.Key)) { m = kv.Value; break; }
                     if (m != null) sm[i] = m;
                 }
@@ -463,6 +551,7 @@ namespace LifeSimProto
                 {
                     float cx = x0 + (i + 0.5f) * step, cy = y0 + (j + 0.5f) * step;
                     if (!Inside(Island, new Vector2(cx, cy))) continue;
+                    if (poolBeach && (InPoolHole(cx, cy) || BeachAcross(new Vector2(cx, cy), 0f) < 13.3f)) continue; // プールの穴・浜辺（依頼29）
                     int a = j * (nx + 1) + i, b = a + 1, c = a + nx + 1, d = c + 1;
                     tris.Add(a); tris.Add(c); tris.Add(b); tris.Add(b); tris.Add(c); tris.Add(d);
                 }
@@ -498,6 +587,7 @@ namespace LifeSimProto
                 for (int s = 0; s < k; s++)
                 {
                     Vector2 p = a + d * (seg * (s + 0.5f));
+                    if (poolBeach && BeachAcross(p, 4f) < 3f) continue; // 浜辺の所は崖なし（依頼29。はしの先まで。上の面が地面から出ないように）
                     float top = H(p.x, p.y) - 0.12f; // 草の面より少し下（ちらつき防止）
                     float bottom = WaterY - 4f;
                     Vector2 c = p - n * 4f;
@@ -520,18 +610,29 @@ namespace LifeSimProto
                 {
                     Vector2 p = a + d.normalized * (seg * (s + 0.5f));
                     bool postern = (i == 7 && s == k / 2 + 1);
-                    Put(postern ? "Postern" : "CastleWall", p.x, 0f, p.y, YawAlong(d), new Vector3(seg / 6f, 1f, 1f));
+                    if (v3 && !postern) Put("CastleWall2", p.x, 0f, p.y, YawAlong(d) + Tune("CastleWall2_yaw", 0f), new Vector3(seg / 6f, 1f, 1f));
+                    else Put(postern ? "Postern" : "CastleWall", p.x, 0f, p.y, YawAlong(d), new Vector3(seg / 6f, 1f, 1f));
                 }
             }
             for (int i = 0; i < WallPts.Length; i++)
             {
                 if (i == 1 || i == 2) continue;
                 Vector2 p = WallPts[i];
+                if (v3) { Put("Tower2_Round", p.x, 0f, p.y, 0f); Put("Tower2_Roof", p.x, 10f, p.y, 0f); continue; } // 依頼28：窓のない丸い塔と円すい屋根
                 Put("Tower_Round_Base", p.x, 0f, p.y, 0f);
                 Put("Tower_Round", p.x, 3.5f, p.y, 45f);
                 Put("Battlement_Top_Round", p.x, 7f, p.y, 0f);
             }
             // 正門（崖のきわ。前が南）と跳ね橋
+            if (v3)
+            {
+                // famuru 2026-11-07「正門と橋は基本的に閉じている形にして」：扉の閉じた正門（依頼28 の Tripo 版）と、上げた跳ね橋（開け閉めはしない）
+                var gh = Put("Gatehouse2", Tune("Gate_dx", 0f), 0f, 5f + Tune("Gate_dy", 0f), 180f + Tune("Gate_yaw", 0f), Vector3.one * Tune("Gate_scale", 1f));
+                var br = Put("Drawbridge", 0f, -0.8f, 5f - 15.64f, 180f);
+                if (br != null) RaiseBridge(br, gh != null ? LocalBounds(gh).min.z : 1f);
+            }
+            else
+            {
             Put("Gatehouse", 0f, 0f, 5f, 180f);
             // 正門の扉（依頼21。木と鉄の両開き）。跳ね橋の鎖に当たらないよう、城の内側へ開いた形で置く
             // ちょうつがい：Blender (±3.56, -3.14, 0.04) → 門の向き 180° で (∓3.56, 0.04, -3.14)
@@ -539,6 +640,7 @@ namespace LifeSimProto
             gateR = Put("Gate_Door", 3.56f, 0.04f, 5f - 3.14f, GateOpen ? -90f : 180f, new Vector3(-1f, 1f, 1f));
             gateK = GateOpen ? 1f : 0f;
             Put("Drawbridge", 0f, -0.8f, 5f - 15.64f, 180f);
+            }
             // 街：石の護岸と家並み（背景）
             const float qz = -24f;
             for (float x = -135f; x <= 165f; x += 10f) Put("Quay", x, -4f, qz - 1.5f, 0f);
@@ -546,7 +648,7 @@ namespace LifeSimProto
             if (game && Has("Town_House_A"))
             {
                 // 依頼23 の街の家（2階建て・塔つき・店）を4列に、間かく・大きさ・向きを少しずつ変えて並べる
-                string[] kinds = { "Town_House_A", "Town_House_B", "Town_Shop", "Town_House_A" };
+                string[] kinds = v3 ? new[] { "Town2_House_A", "Town2_House_B", "Town2_Shop", "Town2_House_C" } : new[] { "Town_House_A", "Town_House_B", "Town_Shop", "Town_House_A" };
                 float[] rows = { -33f, -47f, -62f, -77f };
                 for (int r = 0; r < rows.Length; r++)
                 {
@@ -559,7 +661,9 @@ namespace LifeSimProto
                         float sc = 0.9f + Hash01(r, k) * 0.25f;
                         float yaw = (r % 2 == 0 ? 0f : 180f) + (Hash01(k * 3, r) - 0.5f) * 8f;
                         Put(kind, x, 0f, rows[r] + (Hash01(k, r) - 0.5f) * 2f, yaw, Vector3.one * sc);
-                        x += (kind == "Town_House_B" ? 9.6f : 8.8f) * sc + Hash01(k * 7, r) * 1.6f;
+                        float wide = kind == "Town_House_B" ? 9.6f : 8.8f;
+                        if (v3) wide = (kind == "Town2_House_B" || kind == "Town2_House_C") ? 9.8f : 8.3f; // 依頼28 の家の幅（9.2m・7.7m）＋すき間
+                        x += wide * sc + Hash01(k * 7, r) * 1.6f;
                         k++;
                     }
                 }
@@ -573,6 +677,56 @@ namespace LifeSimProto
                     Put("Town_Block", x + 21f, 0f, -74f, (t % 2 == 0) ? 180f : 0f);
                 }
             }
+        }
+
+        /// <summary>跳ね橋を門の側のはしで起こして立てる（上げた形）。長さは門の高さに合うよう縮める（Logs\buildings3.txt の Bridge_len・Bridge_angle で調整）。</summary>
+        /// <summary>部品の大きさの箱（配置図の座標＝root の中で）。</summary>
+        Bounds LocalBounds(GameObject go)
+        {
+            var b = new Bounds(); bool first = true;
+            foreach (var r in go.GetComponentsInChildren<Renderer>())
+            {
+                var bb = r.bounds;
+                for (int i = 0; i < 8; i++)
+                {
+                    var l = root.InverseTransformPoint(new Vector3((i & 1) == 0 ? bb.min.x : bb.max.x, (i & 2) == 0 ? bb.min.y : bb.max.y, (i & 4) == 0 ? bb.min.z : bb.max.z));
+                    if (first) { b = new Bounds(l, Vector3.zero); first = false; } else b.Encapsulate(l);
+                }
+            }
+            return b;
+        }
+
+        void RaiseBridge(GameObject br, float gateFront)
+        {
+            var rs = br.GetComponentsInChildren<Renderer>();
+            if (rs.Length == 0) return;
+            // 配置図の座標（root の中）で、橋の北のはし（門の側）を探す
+            float maxZ = float.MinValue, minZ = float.MaxValue, topY = float.MinValue;
+            foreach (var r in rs)
+            {
+                var bb = r.bounds;
+                for (int i = 0; i < 8; i++)
+                {
+                    var c = new Vector3((i & 1) == 0 ? bb.min.x : bb.max.x, (i & 2) == 0 ? bb.min.y : bb.max.y, (i & 4) == 0 ? bb.min.z : bb.max.z);
+                    var l = root.InverseTransformPoint(c);
+                    maxZ = Mathf.Max(maxZ, l.z); minZ = Mathf.Min(minZ, l.z); topY = Mathf.Max(topY, l.y);
+                }
+            }
+            float len = maxZ - minZ, want = Tune("Bridge_len", 7.5f);
+            var t = br.transform;
+            if (len > want + 0.1f)
+            {
+                // 門の側のはしを動かさずに、橋の向き（配置図の z）だけ縮める
+                float k = want / len;
+                var ls = t.localScale; ls.z *= k; t.localScale = ls; // 部品の向き 180° でも z は橋の長さ
+                var lp = t.localPosition; lp.z = maxZ - (maxZ - lp.z) * k; t.localPosition = lp;
+            }
+            Vector3 hinge = root.TransformPoint(new Vector3(0f, topY, maxZ));
+            t.RotateAround(hinge, root.TransformDirection(Vector3.right), Tune("Bridge_angle", 82f));
+            // 立てたあと、下のはしを門の地面に、門の側の面を正門の前の面に合わせる
+            var nb = LocalBounds(br);
+            Vector3 move = new Vector3(0f, Tune("Bridge_y", 0.8f) - nb.min.y, gateFront + Tune("Bridge_in", 9f) - nb.max.z);
+            t.position += root.TransformDirection(move);
         }
 
         // ---------------- 本館・体育館・大講堂・中庭の渡り廊下 ----------------
@@ -755,9 +909,19 @@ namespace LifeSimProto
 
         void OtherDorms()
         {
-            Put("Dorm_Knight", -62f, 0f, 63f, 180f, null, bannerKnight);
-            Put("Dorm_Mage", 61.5f, 0f, 25f, 0f, null, bannerMage); // 正面（サンルーム・玄関）を北の学園の側へ
-            Put("Dorm_Tower", -72f, 0f, 29f, 180f, null, bannerTower);
+            if (v3)
+            {
+                // 依頼28 の Tripo 版の寮（騎士団＝案2、魔術師団＝案3、冒険者＝真ん中の太い塔とまわりの塔3つ）。前の寮より小さいので少し大きくして置く
+                Put("Dorm_Knight2", -62f + Tune("Knight_dx", 0f), 0f, 63f + Tune("Knight_dy", 0f), 180f + Tune("Knight_yaw", 0f), Vector3.one * Tune("Knight_scale", 1.4f));
+                Put("Dorm_Mage2", 61.5f + Tune("Mage_dx", 0f), 0f, 25f + Tune("Mage_dy", 0f), 0f + Tune("Mage_yaw", 0f), Vector3.one * Tune("Mage_scale", 1.5f));
+                Put("Dorm_Adventurer2", -72f + Tune("Adv_dx", 0f), 0f, 29f + Tune("Adv_dy", 0f), 180f + Tune("Adv_yaw", 0f), Vector3.one * Tune("Adv_scale", 1.25f));
+            }
+            else
+            {
+                Put("Dorm_Knight", -62f, 0f, 63f, 180f, null, bannerKnight);
+                Put("Dorm_Mage", 61.5f, 0f, 25f, 0f, null, bannerMage); // 正面（サンルーム・玄関）を北の学園の側へ
+                Put("Dorm_Tower", -72f, 0f, 29f, 180f, null, bannerTower);
+            }
             if (!game) { Put("Greenhouse", -59f, 0f, 99.5f, 180f); Put("Hut", -44.5f, 0f, 99f, 180f); } // 新しい学園では温室と工房は NewDorm.cs（中に入れる）
             Put("Training_Hall", -43f, H(-43f, 124f), 124f, 180f);
             Put("Dungeon_Gate", -67f, H(-67f, 131f), 131f, 180f);
@@ -783,6 +947,11 @@ namespace LifeSimProto
                 net.Add(new CampusPlan.PathDef(2.5f, new Vector2(-52, 92), new Vector2(-72, 94), new Vector2(-87, 99))); // 温室の前から裏門へ
                 net.Add(new CampusPlan.PathDef(2.2f, new Vector2(-87, 99), new Vector2(-80, 112), new Vector2(-70, 122)));
                 net.Add(new CampusPlan.PathDef(2.2f, new Vector2(-80, 112), new Vector2(-50, 118)));
+                if (poolBeach)
+                {
+                    net.Add(new CampusPlan.PathDef(2.2f, new Vector2(42.5f, 51f), new Vector2(58.5f, 51f)));   // わたしたちの寮の前の道→プール
+                    net.Add(new CampusPlan.PathDef(2f, BeachDoorOut, BeachStairTop));                         // 城壁の小さな扉→浜辺の階段
+                }
                 PathNetwork(net);
                 Lawn(0f, 18f, 7.5f); Lawn(26f, 25f, 4.5f); Lawn(-26f, 25f, 4.5f);
                 return;
@@ -808,6 +977,7 @@ namespace LifeSimProto
                     float jy = Mathf.Sin(x * 39.346f + y * 11.135f) * 24634.6345f; jy -= Mathf.Floor(jy);
                     float px = x + (jx - 0.5f) * 5f, py = y + (jy - 0.5f) * 5f;
                     if (!Inside(Island, new Vector2(px, py))) continue;
+                    if (poolBeach && BeachAcross(new Vector2(px, py), 4f) < 17f) continue; // 浜辺（依頼29）
                     if (Mathf.Abs(px + 60f) < 18f && Mathf.Abs(py - 126f) < 10f) continue; // 訓練の施設・ダンジョンの入り口
                     float d2 = (px - 40f) * (px - 40f) / 400f + (py - 136f) * (py - 136f) / 140f;
                     if (d2 < 0.25f) continue; // 丘のてっぺんはあける
@@ -837,6 +1007,8 @@ namespace LifeSimProto
 
         void Build()
         {
+            v3 = game && Has("Dorm_Knight2") && !File.Exists(Path.Combine(LogsDir, "old_buildings.txt"));
+            poolBeach = game && Has("Pool_Basin") && !File.Exists(Path.Combine(LogsDir, "no_poolbeach.txt"));
             Ground();
             Cliffs();
             Walls();
@@ -846,11 +1018,239 @@ namespace LifeSimProto
             OtherDorms();
             Trees();
             if (game) Decorations();
+            if (poolBeach) { Pool(); Beach(); }
             if (game && Has("Bush_Round")) Nature();
             if (game) { CliffDressing(); if (Has("Bush_Round")) BaseShrubs(); GrassFieldBuild(); StartCoroutine(LawnFix()); }
         }
 
-        static bool Has(string n) { return Resources.Load<GameObject>("Furniture/Furn_" + n) != null; }
+        static bool Has(string n) { return LoadFurn(n) != null; }
+
+        // ---------------- プールと浜辺（依頼29。famuru 2026-11-06 決定・2026-11-07「進めて」） ----------------
+        // プール：わたしたちの寮と魔術師団の寮のあいだの芝生（縁の外 20×10m、中心 72,51。縁の上が地面の高さ、底 −1.4m）。まわりに石畳、更衣小屋、寝椅子とパラソル
+        // 浜辺：北東の城壁の外。島のふち（東の岸）を約46m、崖をやめて白い砂浜に。草原から木の階段で降りる。城壁に小さな扉（閉じた形）。Logs\no_poolbeach.txt で無しに戻す
+        bool poolBeach;
+        static readonly Rect PoolRect = Rect.MinMaxRect(62f, 46f, 82f, 56f);
+        static readonly Rect PoolArea = Rect.MinMaxRect(58f, 42f, 90f, 60f);
+        static bool InPoolHole(float x, float y) { return x > PoolRect.xMin + 0.5f && x < PoolRect.xMax - 0.5f && y > PoolRect.yMin + 0.5f && y < PoolRect.yMax - 0.5f; }
+
+        // 浜辺の岸の線（島のふちの上。南→北）
+        static readonly Vector2[] Coast = { new Vector2(118.34f, 66f), new Vector2(116.69f, 90f), new Vector2(116f, 100f), new Vector2(110.39f, 110.6f) };
+        const float BankS = 12f; // 岸から草原のふち（土手）までの奥行き
+        static float CoastLen { get { float L = 0f; for (int i = 0; i + 1 < Coast.Length; i++) L += (Coast[i + 1] - Coast[i]).magnitude; return L; } }
+        static Vector2 SegIn(int i) { Vector2 d = (Coast[i + 1] - Coast[i]).normalized; return new Vector2(-d.y, d.x); } // 島の内側（西）向き
+        /// <summary>岸の線にそった位置 along（m）と、岸からの奥行き across（内側が＋）。</summary>
+        static void CoastLocal(Vector2 p, out float along, out float across)
+        {
+            float best = float.MaxValue, acc = 0f; along = 0f; across = 0f;
+            for (int i = 0; i + 1 < Coast.Length; i++)
+            {
+                Vector2 a = Coast[i], b = Coast[i + 1], d = b - a; float L = d.magnitude; d /= L;
+                float t = Mathf.Clamp(Vector2.Dot(p - a, d), 0f, L);
+                Vector2 q = a + d * t;
+                float dist = (p - q).magnitude;
+                if (dist < best) { best = dist; along = acc + t; across = Vector2.Dot(p - q, SegIn(i)); }
+                acc += L;
+            }
+        }
+        /// <summary>浜辺の帯の中なら岸からの奥行きを返す（帯の外は 999）。ext＝帯の両はしを延ばす長さ。</summary>
+        static float BeachAcross(Vector2 p, float ext)
+        {
+            float along, across; CoastLocal(p, out along, out across);
+            if (along < -ext || along > CoastLen + ext || across < -40f) return 999f;
+            if ((along <= 0.01f || along >= CoastLen - 0.01f) && ext <= 0f) return 999f;
+            return across;
+        }
+        /// <summary>岸の線の位置 along から、奥行き across の点と、そこでの内向き。</summary>
+        static Vector2 CoastPoint(float along, float across, out Vector2 inward)
+        {
+            float acc = 0f;
+            for (int i = 0; i + 1 < Coast.Length; i++)
+            {
+                float L = (Coast[i + 1] - Coast[i]).magnitude;
+                if (along <= acc + L || i + 2 == Coast.Length)
+                {
+                    float t = Mathf.Clamp(along - acc, 0f, L);
+                    Vector2 n = SegIn(i);
+                    // 折れ目の近くは向きをなめらかに
+                    if (t < 2f && i > 0) n = Vector2.Lerp((SegIn(i - 1) + n).normalized, n, t / 2f).normalized;
+                    if (t > L - 2f && i + 2 < Coast.Length) n = Vector2.Lerp(n, (SegIn(i + 1) + n).normalized, (t - (L - 2f)) / 2f).normalized;
+                    inward = n;
+                    return Coast[i] + (Coast[i + 1] - Coast[i]).normalized * t + n * across;
+                }
+                acc += L;
+            }
+            inward = SegIn(0); return Coast[0];
+        }
+        static float SandH(float across)
+        {
+            if (across >= 0f) return Mathf.Lerp(-3.2f, -2.5f, Mathf.Pow(Mathf.Clamp01(across / BankS), 0.75f));
+            return Mathf.Max(-9.5f, -3.2f + across * 0.32f); // 沖へ深く（水の色が自然に濃くなるように）
+        }
+        // 城壁の小さな扉（北東のななめの城壁の上）と、浜辺の階段の上
+        static Vector2 BeachDoor { get { return Vector2.Lerp(new Vector2(96, 86), new Vector2(80, 108), 0.32f); } }
+        static Vector2 BeachDoorOut { get { Vector2 d = new Vector2(80, 108) - new Vector2(96, 86); Vector2 n = new Vector2(d.y, -d.x).normalized; if (n.x < 0f) n = -n; return BeachDoor + n * 2.2f; } }
+        const float StairAlong = 27f;
+        static Vector2 BeachStairTop { get { Vector2 n; return CoastPoint(StairAlong, BankS + 0.6f, out n); } }
+
+        void Pool()
+        {
+            Vector2 c = PoolRect.center;
+            Put("Pool_Basin", c.x, 0f, c.y, 0f);
+            // 水（縁より 0.2m 下）
+            var wm = new Material(Shader.Find("LifeSim/Water") ?? water.shader) { name = "Pool_Water" };
+            if (wm.HasProperty("_ShallowColor")) { wm.SetColor("_ShallowColor", new Color(0.42f, 0.86f, 0.88f, 0.45f)); wm.SetColor("_DeepColor", new Color(0.12f, 0.52f, 0.66f, 0.85f)); wm.SetFloat("_DepthDist", 2.2f); wm.SetFloat("_FoamDist", 0.12f); }
+            else wm.color = new Color(0.3f, 0.75f, 0.85f);
+            if (water != null && water.HasProperty("_NormalTex") && wm.HasProperty("_NormalTex")) wm.SetTexture("_NormalTex", water.GetTexture("_NormalTex"));
+            var w = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            w.name = "Pool_Water";
+            w.transform.SetParent(root, false);
+            w.transform.localPosition = new Vector3(c.x, -0.2f, c.y);
+            w.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            w.transform.localScale = new Vector3(PoolRect.width - 1f, PoolRect.height - 1f, 1f);
+            w.GetComponent<Renderer>().sharedMaterial = wm;
+            Destroy(w.GetComponent<Collider>());
+            // まわりの石畳（縁の外から 3m。穴のふちの地面のでこぼこを隠す）
+            float o = 3f, x0 = PoolRect.xMin, x1 = PoolRect.xMax, y0 = PoolRect.yMin, y1 = PoolRect.yMax;
+            var deck = Tiled("Tile_Flagstone", 1f, 1f);
+            System.Action<string, float, float, float, float> slab = (nm, a0, b0, a1, b1) =>
+            {
+                var g = Box(nm, new Vector3((a0 + a1) / 2f, -0.13f, (b0 + b1) / 2f), new Vector3(a1 - a0, 0.3f, b1 - b0), Tiled("Tile_Flagstone", (a1 - a0) / 3f, (b1 - b0) / 3f));
+            };
+            slab("Pool_Deck_S", x0 - o, y0 - o, x1 + o, y0);
+            slab("Pool_Deck_N", x0 - o, y1, x1 + o, y1 + o);
+            slab("Pool_Deck_W", x0 - o, y0, x0, y1);
+            slab("Pool_Deck_E", x1, y0, x1 + o, y1);
+            // はしご（南と北の長い辺。底から）
+            Put("Pool_Ladder", x0 + 3.5f, -1.4f, y0 + 0.6f, 0f);
+            Put("Pool_Ladder", x0 + 3.5f, -1.4f, y1 - 0.6f, 180f);
+            // 更衣小屋（東。正面をプールへ）
+            Put("Pool_Hut", x1 + o + 2.2f, 0f, c.y + 2f, -90f);
+            // 寝椅子とパラソル（北の石畳に4つ・南に2つ。頭は外側）
+            foreach (float x in new[] { x0 + 2f, x0 + 4f, x0 + 11f, x0 + 13f }) Put("Lounger", x, 0.02f, y1 + 1.4f, 180f);
+            Put("Parasol", x0 + 3f, 0.02f, y1 + 2.2f, 0f); Put("Parasol", x0 + 12f, 0.02f, y1 + 2.2f, 30f);
+            foreach (float x in new[] { x0 + 8f, x0 + 10f }) Put("Lounger", x, 0.02f, y0 - 1.4f, 0f);
+            Put("Parasol", x0 + 9f, 0.02f, y0 - 2.2f, 0f);
+            // 糸杉と灯り
+            foreach (var t in new[] { new Vector2(x0 - o - 1f, y0 - o - 1f), new Vector2(x0 - o - 1f, y1 + o + 1f), new Vector2(x1 + o + 1f, y0 - o - 1f) })
+                Put("Tree2_Cypress_L", t.x, 0f, t.y, t.x * 13f);
+            if (Has("Lamp_Garden"))
+                foreach (var t in new[] { new Vector2(x0 - o + 0.4f, y0 - o + 0.4f), new Vector2(x0 - o + 0.4f, y1 + o - 0.4f), new Vector2(x1 + o - 0.4f, y0 - o + 0.4f), new Vector2(x1 + o - 0.4f, y1 + o - 0.4f) })
+                    Put("Lamp_Garden", t.x, 0f, t.y, 0f);
+        }
+
+        void Beach()
+        {
+            float total = CoastLen;
+            // 砂浜の地面（乾いた砂と、水ぎわの濡れた砂）
+            var dry = TilePBR.Apply(ProtoArt.Mat(Color.white, T("Tile_Sand"), null, 0.08f), "Tile_Sand");
+            var wet = TilePBR.Apply(ProtoArt.Mat(Color.white, T("Tile_SandWet") ?? T("Tile_Sand"), null, 0.35f), "Tile_SandWet");
+            const float step = 1f;
+            int na = Mathf.CeilToInt(total / step), nc = 0;
+            var across = new List<float>();
+            for (float a = BankS + 0.6f; a > -22.01f; a -= (a > -6f ? 1f : 2f)) across.Add(a);
+            nc = across.Count;
+            var verts = new List<Vector3>(); var uvs = new List<Vector2>(); var tDry = new List<int>(); var tWet = new List<int>();
+            for (int i = 0; i <= na; i++)
+            {
+                float al = Mathf.Min(total, i * step);
+                for (int j = 0; j < nc; j++)
+                {
+                    Vector2 n; Vector2 p = CoastPoint(al, across[j], out n);
+                    float noise = (Mathf.PerlinNoise(p.x * 0.35f, p.y * 0.35f) - 0.5f) * 0.12f * Mathf.Clamp01(across[j] / 3f);
+                    float endK = 1f - Mathf.Clamp01(Mathf.Min(al, total - al) / 8f); // 帯のはしの水の中は深くして、浅い所の色の境目を目立たせない
+                    float hh = SandH(across[j]) - (across[j] < 1f ? endK * endK * 7f * Mathf.Clamp01((1f - across[j]) / 4f) : 0f);
+                    verts.Add(new Vector3(p.x, hh + noise, p.y));
+                    uvs.Add(new Vector2(p.x / 2f, p.y / 2f));
+                }
+            }
+            for (int i = 0; i < na; i++)
+                for (int j = 0; j + 1 < nc; j++)
+                {
+                    int a0 = i * nc + j, a1 = a0 + 1, b0 = a0 + nc, b1 = b0 + 1;
+                    var list = (across[j] + across[j + 1]) / 2f > 2.5f ? tDry : tWet;
+                    list.Add(a0); list.Add(b0); list.Add(a1); list.Add(a1); list.Add(b0); list.Add(b1);
+                }
+            var mesh = new Mesh { indexFormat = UnityEngine.Rendering.IndexFormat.UInt32 };
+            mesh.SetVertices(verts); mesh.SetUVs(0, uvs); mesh.subMeshCount = 2; mesh.SetTriangles(tDry, 0); mesh.SetTriangles(tWet, 1);
+            // 面の向きが下ならひっくり返す
+            mesh.RecalculateNormals();
+            if (mesh.normals.Length > 0 && mesh.normals[nc / 2].y < 0f) { tDry.Reverse(); tWet.Reverse(); mesh.SetTriangles(tDry, 0); mesh.SetTriangles(tWet, 1); mesh.RecalculateNormals(); }
+            mesh.RecalculateBounds();
+            var go = new GameObject("Beach_Sand");
+            go.transform.SetParent(root, false);
+            go.AddComponent<MeshFilter>().sharedMesh = mesh;
+            go.AddComponent<MeshRenderer>().sharedMaterials = new[] { dry, wet };
+
+            // 草原と砂浜のあいだの土手（崖の部品を低く）と、両はしのふた
+            for (float al = 2f; al < total - 1f; al += 5f)
+            {
+                Vector2 n; Vector2 p = CoastPoint(al + 2.5f, BankS, out n);
+                Vector2 c = p + n * 4f;
+                Put("Cliff", c.x, -3.4f, c.y, YawFacing(-n), new Vector3(5f / 10f * 1.15f, 3.3f / 20f, 1f)); // 上の面は草の下（-0.1）に隠す
+            }
+            // 浜辺の両はし：崖をやめた所の島のふちを、大きな岩でかくす
+            if (Has("Rock_Large"))
+                for (int e = 0; e < 2; e++)
+                {
+                    Vector2 a = e == 0 ? Coast[0] : Coast[Coast.Length - 1];
+                    Vector2 d = e == 0 ? (Coast[0] - Coast[1]).normalized : (Coast[Coast.Length - 1] - Coast[Coast.Length - 2]).normalized; // 帯の外へ
+                    Vector2 inw = e == 0 ? SegIn(0) : SegIn(Coast.Length - 2);
+                    for (int k = 0; k < 4; k++)
+                    {
+                        float h1 = Hash01(e * 7 + k, 13), h2 = Hash01(k, e * 5 + 3);
+                        Vector2 q = a + d * (0.5f + k * 2.3f) + inw * (1.5f - k * 0.4f + (h1 - 0.5f) * 1.5f);
+                        Put("Rock_Large", q.x, WaterY - 1.2f + h2 * 0.6f, q.y, h1 * 360f, new Vector3(2.2f + h1 * 1.2f, 2.4f + h2 * 1.4f, 2.0f + h2));
+                    }
+                }
+
+            // 城壁の小さな扉（閉じた形。famuru「正門と橋は基本的に閉じている形」と同じく）
+            {
+                Vector2 d = new Vector2(80, 108) - new Vector2(96, 86); Vector2 n = new Vector2(d.y, -d.x).normalized; if (n.x < 0f) n = -n;
+                Put("Castle_SmallDoor", BeachDoor.x, 0f, BeachDoor.y, YawFacing(n));
+            }
+            // 草原から砂浜へ降りる木の階段（上の踊り場が土手のふち、下が砂の上）
+            {
+                Vector2 n; Vector2 p = CoastPoint(StairAlong, BankS - 0.4f - 2.45f, out n);
+                Put("Beach_Stairs", p.x, -2.886f + 0.05f, p.y, YawFacing(-n));
+            }
+            // 桟橋（岸から湖へ2区間）とボート
+            {
+                Vector2 n; Vector2 p1 = CoastPoint(16f, -3.5f, out n); Vector2 p2 = CoastPoint(16f, -13.5f, out n);
+                Put("Pier", p1.x, -4.25f, p1.y, YawFacing(-n));
+                Put("Pier", p2.x, -4.25f, p2.y, YawFacing(-n));
+                Vector2 side = new Vector2(n.y, -n.x);
+                Vector2 b = CoastPoint(16f, -9f, out n) + side * 2.6f;
+                Put("Boat", b.x, WaterY - 0.3f, b.y, YawFacing(-n) + 12f);
+            }
+            // 浜の休憩小屋・寝椅子とパラソル・たき火・流木
+            {
+                Vector2 n; Vector2 p = CoastPoint(37f, 8.5f, out n);
+                Put("Beach_Hut", p.x, SandH(8.5f) - 0.05f, p.y, YawFacing(-n));
+                foreach (var al in new[] { 6f, 8f, 21f, 23f })
+                {
+                    Vector2 q = CoastPoint(al, 5.5f, out n);
+                    Put("Lounger", q.x, SandH(5.5f), q.y, YawFacing(-n));
+                }
+                foreach (var al in new[] { 7f, 22f })
+                {
+                    Vector2 q = CoastPoint(al, 7f, out n);
+                    Put("Parasol", q.x, SandH(7f), q.y, al * 9f);
+                }
+                Vector2 f = CoastPoint(31f, 5f, out n);
+                var fire = Put("Campfire", f.x, SandH(5f), f.y, 20f);
+                AddFireLight(fire, new Vector3(0f, 0.7f, 0f), 2.4f, 9f);
+                Vector2 dw = CoastPoint(3.5f, 2.6f, out n);
+                Put("Driftwood", dw.x, SandH(2.6f) - 0.05f, dw.y, 70f);
+                Vector2 dw2 = CoastPoint(42f, 3.2f, out n);
+                Put("Driftwood", dw2.x, SandH(3.2f) - 0.05f, dw2.y, -40f, Vector3.one * 0.8f);
+                if (Has("Rock_Large"))
+                    foreach (var r in new[] { new Vector3(1.5f, 1.2f, 1.1f), new Vector3(11f, -1.5f, 0.9f), new Vector3(44.5f, 0.5f, 1.3f), new Vector3(28f, -2.2f, 0.8f) })
+                    {
+                        Vector2 q = CoastPoint(r.x, r.y, out n);
+                        Put("Rock_Large", q.x, SandH(r.y) - 0.5f, q.y, r.x * 37f, Vector3.one * r.z);
+                    }
+            }
+        }
 
         // ---------------- 植物・岩・小物（依頼23。2026-11-02 クオリティアップ） ----------------
         /// <summary>道・建物・芝生から離れているか（草むら・岩・花をばらまくとき）。</summary>
@@ -863,6 +1263,9 @@ namespace LifeSimProto
                 Rect.MinMaxRect(-53, 116, -33, 132), Rect.MinMaxRect(-76, 124, -58, 138),
             };
             foreach (var b in blocks) if (p.x > b.xMin - margin && p.x < b.xMax + margin && p.y > b.yMin - margin && p.y < b.yMax + margin) return false;
+            if (poolBeach && (p.x > PoolArea.xMin - margin && p.x < PoolArea.xMax + margin && p.y > PoolArea.yMin - margin && p.y < PoolArea.yMax + margin)) return false; // プール（依頼29）
+            if (poolBeach && BeachAcross(p, 3f) < 15f + margin) return false; // 浜辺
+            if (poolBeach && DistSeg(p, BeachDoorOut, BeachStairTop) < 1.4f + margin) return false; // 浜辺への小道
             if (lawns && (p - new Vector2(0, 18)).magnitude < 10f + margin) return false;
             if (lawns && ((p - new Vector2(26, 25)).magnitude < 5f || (p - new Vector2(-26, 25)).magnitude < 5f)) return false;
             if (!Inside(Island, p)) return false;
@@ -902,6 +1305,9 @@ namespace LifeSimProto
             // 生け垣：正門から芝生まで・芝生から中庭までの道の両わき
             foreach (float y in new[] { 13.4f, 15.4f, 25.5f, 27.5f, 29.5f })
                 for (int k = -1; k <= 1; k += 2) Put("Hedge", k * 3.5f, 0f, y + 1f, 90f);
+            if (Has("Topiary_Cone")) // 生け垣のはしに刈りこんだ円すいの植え込み（案3 の絵。依頼27）
+                foreach (var tp in new[] { new Vector2(-3.5f, 13.0f), new Vector2(3.5f, 13.0f), new Vector2(-3.5f, 32.0f), new Vector2(3.5f, 32.0f) })
+                    Put("Topiary_Cone", tp.x, 0f, tp.y, 0f);
             // 花壇に花を植える・芝生のふちと原っぱに花の群れ
             var lc = new Vector2(0f, 18f);
             foreach (float a in new[] { 35f, 60f, 120f, 145f, 200f, 235f, 305f, 340f })
@@ -1054,6 +1460,9 @@ namespace LifeSimProto
             mat.SetFloat("_WindStrength", 0.09f); mat.SetFloat("_WindSpeed", 1.7f); mat.SetFloat("_WindScale", 0.12f);
             mat.SetFloat("_Wrap", 0f); mat.SetFloat("_UpNormal", 1f); mat.SetFloat("_TipLight", 0f); mat.SetFloat("_Translucency", 0f);
             mat.SetFloat("_FadeStart", 50f); mat.SetFloat("_FadeEnd", 72f); mat.SetFloat("_Cull", 0f);
+            mat.SetTexture("_GroundTex", groundTex); mat.SetFloat("_UseGround", 1f); mat.SetFloat("_GroundMul", 0.8f);
+            mat.SetMatrix("_GroundW2L", root.worldToLocalMatrix);
+            mat.SetVector("_GroundRect", new Vector4(groundRect.xMin, groundRect.yMin, 1f / groundRect.width, 1f / groundRect.height));
             var pos = new List<Vector3>(); var yaw = new List<float>(); var sc = new List<float>(); var col = new List<Color>();
             const float step = 0.62f;
             int ix = 0;
@@ -1071,9 +1480,9 @@ namespace LifeSimProto
                     if (!FreeSpot(p, 0.35f, true)) continue; // 刈った芝生（丸い芝生）には生やさない
                     if (CurveDist(p) < 2.3f) continue; // 曲線の渡り廊下の床
                     float u = (px - groundRect.xMin) / groundRect.width, v = (py - groundRect.yMin) / groundRect.height;
-                    Color g = groundTex.GetPixelBilinear(u, v) * 0.85f; // 地面の色（地面は細かい模様と陰で少し暗く見えるので合わせる）
+                    Color g = groundTex.GetPixelBilinear(u, v) * 0.72f; // 地面の色（地面は細かい模様と陰で少し暗く見えるので合わせる）
                     float bright = 1f + (Hash01(jx * 7, ix) - 0.5f) * 0.12f;
-                    col.Add(new Color(g.r * bright, g.g * bright, g.b * bright, 1f));
+                    col.Add(new Color(bright, bright, bright, 0f)); // 色はシェーダーが地面の画像から取る（a=0：インスタンスの色は使わない）
                     Vector3 local = new Vector3(px, H(px, py), py);
                     pos.Add(root.TransformPoint(local));
                     yaw.Add(Hash01(ix * 11, jx) * 360f);
@@ -1176,6 +1585,8 @@ namespace LifeSimProto
                 {
                     Vector2 p = a + d * s;
                     if (Mathf.Abs(p.x) < 9f && p.y < 14f) continue; // 跳ね橋のまわり
+                    if (poolBeach && BeachAcross(p, -3f) < 4f) continue; // 浜辺
+                    if (poolBeach && BeachAcross(p, 2f) < 4f && Hash01(k, 5) < 0.6f) continue; // 浜辺のはしは岩を少なく
                     float h1 = Hash01(k, 3), h2 = Hash01(k, 7), h3 = Hash01(k, 11);
                     Vector2 q = p + n * (0.3f + h1 * 1.6f) + d * (h2 - 0.5f) * 2f;
                     Put("Rock_Large", q.x, WaterY - 0.9f - h3 * 0.5f, q.y, h2 * 360f, new Vector3(1.4f + h1 * 1.3f, 1.2f + h3 * 1.4f, 1.3f + h2 * 1.2f));
@@ -1299,6 +1710,16 @@ namespace LifeSimProto
             foreach (var raw in lines)
             {
                 var a = raw.Trim().Split(new[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries);
+                if (a.Length >= 2 && a[0] == "view" && LoungeWorld.Instance != null)
+                {
+                    // 試験用：view all＝寮と学校の全部の階と壁を見せる（外から外壁を撮るとき）／view auto＝ふだんに戻す
+                    var w = LoungeWorld.Instance;
+                    w.wallMode = a[1] == "all" ? WallMode.All : WallMode.Auto;
+                    var rig = w.mainCamera != null ? w.mainCamera.GetComponent<CameraRig>() : null;
+                    if (rig != null && a[1] == "all") { rig.follow = null; rig.pivot = new Vector3(rig.pivot.x, 12f, rig.pivot.z); }
+                    result.Add("view: " + a[1]);
+                    continue;
+                }
                 if (a.Length >= 8 && a[0] == "shot")
                 {
                     var ci = System.Globalization.CultureInfo.InvariantCulture;

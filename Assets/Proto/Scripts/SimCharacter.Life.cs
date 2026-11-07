@@ -225,6 +225,7 @@ namespace LifeSimProto
         public void LifeGoOut(float minutes, string label)
         {
             if (!Present || InPrivate || state == State.Sleeping) return;
+            if (!LoungeWorld.OutingsEnabled) return;   // 2026-11-07 famuru「外出はなし」：買い出しなどに出かけない（その場のできごとで終わる）
             lifeEv = null;
             sceneLabel = null;
             awayKind = AwayKind.Outing;
@@ -321,6 +322,7 @@ namespace LifeSimProto
                 float frac = r.phase == LifeRun.Phase.Active && r.def.length > 0f ? 1f - (float)((r.until - world.Now) / r.def.length) : 0f;
                 int ph = frac < 0.4f ? 0 : frac < 0.75f ? 1 : frac < 0.92f ? 2 : 3;
                 if (ph != soloMp.phaseNow) soloMp.SetPhase(ph);
+                soloMp.soundPos = transform.position; soloMp.voiceLetter = letter;   // 効果音と声（HSound.cs。2026-11-05 モーション）
                 soloMp.Update(Time.deltaTime, GetStage(StatusLine.Desire) >= 3 ? 1.2f : 1f);
             }
             var bed = room.bed;

@@ -228,6 +228,8 @@ namespace LifeSimProto
         public bool IsRealModel { get { return real; } }
         public int SpringCount { get { return springs.Count; } }   // 揺れの骨の数（PerfProbe の数え用）
         public Vector3 HeadPoint { get { return bones["Head"].position + transform.up * 0.07f; } }
+        /// <summary>頭の位置（目の高さあたり。骨が無ければ背の高さから）。見る所の計算に使う（2026-11-07）。</summary>
+        public Vector3 HeadPos { get { Transform h; return bones != null && bones.TryGetValue("Head", out h) && h != null ? h.position + transform.up * 0.06f : transform.position + Vector3.up * Mathf.Max(1f, height * 0.93f); } }
 
         public static ProtoBody Create(GameObject owner, CharLook look, string letter = null)
         {
@@ -760,6 +762,8 @@ namespace LifeSimProto
                 Transform nk = B("Neck") ?? B("Head");
                 if (nk != null) nk.rotation = Quaternion.AngleAxis(28f * dozeW, transform.right) * nk.rotation;
             }
+            // 話し相手・先生・作業の物のほうへ首と頭を向ける（動きの上から。2026-11-07 IK の A）
+            UpdateLook(dt, clip != null && !hOn && pose != BodyPose.Lie && pose != BodyPose.LieFloor && pose != BodyPose.Soak && !dozingNow && !(testMode ? testEyesClosed : sim.EyesClosedNow));
             if (pose != BodyPose.SitFloor && floorPhase != FloorPhase.Up) floorPhase = FloorPhase.None;
             lastPose = pose;
             wasTalking = talking;
@@ -869,6 +873,7 @@ namespace LifeSimProto
                         t.SetFloat("_Cull", cull);
                         if (SkinLookEnabled && IsSkinMat(src.name)) SetSkinLook(t);
                         toonCache[src] = t;
+                        ToonTune.Register(t);   // 2026-11-06 キャラデザ：トゥーンの強さ・値をゲーム中に変えられるように（ToonTune.cs）
                     }
                     if (r.gameObject.name.StartsWith("Face_"))
                     {
@@ -881,6 +886,7 @@ namespace LifeSimProto
                             t2.name = src.name + "_ToonNoLine";
                             t2.SetShaderPassEnabled("SRPDefaultUnlit", false);
                             toonCacheNoLine[src] = t2;
+                            ToonTune.Register(t2, t);
                         }
                         t = t2;
                     }
@@ -971,6 +977,15 @@ namespace LifeSimProto
             }
             foreach (var key in FaceKeys) faceNow[key] = 0f;
             SetupFaceAtlas();
+            // 股の形（Gen_Hide・Gen_Soft。篤 2026-11-06 取り込みのチャット）
+            genKeys.Clear();
+            foreach (var smr in model.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                var mesh = smr.sharedMesh;
+                if (mesh == null) continue;
+                int ih = mesh.GetBlendShapeIndex("Gen_Hide"), isf = mesh.GetBlendShapeIndex("Gen_Soft");
+                if (ih >= 0 || isf >= 0) genKeys.Add(new GenSlot { r = smr, hide = ih, soft = isf });
+            }
             // 形の補正（Corrective_ で始まるシェイプキー）。例：座ったときのスカート
             skirtSitKeys.Clear();
             foreach (var smr in model.GetComponentsInChildren<SkinnedMeshRenderer>(true))
@@ -986,8 +1001,30 @@ namespace LifeSimProto
         readonly List<KeyValuePair<SkinnedMeshRenderer, int>> skirtSitKeys = new List<KeyValuePair<SkinnedMeshRenderer, int>>();
         float skirtSitNow;
 
+        // ================= 股の形（篤。2026-11-06 famuru：制服のときは Gen_Hide＝100・Gen_Soft＝0） =================
+        // 服を着ているあいだ（今のゲームの服はどれも：制服・私服・寝間着・タオル）はズボンから出ないように縮める。
+        // 二人きりの時間などで出すときは、外から genShow＝true にして、Gen_Hide・Gen_Soft の値を genHide・genSoft で決める（モーションのチャットの決まりに合わせる）
+        class GenSlot { public SkinnedMeshRenderer r; public int hide, soft; }
+        readonly List<GenSlot> genKeys = new List<GenSlot>();
+        [System.NonSerialized] public bool genShow;
+        [System.NonSerialized] public float genHide = 0f, genSoft = 0f;
+        public bool HasGenital { get { return genKeys.Count > 0; } }
+
+        void UpdateGenital()
+        {
+            if (genKeys.Count == 0) return;
+            float h = genShow ? genHide : 100f, s = genShow ? genSoft : 0f;
+            foreach (var g in genKeys)
+            {
+                if (g.r == null) continue;
+                if (g.hide >= 0) g.r.SetBlendShapeWeight(g.hide, h);
+                if (g.soft >= 0) g.r.SetBlendShapeWeight(g.soft, s);
+            }
+        }
+
         void UpdateCorrectives(float dt, BodyPose pose)
         {
+            UpdateGenital();
             if (skirtSitKeys.Count == 0) { skirtSitNow = 0f; return; }
             float target = pose == BodyPose.Sit ? 100f : 0f;
             skirtSitNow = Mathf.MoveTowards(skirtSitNow, target, 400f * Mathf.Min(dt, 0.1f));
@@ -1601,6 +1638,61 @@ namespace LifeSimProto
 
         // ================= 骨を直接曲げる簡単な動き =================
         Transform B(string n) { Transform t; return bones.TryGetValue(n, out t) ? t : null; }
+
+        // ================= 見る（首と頭を向ける。2026-11-07 famuru「IK の A」） =================
+        // 動きを流したあとに、首と頭の骨を見る所へ少し回す。回す角度に上限（左右 LookYawMax・上下 LookPitchUp/Down）。
+        // 後ろ（LookGiveUp より横）にあるときは向かない。顔の向きは急に変わらないよう、なめらかに追う。
+        // 画面に映っている子だけ計算する（揺れと同じ考え方）。LookEnabled = false で今までどおり（前後の見比べ用）。
+        public static bool LookEnabled = true;
+        public static float LookYawMax = 50f, LookPitchUp = 20f, LookPitchDown = 20f, LookGiveUp = 110f;
+        public static float LookNeckShare = 0.4f;   // 首が受け持つ割合（残りは頭）
+        public static float LookSpeed = 5f;          // 追いつく速さ（大きいほど速い）
+        float lookW, lookYaw, lookPitch;
+        public string LookWhy { get; private set; }
+
+        void UpdateLook(float dt, bool allowed)
+        {
+            LookWhy = null;
+            if (testMode || sim == null) return;
+            Vector3 tp = Vector3.zero; string why = null;
+            bool want = LookEnabled && allowed && sim.LookTargetNow(out tp, out why);
+            Transform nk = B("Neck"), hd = B("Head");
+            if (hd == null) return;
+            float dYaw = 0f, dPitch = 0f;
+            if (want)
+            {
+                Vector3 from = hd.position;
+                Vector3 local = Quaternion.Inverse(transform.rotation) * (tp - from);
+                float horiz = new Vector2(local.x, local.z).magnitude;
+                if (horiz < 0.15f && Mathf.Abs(local.y) < 0.15f) want = false;   // 近すぎる（自分の頭の中など）
+                else
+                {
+                    dYaw = Mathf.Atan2(local.x, local.z) * Mathf.Rad2Deg;
+                    dPitch = Mathf.Atan2(local.y, Mathf.Max(0.05f, horiz)) * Mathf.Rad2Deg;
+                    if (Mathf.Abs(dYaw) > LookGiveUp) want = false;              // 後ろ：向かない
+                    dYaw = Mathf.Clamp(dYaw, -LookYawMax, LookYawMax);
+                    dPitch = Mathf.Clamp(dPitch, -LookPitchDown, LookPitchUp);
+                }
+            }
+            if (!want) { dYaw = 0f; dPitch = 0f; }
+            float k = 1f - Mathf.Exp(-dt * LookSpeed);
+            lookYaw = Mathf.Lerp(lookYaw, dYaw, k);
+            lookPitch = Mathf.Lerp(lookPitch, dPitch, k);
+            lookW = Mathf.MoveTowards(lookW, want ? 1f : 0f, dt / 0.5f);
+            if (lookW <= 0.001f && Mathf.Abs(lookYaw) < 0.5f) return;
+            if (!AnyVisible()) return;                                            // 映っていない子は回さない（動きのまま）
+            LookWhy = why;
+            float yaw = lookYaw * lookW, pitch = lookPitch * lookW;
+            Vector3 up = transform.up;
+            Vector3 right = Quaternion.AngleAxis(yaw, up) * transform.right;
+            if (nk != null && nk != hd)
+            {
+                float s = LookNeckShare;
+                nk.rotation = Quaternion.AngleAxis(-pitch * s, right) * Quaternion.AngleAxis(yaw * s, up) * nk.rotation;
+                hd.rotation = Quaternion.AngleAxis(-pitch * (1f - s), right) * Quaternion.AngleAxis(yaw * (1f - s), up) * hd.rotation;
+            }
+            else hd.rotation = Quaternion.AngleAxis(-pitch, right) * Quaternion.AngleAxis(yaw, up) * hd.rotation;
+        }
         public Transform Bone(string n) { return B(n); }   // 確認用の写真から骨の位置を見る
 
         void Aim(string boneName, string childName, Quaternion frame, Vector3 dir)

@@ -12,7 +12,7 @@ namespace LifeSimProto
         void OnPreprocessTexture()
         {
             string p = assetPath.Replace('\\', '/');
-            if (!p.Contains("/Proto/Resources/Tiles/") && !p.Contains("/Proto/Resources/TilesV2/") && !p.Contains("/Proto/Resources/Furniture/Textures/")) return;
+            if (!p.Contains("/Proto/Resources/Tiles/") && !p.Contains("/Proto/Resources/TilesV2/") && !p.Contains("/Proto/Resources/Furniture/Textures/") && !(p.Contains("/Proto/Resources/Furniture/") && p.Contains("/Textures/"))) return; // Courtyard2・Plants2 の Textures も（2026-11-06）
             var ti = (TextureImporter)assetImporter;
             string n = System.IO.Path.GetFileNameWithoutExtension(p).ToLowerInvariant();
             if (n.EndsWith("_normal")) ti.textureType = TextureImporterType.NormalMap;

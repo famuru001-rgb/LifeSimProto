@@ -22,6 +22,11 @@ Shader "LifeSim/Foliage"
         _FadeStart ("Fade Start", Float) = 10000
         _FadeEnd ("Fade End", Float) = 10001
         _Cull ("Cull", Float) = 2
+        _Cutoff ("Alpha Cutoff (0=off)", Range(0,1)) = 0
+        _GroundTex ("Ground Color (grass)", 2D) = "white" {}
+        _UseGround ("Use Ground Color", Float) = 0
+        _GroundRect ("Ground Rect (x0,y0,1/w,1/h)", Vector) = (0,0,1,1)
+        _GroundMul ("Ground Color Mul", Float) = 1
     }
     SubShader
     {
@@ -32,11 +37,14 @@ Shader "LifeSim/Foliage"
         #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
         TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
         TEXTURE2D(_BumpMap); SAMPLER(sampler_BumpMap);
+        TEXTURE2D(_GroundTex); SAMPLER(sampler_GroundTex);
+        float4x4 _GroundW2L;
         CBUFFER_START(UnityPerMaterial)
             float4 _BaseMap_ST;
             float _BumpScale, _UseBump;
+            float4 _GroundRect; float _UseGround, _GroundMul;
             half4 _BaseColor;
-            float _UseVertexColor, _UseVertexAlpha, _WindStrength, _WindSpeed, _WindScale, _WindYScale, _Wrap, _UpNormal, _TipLight, _Translucency, _FadeStart, _FadeEnd, _Cull;
+            float _UseVertexColor, _UseVertexAlpha, _WindStrength, _WindSpeed, _WindScale, _WindYScale, _Wrap, _UpNormal, _TipLight, _Translucency, _FadeStart, _FadeEnd, _Cull, _Cutoff;
         CBUFFER_END
         UNITY_INSTANCING_BUFFER_START(Props)
             UNITY_DEFINE_INSTANCED_PROP(float4, _InstColor)
@@ -101,9 +109,17 @@ Shader "LifeSim/Foliage"
             {
                 UNITY_SETUP_INSTANCE_ID(i);
                 half4 tex = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, i.uv) * _BaseColor;
+                if (_Cutoff > 0) clip(tex.a - _Cutoff); // 葉っぱの板の切り抜き（依頼27）
                 half4 ic = UNITY_ACCESS_INSTANCED_PROP(Props, _InstColor);
                 if (ic.a > 0.0) tex.rgb *= ic.rgb;
                 if (_UseVertexColor > 0.5) tex.rgb *= i.color.rgb;
+                if (_UseGround > 0.5)
+                {
+                    // 草の色は下の地面の色むらの画像から（根元が地面に溶ける）。2026-11-06：インスタンスの色が効いていなかったため
+                    float3 lp = mul(_GroundW2L, float4(i.positionWS, 1)).xyz;
+                    float2 guv = float2((lp.x - _GroundRect.x) * _GroundRect.z, (lp.z - _GroundRect.y) * _GroundRect.w);
+                    tex.rgb *= SAMPLE_TEXTURE2D(_GroundTex, sampler_GroundTex, guv).rgb * _GroundMul;
+                }
                 float3 n = normalize(front ? i.normalWS : -i.normalWS);
                 if (_UseBump > 0.5)
                 {
@@ -150,11 +166,12 @@ Shader "LifeSim/Foliage"
             #pragma multi_compile_vertex _ _CASTING_PUNCTUAL_LIGHT_SHADOW
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
             float3 _LightDirection; float3 _LightPosition;
-            struct A { float4 positionOS:POSITION; float3 normalOS:NORMAL; float4 color:COLOR; UNITY_VERTEX_INPUT_INSTANCE_ID };
-            struct V { float4 positionCS:SV_POSITION; };
+            struct A { float4 positionOS:POSITION; float3 normalOS:NORMAL; float4 color:COLOR; float2 uv:TEXCOORD0; UNITY_VERTEX_INPUT_INSTANCE_ID };
+            struct V { float4 positionCS:SV_POSITION; float2 uv:TEXCOORD0; };
             V vert(A i)
             {
                 V o; UNITY_SETUP_INSTANCE_ID(i);
+                o.uv = TRANSFORM_TEX(i.uv, _BaseMap);
                 float fade; float3 ws = WindPos(i.positionOS.xyz, i.color, fade);
                 float3 nws = TransformObjectToWorldNormal(i.normalOS);
                 #if _CASTING_PUNCTUAL_LIGHT_SHADOW
@@ -171,7 +188,7 @@ Shader "LifeSim/Foliage"
                 o.positionCS = cs;
                 return o;
             }
-            half4 frag(V i) : SV_Target { return 0; }
+            half4 frag(V i) : SV_Target { if (_Cutoff > 0) clip(SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, i.uv).a * _BaseColor.a - _Cutoff); return 0; }
             ENDHLSL
         }
 
@@ -184,10 +201,10 @@ Shader "LifeSim/Foliage"
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile_instancing
-            struct A { float4 positionOS:POSITION; float4 color:COLOR; UNITY_VERTEX_INPUT_INSTANCE_ID };
-            struct V { float4 positionCS:SV_POSITION; };
-            V vert(A i) { V o; UNITY_SETUP_INSTANCE_ID(i); float fade; o.positionCS = TransformWorldToHClip(WindPos(i.positionOS.xyz, i.color, fade)); return o; }
-            half4 frag(V i) : SV_Target { return 0; }
+            struct A { float4 positionOS:POSITION; float4 color:COLOR; float2 uv:TEXCOORD0; UNITY_VERTEX_INPUT_INSTANCE_ID };
+            struct V { float4 positionCS:SV_POSITION; float2 uv:TEXCOORD0; };
+            V vert(A i) { V o; UNITY_SETUP_INSTANCE_ID(i); float fade; o.positionCS = TransformWorldToHClip(WindPos(i.positionOS.xyz, i.color, fade)); o.uv = TRANSFORM_TEX(i.uv, _BaseMap); return o; }
+            half4 frag(V i) : SV_Target { if (_Cutoff > 0) clip(SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, i.uv).a * _BaseColor.a - _Cutoff); return 0; }
             ENDHLSL
         }
 
@@ -201,11 +218,12 @@ Shader "LifeSim/Foliage"
             #pragma fragment frag
             #pragma multi_compile_instancing
             #pragma multi_compile_fragment _ _GBUFFER_NORMALS_OCT
-            struct A { float4 positionOS:POSITION; float3 normalOS:NORMAL; float4 color:COLOR; UNITY_VERTEX_INPUT_INSTANCE_ID };
-            struct V { float4 positionCS:SV_POSITION; float3 normalWS:TEXCOORD0; };
-            V vert(A i) { V o; UNITY_SETUP_INSTANCE_ID(i); float fade; o.positionCS = TransformWorldToHClip(WindPos(i.positionOS.xyz, i.color, fade)); o.normalWS = TransformObjectToWorldNormal(i.normalOS); return o; }
+            struct A { float4 positionOS:POSITION; float3 normalOS:NORMAL; float4 color:COLOR; float2 uv:TEXCOORD0; UNITY_VERTEX_INPUT_INSTANCE_ID };
+            struct V { float4 positionCS:SV_POSITION; float3 normalWS:TEXCOORD0; float2 uv:TEXCOORD1; };
+            V vert(A i) { V o; UNITY_SETUP_INSTANCE_ID(i); float fade; o.positionCS = TransformWorldToHClip(WindPos(i.positionOS.xyz, i.color, fade)); o.normalWS = TransformObjectToWorldNormal(i.normalOS); o.uv = TRANSFORM_TEX(i.uv, _BaseMap); return o; }
             half4 frag(V i, bool front : SV_IsFrontFace) : SV_Target
             {
+                if (_Cutoff > 0) clip(SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, i.uv).a * _BaseColor.a - _Cutoff);
                 float3 n = normalize(front ? i.normalWS : -i.normalWS);
                 n = normalize(lerp(n, float3(0,1,0), _UpNormal));
                 #if defined(_GBUFFER_NORMALS_OCT)

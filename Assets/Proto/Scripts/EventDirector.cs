@@ -132,7 +132,7 @@ namespace LifeSimProto
             if (Calendar.IsExamDay(day, hol) && m >= 1080f && Once("exam")) AnnounceExam(day);
 
             // ---- デート（休日の午後。Fと、Fを好きな子のだれか1人）----
-            if (holiday && !Calendar.IsFestival(day) && m >= 780f && m < 900f && Once("date"))
+            if (LoungeWorld.OutingsEnabled && holiday && !Calendar.IsFestival(day) && m >= 780f && m < 900f && Once("date"))   // 2026-11-07 外出はなし（街・湖へのデートもしない）
             {
                 var f = world.RomanceTarget;
                 SimCharacter best = null;

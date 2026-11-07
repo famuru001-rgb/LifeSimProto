@@ -121,7 +121,7 @@ namespace LifeSimProto
                 if (e.season != season || e.weekday != Calendar.Weekday(day)) continue;
                 if (e.key.StartsWith("riacook") && riaCooked) continue;
                 world.todayNotes.Add(e.name + " " + Clock(e.startHour) + (string.IsNullOrEmpty(e.note) ? "" : "（" + e.note + "）"));
-                if (e.invited == null) world.Log("今日は" + e.name + "！" + (e.school && e.outing ? "（会場はまだないので、みんなが出かけて結果を持ち帰る）" : ""));
+                if (e.invited == null) world.Log("今日は" + e.name + "！");
             }
             // 種族の出来事の予定
             var rnd = new System.Random(day * 31337 + 7);
@@ -158,6 +158,17 @@ namespace LifeSimProto
                 g.area = venue;
                 g.focus = LoungeWorld.FocusOf(venue);
                 world.Log("（会場：" + venue + "）");
+            }
+            // 外出はなし（2026-11-07 famuru）：出かける行事も、学園の敷地の中で行う（CampusVenues.cs）
+            if (g.outing)
+            {
+                string[] alt;
+                if (world.PlaceOnCampus(g, LoungeWorld.CampusVenueOf(e.key, out alt), alt))
+                {
+                    if (!g.area.EndsWith("浜辺")) g.label = g.label.Replace("湖で", "").Replace("湖のまわりで", "");   // 浜辺（湖のほとり）でないときは「湖で」を言わない
+                    world.Log("（会場：" + g.area + (g.altArea != null ? "と" + g.altArea : "") + "）");
+                }
+                else { g.outing = false; g.area = "談話室"; g.focus = Lounge; world.Log("（会場：談話室）"); }
             }
             world.gatherings.Add(g);
             running[k] = g;

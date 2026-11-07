@@ -646,6 +646,18 @@ namespace LifeSimProto
                         if (c == null) return "life stroll: 記号がない";
                         return "life stroll: " + c.displayName + " " + c.LifeTestStroll();
                     }
+                case "look":
+                    {
+                        // 試験用（2026-11-07 IK の A）：life look on / off（首と頭を向けるのを入れる・切る）／ life look 記号（その子が今見ている所）
+                        string v = a.Length > 2 ? a[2] : "";
+                        if (v == "on" || v == "off") { ProtoBody.LookEnabled = v == "on"; return "life look: " + (ProtoBody.LookEnabled ? "向ける" : "向けない（今までどおり）"); }
+                        var c = w.characters.Find(x => x.letter == v.ToUpperInvariant());
+                        if (c == null) return "life look: 記号がない（on・off・記号）";
+                        Vector3 p; string why;
+                        bool has = c.LookTargetNow(out p, out why);
+                        var pb = c.GetComponent<ProtoBody>();
+                        return "life look: " + c.displayName + " " + (has ? why : "見る所なし") + "・回している=" + (pb != null && pb.LookWhy != null ? pb.LookWhy : "なし") + "・" + c.state;
+                    }
                 case "who":
                     {
                         // 試験用：life who 記号：その子の今のようす
