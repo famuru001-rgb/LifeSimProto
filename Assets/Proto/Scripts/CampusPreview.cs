@@ -555,6 +555,51 @@ namespace LifeSimProto
         /// <summary>地面の高さ：城壁の外の森は少し高く、森の東半分に丘（famuru 2026-11-08「森の右の部分を丘に。北東よりにてっぺん、高さ 10m くらい」）。</summary>
         static float H(float x, float y)
         {
+            float b = HBase(x, y);
+            // 浜辺（famuru 2026-11-08「草の地面と砂浜の高さが違っており大きな隙間」）：地面も砂浜の形に下げて、帯の両はしは 10m かけて草原の高さへ戻す
+            float across; float w = BeachLowW(x, y, out across);
+            return w <= 0f ? b : Mathf.Lerp(b, SandH(Mathf.Min(across, 11.2f)) - 0.2f, w);
+        }
+
+        /// <summary>浜辺で地面を砂浜の高さへ下げる割合（1＝砂浜の高さ、0＝草原のまま）。はしは丸く、ゆるい坂で草原へ戻す。</summary>
+        static float BeachLowW(float x, float y, out float across)
+        {
+            across = 999f;
+            if (!PoolBeachOn || x < 84f || y < 46f || y > 134f) return 0f;
+            float along; CoastLocal(new Vector2(x, y), out along, out across);
+            float len = CoastLen;
+            if (along <= 0.01f) { Vector2 d0 = (Coast[1] - Coast[0]).normalized; along = Vector2.Dot(new Vector2(x, y) - Coast[0], d0); across = Vector2.Dot(new Vector2(x, y) - Coast[0], SegIn(0)); }
+            else if (along >= len - 0.01f) { int l = Coast.Length - 1; Vector2 d1 = (Coast[l] - Coast[l - 1]).normalized; along = len + Vector2.Dot(new Vector2(x, y) - Coast[l], d1); across = Vector2.Dot(new Vector2(x, y) - Coast[l], SegIn(l - 1)); }
+            if (across > 18f || across < -30f) return 0f;
+            if (Mathf.Abs(along - StairAlong) < 1.6f && across > 11f) return 0f; // 階段の上の踊り場と小道
+            float edge = Mathf.Min(along, len - along);                       // 帯のはしまでの長さ（外はマイナス）
+            float endK = Mathf.SmoothStep(0f, 1f, (6f - edge) / 10f);        // はしに近いほど 1
+            float rc = Mathf.Lerp(1.2f, 6f, endK);                            // 土手の幅：真ん中は急（土手の岩でかくす）、はしはゆるい坂
+            float u = Mathf.Clamp01(across / 11.2f);
+            float extA = 6f * Mathf.Sqrt(1f - u * u);                          // 砂を帯の外へ丸くのばす（水ぎわ 6m・土手 0m）
+            float dA = Mathf.Max(0f, -edge - extA), dC = Mathf.Max(0f, across - 11.2f);
+            return (1f - Mathf.SmoothStep(0f, 1f, dA / 10f)) * (1f - Mathf.SmoothStep(0f, 1f, dC / rc));
+        }
+
+        /// <summary>地面のます目の大きさ。浜辺のはしの坂で砂のふちがぎざぎざにならないよう 2.5→1.25m（2026-11-08）。</summary>
+        const float GroundStep = 1.25f;
+
+        /// <summary>地面のメッシュ（ます目の三角形）の、その点での高さ。砂を地面にそわせてかくすのに使う。</summary>
+        static float GroundAt(float x, float y)
+        {
+            const float step = GroundStep, gx0 = -125f, gy0 = -5f;
+            float fxA = (x - gx0) / step, fyA = (y - gy0) / step;
+            int i = Mathf.FloorToInt(fxA), j = Mathf.FloorToInt(fyA);
+            float fx = fxA - i, fy = fyA - j;
+            float xa = gx0 + i * step, ya = gy0 + j * step;
+            float ha = H(xa, ya), hb = H(xa + step, ya), hc = H(xa, ya + step), hd = H(xa + step, ya + step);
+            float h = fx + fy <= 1f ? ha + fx * (hb - ha) + fy * (hc - ha) : hd + (1f - fx) * (hc - hd) + (1f - fy) * (hb - hd);
+            return h - 0.04f;
+        }
+
+        /// <summary>浜辺で下げる前の地面の高さ。</summary>
+        static float HBase(float x, float y)
+        {
             float f = Mathf.SmoothStep(0f, 1f, (y - 110f) / 12f) * 1.6f;
             float dx = (x - HillTop.x) / 34f, dy = (y - HillTop.y) / 28f;
             return f + (HillH - 1.6f * Mathf.SmoothStep(0f, 1f, (HillTop.y - 110f) / 12f)) * Mathf.Exp(-(dx * dx + dy * dy)) * Mathf.SmoothStep(0f, 1f, (y - 108f) / 10f);
@@ -573,7 +618,7 @@ namespace LifeSimProto
 
         void Ground()
         {
-            const float step = 2.5f;
+            const float step = GroundStep;
             float x0 = -125f, x1 = 125f, y0 = -5f, y1 = 214f; // 北の森を2倍にしたので 162→214（2026-11-08）
             int nx = Mathf.CeilToInt((x1 - x0) / step), ny = Mathf.CeilToInt((y1 - y0) / step);
             var verts = new List<Vector3>(); var uvs = new List<Vector2>(); var tris = new List<int>();
@@ -590,7 +635,7 @@ namespace LifeSimProto
                 {
                     float cx = x0 + (i + 0.5f) * step, cy = y0 + (j + 0.5f) * step;
                     if (!Inside(Island, new Vector2(cx, cy))) continue;
-                    if (poolBeach && (InPoolHole(cx, cy) || BeachAcross(new Vector2(cx, cy), 0f) < 13.3f)) continue; // プールの穴・浜辺（依頼29）
+                    if (poolBeach && InPoolHole(cx, cy)) continue; // プールの穴（浜辺は地面を砂浜の高さに下げて、その上に砂。2026-11-08）
                     int a = j * (nx + 1) + i, b = a + 1, c = a + nx + 1, d = c + 1;
                     tris.Add(a); tris.Add(c); tris.Add(b); tris.Add(b); tris.Add(c); tris.Add(d);
                     inc[j * nx + i] = true;
@@ -674,6 +719,9 @@ namespace LifeSimProto
         static readonly string[] Cliff2Walls = { "Cliff2_A", "Cliff2_B", "Cliff2_C" };
 
         /// <summary>浜辺の帯の中か（岸の線の両はしの先は、はしの向きにのばして測る。BeachAcross は両はしで along が 0／全長に止まるため）。</summary>
+        /// <summary>浜辺で地面を下げた所（砂の上と、草原へ戻る坂の下のほう）か。木や草を置かない。</summary>
+        static bool OnLowBeach(Vector2 p, float wMin) { float a; return BeachLowW(p.x, p.y, out a) > wMin; }
+
         static bool NearBeach(Vector2 p, float ext, float acrossMax)
         {
             float along, across; CoastLocal(p, out along, out across);
@@ -733,7 +781,7 @@ namespace LifeSimProto
                     float s = cnt == 0 ? (s0 + Mathf.Max(0f, span) * 0.5f) : s0 + span * j / cnt;
                     if (cnt == 0 && span < -2f) s = L * 0.5f;
                     Vector2 p = a + d * s;
-                    if (poolBeach && NearBeach(p, 5.5f, 3f)) continue; // 浜辺の所は崖なし（依頼29。浜辺の両はしは下で1つずつ）
+                    if (poolBeach && NearBeach(p, 9f, 3f)) continue; // 浜辺の所は崖なし（依頼29。浜辺の両はしは下で1つずつ）
                     float h1 = Hash01(i * 31 + j, 41), h2 = Hash01(j, i * 17 + 5), h3 = Hash01(i + j * 13, 77);
                     string kind = Cliff2Walls[Mathf.Min(2, (int)(h1 * 3f))];
                     float sx = 0.96f + h3 * 0.16f;
@@ -772,17 +820,7 @@ namespace LifeSimProto
                     }
                 }
             }
-            if (poolBeach)
-                for (int e = 0; e < 2; e++)
-                {
-                    // 浜辺の両はし：崖のかたまりを浜辺のはしのすぐ外に1つ（崖をやめた所にすき間を作らない）
-                    Vector2 end = e == 0 ? Coast[0] : Coast[Coast.Length - 1];
-                    Vector2 dir = e == 0 ? (Coast[0] - Coast[1]).normalized : (Coast[Coast.Length - 1] - Coast[Coast.Length - 2]).normalized;
-                    Vector2 n = -(e == 0 ? SegIn(0) : SegIn(Coast.Length - 2));
-                    Vector2 p = end + dir * Tune("Cliff2_beach_end", 5.5f);
-                    PutCliff2(Cliff2Walls[e], p, n, YawFacing(n), 1.02f, H(p.x, p.y));
-                    if (top) Put("Cliff2_Top", (p - n * Tune("Cliff2_top_back", 0.9f)).x, H(p.x, p.y) + Tune("Cliff2_top_dy", 0.05f), (p - n * Tune("Cliff2_top_back", 0.9f)).y, YawFacing(n), new Vector3(0.92f, 1f, 1f));
-                }
+            // 浜辺の両はしのふた（崖のかたまり）は、地面を坂にしてなめらかにつないだのでやめた（2026-11-08）
         }
 
         // ---------------- 城壁・正門・跳ね橋・街 ----------------
@@ -1177,7 +1215,7 @@ namespace LifeSimProto
                     float jy = Mathf.Sin(x * 39.346f + y * 11.135f) * 24634.6345f; jy -= Mathf.Floor(jy);
                     float px = x + (jx - 0.5f) * 5f, py = y + (jy - 0.5f) * 5f;
                     if (!Inside(Island, new Vector2(px, py))) continue;
-                    if (poolBeach && BeachAcross(new Vector2(px, py), 4f) < 17f) continue; // 浜辺（依頼29）
+                    if (poolBeach && (NearBeach(new Vector2(px, py), 4f, 17f) || OnLowBeach(new Vector2(px, py), 0.15f))) continue; // 浜辺（依頼29）。前は帯の北の先の森まで木を置いていなかった（2026-11-08 famuru「森の東奥に木がない」）
                     if (Mathf.Abs(px + 60f) < 18f && Mathf.Abs(py - 126f) < 10f) continue; // 訓練の施設・ダンジョンの入り口
                     if ((new Vector2(px, py) - HillTop).magnitude < 10f) continue; // 丘のてっぺんのまわりはあける
                     float dw = float.MaxValue;
@@ -1355,6 +1393,15 @@ namespace LifeSimProto
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var mr = go.AddComponent<MeshRenderer>(); mr.sharedMaterial = m;
             mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        }
+
+        /// <summary>CoastPoint と同じ。ただし岸の線の両はしより先は、はしの向きのまま延ばす。</summary>
+        static Vector2 CoastPointExt(float along, float across)
+        {
+            float total = CoastLen; Vector2 n;
+            if (along < 0f) { Vector2 d0 = (Coast[1] - Coast[0]).normalized; return Coast[0] + d0 * along + SegIn(0) * across; }
+            if (along > total) { int l = Coast.Length - 1; Vector2 d1 = (Coast[l] - Coast[l - 1]).normalized; return Coast[l] + d1 * (along - total) + SegIn(l - 1) * across; }
+            return CoastPoint(along, across, out n);
         }
 
         static float SandH(float across)
@@ -1576,22 +1623,32 @@ namespace LifeSimProto
             const float step = 1f;
             int na = Mathf.CeilToInt(total / step), nc = 0;
             var across = new List<float>();
+            // famuru 2026-11-08「浜辺の上下の端に隙間があるので埋めて」：砂を草原の下まで（奥行き 13.8・15.5 は地面の高さのすぐ下）のばし、
+            // 帯の両はしも 5m 先までのばす（地面を張らない所が残っても、下から砂が見えて水が見えない）
+            across.Add(BankS + 3.5f); across.Add(BankS + 1.8f);
             for (float a = BankS + 0.6f; a > -22.01f; a -= (a > -6f ? 1f : 2f)) across.Add(a);
             nc = across.Count;
+            const int ext = 14;
             var verts = new List<Vector3>(); var uvs = new List<Vector2>(); var tDry = new List<int>(); var tWet = new List<int>();
-            for (int i = 0; i <= na; i++)
+            for (int i = -ext; i <= na + ext; i++)
             {
-                float al = Mathf.Min(total, i * step);
+                float al = i < 0 ? i * step : (i > na ? total + (i - na) * step : Mathf.Min(total, i * step));
+                bool outside = al < 0f || al > total;
                 for (int j = 0; j < nc; j++)
                 {
-                    Vector2 n; Vector2 p = CoastPoint(al, across[j], out n);
-                    float noise = (Mathf.PerlinNoise(p.x * 0.35f, p.y * 0.35f) - 0.5f) * 0.12f * Mathf.Clamp01(across[j] / 3f);
+                    float acr = outside ? Mathf.Max(across[j], -3f) : across[j];
+                    Vector2 p = CoastPointExt(al, acr);
+                    float noise = (Mathf.PerlinNoise(p.x * 0.35f, p.y * 0.35f) - 0.5f) * 0.12f * Mathf.Clamp01(acr / 3f);
                     float endK = 1f - Mathf.Clamp01(Mathf.Min(al, total - al) / 8f); // 帯のはしの水の中は深くして、浅い所の色の境目を目立たせない
-                    float hh = SandH(across[j]) - (across[j] < 1f ? endK * endK * 7f * Mathf.Clamp01((1f - across[j]) / 4f) : 0f);
+                    float hh = SandH(acr) - (acr < 1f ? endK * endK * 7f * Mathf.Clamp01((1f - acr) / 4f) : 0f);
+                    // 砂は、地面を下げきった所（砂浜）だけ地面の上に出し、坂と草原では地面のすぐ下にそわせてかくす（2026-11-08）
+                    float bacr; float vis = Mathf.SmoothStep(0f, 1f, (BeachLowW(p.x, p.y, out bacr) - 0.86f) / 0.11f);
+                    hh = Mathf.Min(acr > BankS + 1f ? hh + 5f : hh, GroundAt(p.x, p.y) + Mathf.Lerp(-0.3f, 0.5f, vis));
                     verts.Add(new Vector3(p.x, hh + noise, p.y));
                     uvs.Add(new Vector2(p.x / 2f, p.y / 2f));
                 }
             }
+            na += ext * 2;
             for (int i = 0; i < na; i++)
                 for (int j = 0; j + 1 < nc; j++)
                 {
@@ -1620,7 +1677,7 @@ namespace LifeSimProto
                 {
                     Vector2 n; Vector2 p = CoastPoint(al, BankS, out n);
                     float sx = Tune("Bank2_sx", 0.72f) * (0.95f + Hash01(bi, 211) * 0.12f);
-                    PutCliff2(Cliff2Walls[bi % 3], p, -n, YawFacing(-n) + (Hash01(bi, 223) - 0.5f) * 8f, sx, H(p.x, p.y));
+                    PutCliff2(Cliff2Walls[bi % 3], p, -n, YawFacing(-n) + (Hash01(bi, 223) - 0.5f) * 8f, sx, HBase(p.x, p.y));
                 }
             }
             else
@@ -1707,7 +1764,7 @@ namespace LifeSimProto
             };
             foreach (var b in blocks) if (p.x > b.xMin - margin && p.x < b.xMax + margin && p.y > b.yMin - margin && p.y < b.yMax + margin) return false;
             if (poolBeach && (p.x > PoolArea.xMin - margin && p.x < PoolArea.xMax + margin && p.y > PoolArea.yMin - margin && p.y < PoolArea.yMax + margin)) return false; // プール（依頼29）
-            if (poolBeach && BeachAcross(p, 3f) < 15f + margin) return false; // 浜辺
+            if (poolBeach && (NearBeach(p, 3f, 15f + margin) || OnLowBeach(p, 0.15f))) return false; // 浜辺（帯の先の森は除かない。2026-11-08）
             if (poolBeach && DistSeg(p, BeachDoorOut, BeachStairTop) < 1.4f + margin) return false; // 浜辺への小道
             if (lawns && (p - new Vector2(0, 18)).magnitude < 10f + margin) return false;
             if (lawns && ((p - new Vector2(26, 25)).magnitude < 5f || (p - new Vector2(-26, 25)).magnitude < 5f)) return false;

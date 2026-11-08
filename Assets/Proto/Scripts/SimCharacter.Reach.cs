@@ -11,6 +11,8 @@ namespace LifeSimProto
         public void MotionPartners(List<SimCharacter> list)
         {
             list.Clear();
+            if (walkWith != null) { list.Add(walkWith); return; }   // 手をつないで・腕を組んで歩いている篤
+            var tp = TouchPartner; if (tp != null) { list.Add(tp); return; }   // 頭をなでる・抱きしめる
             if (hs != null) { if (state == State.Private) hs.Others(this, list); return; }
             var r = lifeEv;
             if (r != null && r.pair != null && r.pairSet)

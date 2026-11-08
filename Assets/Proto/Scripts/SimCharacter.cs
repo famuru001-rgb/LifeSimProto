@@ -173,6 +173,7 @@ namespace LifeSimProto
                 if (!Present || state == State.Bathing || state == State.Talking || state == State.Private) return false;
                 if (state == State.Sleeping && !sickRest) return false;
                 if (OnMission || hasOrder) return false;
+                if (walkWith != null) return false; // 篤といっしょに歩いている
                 return true;
             }
         }
@@ -633,6 +634,7 @@ namespace LifeSimProto
                 if (Time.time < standUpUntil) { transform.position = standUpPos; transform.rotation = standUpRot; }
                 else { transform.position = standUpAfter; standUpUntil = -1f; }
             }
+            if (IsTarget) TouchHoldF();   // 篤：頭をなでている・抱きしめている間は歩かない（SimCharacter.Touch.cs）
             if (Present && !StandingUpNow)
             {
                 int n = Mathf.Clamp(Mathf.CeilToInt(dt / MaxMoveStep), 1, 24);
@@ -644,6 +646,7 @@ namespace LifeSimProto
                     else if (state == State.Waiting) UpdateWaiting(sdt);
                     else if (state != State.Walking) break;
                 }
+                if (walkWith != null && state != State.Talking) WalkTogetherFollow(dt);   // 篤といっしょに歩く（SimCharacter.WalkTogether.cs）
                 if (state == State.Talking && talkPartner != null) FaceTowards(talkPartner.transform.position, dt);
                 if (state == State.Activity && poi != null) FaceTowards(poi.lookAt, dt);
                 if (state == State.Activity && poi == null && gathering != null) FaceTowards(gatherFocus, dt);
@@ -1804,6 +1807,8 @@ namespace LifeSimProto
         void Think()
         {
             if (IsMob) { MobThink(); return; } // 寮生以外の学生・先生（SimCharacter.Mob.cs）
+            if (WalkTogetherThink(world.Now)) return; // 篤といっしょに歩いている（SimCharacter.WalkTogether.cs）
+            if (TouchThink()) return;                 // 篤に頭をなでられている・抱きしめられている（SimCharacter.Touch.cs）
             EnsureSchedule();
             double now = world.Now;
             // 寝に行く途中で詰まったら（45分たってもたどり着かない）、そのまま部屋で眠る

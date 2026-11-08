@@ -300,6 +300,7 @@ namespace LifeSimProto
         {
             clip = null; time = 0f; pos = transform.position; rot = transform.rotation;
             if (hs != null) { soloMp = null; return state == State.Private && hs.MotionFor(this, out clip, out time, out pos, out rot); }
+            if (TouchMotion(out clip, out time, out pos, out rot)) return true;   // 篤が頭をなでる・抱きしめる（SimCharacter.Touch.cs）
             if (LifePairMotion(out clip, out time, out pos, out rot)) return true;
             return LifeSoloMotion(out clip, out time, out pos, out rot);
         }

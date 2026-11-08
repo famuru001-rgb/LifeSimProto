@@ -648,6 +648,29 @@ namespace LifeSimProto
                         if (c == null) return "life stroll: 記号がない";
                         return "life stroll: " + c.displayName + " " + c.LifeTestStroll();
                     }
+                case "love":
+                case "walk":
+                case "touch":
+                    {
+                        // 試験用（2026-11-08）：life love 記号 0〜100 [lover]（篤への気持ち）／ life walk 記号 hand|arm|off（いっしょに歩く）／ life touch 記号 pat|hug
+                        var c = a.Length > 2 ? w.characters.Find(x => x.letter == a[2].ToUpperInvariant()) : null;
+                        var f = w.RomanceTarget;
+                        if (c == null || f == null) return "life " + a[1] + ": 記号がない";
+                        string v = a.Length > 3 ? a[3] : "";
+                        if (a[1] == "love")
+                        {
+                            float lv; if (!float.TryParse(v, out lv)) return "life love: 値がない";
+                            w.romance.love[c.id] = Mathf.Clamp(lv, 0f, 100f);
+                            if (a.Length > 4 && a[4] == "lover") w.romance.lover[c.id] = true;
+                            return "life love: " + c.displayName + " 気持ち " + w.romance.love[c.id] + "・段階 " + c.LoveStage + (c.IsLover ? "・恋人" : "");
+                        }
+                        if (a[1] == "walk")
+                        {
+                            if (v == "off") { c.EndWalkTogether("試験"); return "life walk: はなした"; }
+                            return "life walk: " + (c.AskWalkTogether(f, v == "arm") ? "歩きはじめた" : "断られた・できない");
+                        }
+                        return "life touch: " + (c.AskTouch(f, v == "hug") ? "始めた" : "断られた・できない（近くにいるか）");
+                    }
                 case "reach":
                     {
                         // 試験用（2026-11-08 IK の B）：life reach on / off（手を相手の体に合わせるのを入れる・切る）／ life reach 記号（今どこへ合わせているか）

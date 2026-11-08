@@ -726,6 +726,7 @@ namespace LifeSimProto
                     }
                     if (fullG != null) clip = fullG;
                     else if (gestureName != null && gestureName != "Wave" && gestureName != "Bow" && Time.time < gestureUntil && Clip(gestureName) != null && (gestureName == "Joy" || speed <= 0.25f)) clip = Clip(gestureName);
+                    else if ((speed > 0.25f || snapOff.magnitude > 0.08f) && !testMode && sim.PairWalkClip != null && Clip(sim.PairWalkClip) != null) clip = Clip(sim.PairWalkClip);   // 手をつないで・腕を組んで歩く（2026-11-08）
                     else if (speed > 0.25f || snapOff.magnitude > 0.08f) clip = Clip(MotionBook.WalkFor(StyleNow(), testMode ? testMood : sim.WalkMood, LetterNow(), Clip)) ?? Clip(MotionBook.Walk(StyleNow(), null)) ?? Clip("Walk");
                     else if (talking)
                     {
@@ -823,7 +824,8 @@ namespace LifeSimProto
             }
             // 話し相手・先生・作業の物のほうへ首と頭を向ける（動きの上から。2026-11-07 IK の A）
             // 二人の動き：手を相手の体に合わせる（2026-11-08 IK の B。ProtoBody.Reach.cs）
-            UpdateReach(hOn ? hName : null, dt, clip != null && hOn);
+            string walkReach = !testMode && !hOn ? sim.WalkReachClip : null;   // 手をつないで・腕を組んで歩く間は、止まっていても手を合わせる
+            UpdateReach(hOn ? hName : walkReach, dt, clip != null && (hOn || walkReach != null));
             UpdateLook(dt, clip != null && !hOn && pose != BodyPose.Lie && pose != BodyPose.LieFloor && pose != BodyPose.Soak && !dozingNow && !(testMode ? testEyesClosed : sim.EyesClosedNow));
             if (pose != BodyPose.SitFloor && floorPhase != FloorPhase.Up) floorPhase = FloorPhase.None;
             lastPose = pose;

@@ -228,6 +228,17 @@ namespace LifeSimProto
                 var g = girl;
                 items.Add(new MenuItem { label = Story.Pending.Contains(g.letter) ? g.displayName + "に話しかける ★" : g.displayName + "に話しかける", enabled = true, act = () => { f.OrderTalk(g); world.Log("篤への指示：「" + g.displayName + "と話す」"); CloseMenu(); } });
                 if (!c.IsTarget) items.Add(new MenuItem { label = "プレゼントする ▶", enabled = true, act = () => menuGift = true });
+                // 手をつないで歩く・腕を組んで歩く（2026-11-08 famuru。好きなら手、恋人なら腕。気持ちが足りないと断る）
+                if (g.WalkingTogether) items.Add(new MenuItem { label = (g.WalkArm ? "組んだ腕" : "つないだ手") + "をはなす", enabled = true, act = () => { g.EndWalkTogether("篤が"); CloseMenu(); } });
+                else
+                {
+                    items.Add(new MenuItem { label = g.displayName + "と手をつないで歩く", enabled = !g.IsSick, act = () => { world.Log("篤：" + g.displayName + "に手を差し出した"); g.AskWalkTogether(f, false); CloseMenu(); } });
+                    items.Add(new MenuItem { label = g.displayName + "と腕を組んで歩く", enabled = !g.IsSick, act = () => { world.Log("篤：" + g.displayName + "に腕を差し出した"); g.AskWalkTogether(f, true); CloseMenu(); } });
+                }
+                // 頭をなでる・抱きしめる（2026-11-08 famuru。近くにいるとき）
+                bool nearG = g.NearForTouch(f);
+                items.Add(new MenuItem { label = g.displayName + "の頭をなでる" + (nearG ? "" : "（そばへ行ってから）"), enabled = nearG && !g.Touching, act = () => { g.AskTouch(f, false); CloseMenu(); } });
+                items.Add(new MenuItem { label = g.displayName + "を抱きしめる" + (nearG ? "" : "（そばへ行ってから）"), enabled = nearG && !g.Touching, act = () => { g.AskTouch(f, true); CloseMenu(); } });
                 items.Add(new MenuItem { label = g.displayName + "をエッチに誘う ▶" + (g.state == SimCharacter.State.Sleeping && !g.IsSick ? (g.LifeHasFlag(SimCharacter.PretendFlag) ? "（寝たふりで待っている）" : "（起こして聞く）") : (g.state == SimCharacter.State.Bathing ? "（お風呂で）" : "")), enabled = !g.IsSick, act = OpenInvite });
                 AddDungeonPickItem(items, g);
             }
