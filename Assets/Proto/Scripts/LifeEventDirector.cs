@@ -671,6 +671,16 @@ namespace LifeSimProto
                         }
                         return "life touch: " + (c.AskTouch(f, v == "hug") ? "始めた" : "断られた・できない（近くにいるか）");
                     }
+                case "ground":
+                    {
+                        // 試験用（2026-11-09 IK の C）：life ground on / off ／ life ground 記号（体の上げ下げ・足の合わせ）
+                        string v = a.Length > 2 ? a[2] : "";
+                        if (v == "on" || v == "off") { ProtoBody.GroundEnabled = v == "on"; return "life ground: " + (ProtoBody.GroundEnabled ? "合わせる" : "合わせない（今までどおり）") + "（当たりの面 " + ProtoBody.GroundInfo + "）"; }
+                        var c = w.characters.Find(x => x.letter == v.ToUpperInvariant());
+                        if (c == null) return "life ground: 記号がない（on・off・記号）";
+                        var pb = c.GetComponent<ProtoBody>();
+                        return "life ground: " + c.displayName + "（" + c.state + "）" + (pb != null && pb.GroundDebug != null ? pb.GroundDebug : "合わせていない（映っていない）") + "（当たりの面 " + ProtoBody.GroundInfo + "）";
+                    }
                 case "reach":
                     {
                         // 試験用（2026-11-08 IK の B）：life reach on / off（手を相手の体に合わせるのを入れる・切る）／ life reach 記号（今どこへ合わせているか）

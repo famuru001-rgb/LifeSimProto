@@ -347,6 +347,7 @@ namespace LifeSimProto
             restRot = new Quaternion[boneList.Length];
             for (int i = 0; i < boneList.Length; i++) restRot[i] = boneList[i].localRotation;
             hipsRest = hips.localPosition;
+            CaptureAnkle();   // 足首の高さ（足の合わせ。ProtoBody.Ground.cs）
 
             if (real) { SetupOutfits(); ApplyToon(); } else SetupLook();
             // 2026-10-27（取り込みのチャット）：本番モデルは表示の範囲（bounds）を毎回計算する。
@@ -816,6 +817,8 @@ namespace LifeSimProto
                 Procedural(pose, talking, dt, transform.rotation * frame);
             }
             // 正座で居眠り：首を前に落とす（動きの上から。2026-10-30 モーション）
+            // 足の裏を床・階段・坂へ、座ったらお尻を座面へ（2026-11-09 IK の C。ProtoBody.Ground.cs）
+            UpdateGround(dt, pose, clip != null && !hOn);
             dozeW = Mathf.MoveTowards(dozeW, clip != null && pose == BodyPose.SitFloor && dozingNow ? 1f : 0f, dt / 0.8f);
             if (dozeW > 0f)
             {

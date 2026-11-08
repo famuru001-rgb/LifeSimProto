@@ -233,7 +233,10 @@ namespace LifeSimProto
         }
 
         /// <summary>二の腕・前腕の曲げ方を変えて、手首を target へ（届かなければ届く所まで）。ひじの曲がる向きは動きのまま。</summary>
-        static void TwoBoneIK(Transform a, Transform b, Transform c, Vector3 t)
+        static void TwoBoneIK(Transform a, Transform b, Transform c, Vector3 t) { TwoBoneIK(a, b, c, t, null); }
+
+        /// <summary>pole：まっすぐ伸びているとき、先（手首・足首）をどちらへ曲げるか（ひざは足首が後ろへ＝-forward）。</summary>
+        static void TwoBoneIK(Transform a, Transform b, Transform c, Vector3 t, Vector3? pole)
         {
             Vector3 pa = a.position, pb = b.position, pc = c.position;
             float lab = (pb - pa).magnitude, lcb = (pc - pb).magnitude;
@@ -244,13 +247,16 @@ namespace LifeSimProto
             float now = Mathf.Acos(Mathf.Clamp(Vector3.Dot(ba, bc), -1f, 1f));
             float want = Mathf.Acos(Mathf.Clamp((lab * lab + lcb * lcb - lat * lat) / (2f * lab * lcb), -1f, 1f));
             Vector3 axis = Vector3.Cross(ba, bc);
+            bool straight = now > 165f * Mathf.Deg2Rad;
+            if (pole.HasValue && straight) axis = Vector3.Cross(bc, pole.Value);   // ほぼまっすぐ：曲げる向きを決める
             if (axis.sqrMagnitude < 1e-8f) axis = Vector3.Cross(ba, a.forward);   // まっすぐ伸びているとき
             if (axis.sqrMagnitude < 1e-8f) axis = Vector3.Cross(ba, Vector3.up);
             axis.Normalize();
             float delta = (want - now) * Mathf.Rad2Deg;
             // 回す向きを確かめる（開く・閉じるのどちらか合う方）
             Vector3 test = Quaternion.AngleAxis(delta, axis) * bc;
-            if (Mathf.Abs(Mathf.Acos(Mathf.Clamp(Vector3.Dot(ba, test), -1f, 1f)) - want) > 0.01f) delta = -delta;
+            if (pole.HasValue && straight) { if (Vector3.Dot(test - bc, pole.Value) < 0f) delta = -delta; }
+            else if (Mathf.Abs(Mathf.Acos(Mathf.Clamp(Vector3.Dot(ba, test), -1f, 1f)) - want) > 0.01f) delta = -delta;
             b.rotation = Quaternion.AngleAxis(delta, axis) * b.rotation;
             // (2) 肩：手首が target の方を向くように腕全体を回す
             Vector3 cur = c.position - pa, to = t - pa;

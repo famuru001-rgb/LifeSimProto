@@ -8,6 +8,10 @@ namespace LifeSimProto
     /// </summary>
     public partial class SimCharacter
     {
+        /// <summary>足の合わせ（ProtoBody.Ground.cs）：世界と、座っている席。</summary>
+        public LoungeWorld World { get { return world; } }
+        public Seat SeatNow { get { return state == State.Sitting || state == State.Eating ? seat : null; } }
+
         public void MotionPartners(List<SimCharacter> list)
         {
             list.Clear();
