@@ -27,6 +27,7 @@ Shader "LifeSim/Foliage"
         _UseGround ("Use Ground Color", Float) = 0
         _GroundRect ("Ground Rect (x0,y0,1/w,1/h)", Vector) = (0,0,1,1)
         _GroundMul ("Ground Color Mul", Float) = 1
+        _GroundGray ("Ground: use only brightness of base (0=off, else 1/avg brightness)", Float) = 0
     }
     SubShader
     {
@@ -42,7 +43,7 @@ Shader "LifeSim/Foliage"
         CBUFFER_START(UnityPerMaterial)
             float4 _BaseMap_ST;
             float _BumpScale, _UseBump;
-            float4 _GroundRect; float _UseGround, _GroundMul;
+            float4 _GroundRect; float _UseGround, _GroundMul, _GroundGray;
             half4 _BaseColor;
             float _UseVertexColor, _UseVertexAlpha, _WindStrength, _WindSpeed, _WindScale, _WindYScale, _Wrap, _UpNormal, _TipLight, _Translucency, _FadeStart, _FadeEnd, _Cull, _Cutoff;
         CBUFFER_END
@@ -118,7 +119,10 @@ Shader "LifeSim/Foliage"
                     // 草の色は下の地面の色むらの画像から（根元が地面に溶ける）。2026-11-06：インスタンスの色が効いていなかったため
                     float3 lp = mul(_GroundW2L, float4(i.positionWS, 1)).xyz;
                     float2 guv = float2((lp.x - _GroundRect.x) * _GroundRect.z, (lp.z - _GroundRect.y) * _GroundRect.w);
-                    tex.rgb *= SAMPLE_TEXTURE2D(_GroundTex, sampler_GroundTex, guv).rgb * _GroundMul;
+                    half3 gcol = SAMPLE_TEXTURE2D(_GroundTex, sampler_GroundTex, guv).rgb * _GroundMul;
+                    // _GroundGray>0：草の画像は明るさ（根元の暗さ・葉の明暗）だけ使い、色は下の地面の色にする（依頼30 の草。2026-11-08）
+                    if (_GroundGray > 0) tex.rgb = dot(tex.rgb, half3(0.2126, 0.7152, 0.0722)) * _GroundGray * gcol;
+                    else tex.rgb *= gcol;
                 }
                 float3 n = normalize(front ? i.normalWS : -i.normalWS);
                 if (_UseBump > 0.5)

@@ -218,6 +218,10 @@ namespace LifeSimProto
             // 動き（HMotion.cs。2026-11-04 famuru「二人きりの時間の動きを入れて」）：最後まで（depth 2）の前半〜フィニッシュで流す
             readonly HMotionPlayer mp;
             string form2, form4;   // form2 は立位なら置く所（壁・机）で選び直す（2026-11-04 モーション）
+            // 2026-11-08 モーション（famuru「全部入れる」）：最後まで以外も動きを流す。始まり＝抱き寄せる（ベッド）かキス、キスだけ＝キス、
+            // 愛撫まで＝前半は愛撫・そのあとは愛撫か口・手（フェラ・手で・胸ではさむ・クンニ・69）、終わったあと＝寄りそう（ベッド）
+            string kissForm, petForm, foreForm, afterForm, curForm;   // curForm："#main"＝体位の形、null＝動きなし
+            Vector3 mainAnchor; Quaternion mainRot = Quaternion.identity;
             Vector3 hAnchor; Quaternion hRot = Quaternion.identity;
             readonly Dictionary<SimCharacter, string> rigs = new Dictionary<SimCharacter, string>();
             string phase;
@@ -243,12 +247,11 @@ namespace LifeSimProto
                 else if (bathKind == "bath") pose = Random.value < 0.7f ? "対面座位" : HPlan.Poses[Random.Range(0, HPlan.BedPoseCount)];
                 else pose = HPlan.Poses[Random.Range(0, HPlan.BedPoseCount)];
                 startAt = w.Now;
-                if (depth >= 2)
-                {
-                    HMotionBook.FormsFor(pose, Random.Range(0, 1000), out form2, out form4);
-                    mp = new HMotionPlayer(form2, ProtoBody.FindClip);
-                    PlaceMotionAnchor();
-                }
+                HMotionBook.FormsFor(pose, Random.Range(0, 1000), out form2, out form4);
+                if (bathKind == "bath" && pose == "対面座位") { form2 = "BathSeat"; form4 = null; }   // 湯船の中の対面座位（2026-11-08）
+                PickSideForms();
+                mp = new HMotionPlayer(form2, ProtoBody.FindClip);
+                PlaceMotionAnchor(); mainAnchor = hAnchor; mainRot = hRot;
                 f.vigor = Mathf.Max(f.vigor, HBook.VigorMinAtStart);
                 int girls = 0;
                 foreach (var c in who)
@@ -357,7 +360,70 @@ namespace LifeSimProto
                     default: return -1;   // 始まり・終わったあとは今までどおり（寄りそう・横になる）
                 }
             }
-            bool MotionActive { get { return mp != null && MotionPhaseOf(phase) >= 0 && Direct != null; } }
+            bool MotionActive { get { return mp != null && curForm != null && Direct != null; } }
+
+            void PickSideForms()
+            {
+                var room = spot != null ? spot.room : null; bool bed = room != null && room.bed != null;
+                kissForm = bed ? (Random.value < 0.5f ? "KissLie" : "KissSit") : "KissStand";
+                petForm = bed ? (Random.value < 0.5f ? "PetLie" : "PetSit") : (bathKind != null ? null : "PetSit");
+                string[] oral = { "Fellatio", "Handjob", "Paizuri", "Cunni", "SixtyNine" };
+                foreForm = bed && Random.value < 0.5f ? oral[Random.Range(0, oral.Length)] : petForm;
+                afterForm = bed ? new[] { "AfterArm", "AfterChest", "AfterSpoon" }[Random.Range(0, 3)] : null;
+            }
+
+            /// <summary>場面ごとの形（体位の形のときは "#main"）と、その形の中の場面の番号。</summary>
+            string FormFor(string p, out int pi)
+            {
+                pi = MotionPhaseOf(p);
+                var room = spot != null ? spot.room : null;
+                if (p == "start") { pi = 0; return depth >= 1 && room != null && room.bed != null ? "StartPush" : kissForm; }
+                if (p == "after") { pi = 0; return afterForm; }
+                if (pi < 0) return null;
+                if (depth >= 2) return "#main";
+                if (depth == 1) return pi == 0 ? petForm : foreForm;
+                return kissForm;
+            }
+
+            /// <summary>体位の形以外の基準の点：立ってキスは床、ほかはベッドの上（ベッドが無ければ体位の形と同じ所）。</summary>
+            void AnchorFor(string form)
+            {
+                var room = spot != null ? spot.room : null;
+                if (form == "KissStand")
+                {
+                    if (room != null && room.bed != null)
+                    {
+                        Vector3 c = room.bed.position + room.bedEdge * (room.bedEdgeDist + 0.9f);
+                        hAnchor = new Vector3(c.x, LoungeWorld.FloorY(room.floor), c.z); hRot = Quaternion.LookRotation(room.bedEdge);
+                    }
+                    else { hAnchor = mainAnchor; hRot = mainRot; }
+                    return;
+                }
+                if (room != null && room.bed != null)
+                {
+                    bool fb = room.bedSeatOffs != null;
+                    Vector3 c = room.bed.position - room.bedEdge * (fb ? 0.15f : 0.08f);
+                    hAnchor = new Vector3(c.x, room.bed.position.y + HMotionBook.BedTop, c.z);
+                    hRot = Quaternion.LookRotation(room.bed.forward) * Quaternion.Euler(0f, HMotionBook.YawBed, 0f);
+                    return;
+                }
+                hAnchor = mainAnchor; hRot = mainRot;
+                if (pose == "立位") { hAnchor.y = mainAnchor.y; }
+            }
+
+            void ApplyPhaseForm(string p)
+            {
+                if (mp == null) return;
+                int mi; string sf = FormFor(p, out mi);
+                if (sf == "#main") { curForm = sf; hAnchor = mainAnchor; hRot = mainRot; mp.SetForm(form2); mp.SetPhase(mi); return; }
+                if (sf != null)
+                {
+                    var ph = HMotionBook.Phases(HMotionBook.Family(sf));
+                    if (ProtoBody.FindClip(HMotionBook.Clip(sf, ph[Mathf.Clamp(mi, 0, 3)][0].part, "M")) != null)
+                    { curForm = sf; AnchorFor(sf); mp.SetForm(sf); mp.SetPhase(mi); return; }
+                }
+                curForm = null;
+            }
 
             /// <summary>速さ：発情・性欲が高いと速く、初めて・具合が悪いとゆっくり（仮。モーションの検討の「状況での変え方」）。</summary>
             float MotionSpeed()
@@ -380,6 +446,7 @@ namespace LifeSimProto
                 rigs[f] = "M";
                 var d = Direct;
                 if (d != null) rigs[d.c] = "F";
+                if (curForm != "#main") { if (curForm != null) mp.SetForm(curForm); return; }   // キス・愛撫などは2人の形
                 int k = 0;
                 if (form4 != null)   // 立位は2人だけの形（ペッティングの子は今までどおり）
                     foreach (var p in ps)
@@ -444,14 +511,14 @@ namespace LifeSimProto
                         outw.Normalize();
                         Vector3 a = desk.lookAt + outw * (0.30f + HMotionBook.StandDeskEdge);   // 机の奥行きは約0.6m
                         hAnchor = new Vector3(a.x, p.y, a.z); hRot = Quaternion.LookRotation(outw);
-                        form2 = "StandDesk";
+                        form2 = "StandDesk"; form4 = "StandDesk3";
                     }
                 }
                 else if (Random.value < (bathKind == "shower" ? HMotionBook.StandWallChanceShower : HMotionBook.StandWallChance) && FindWall(p, out wp, out wn))
                 {
                     Vector3 a = wp + wn * HMotionBook.StandWallBack;
                     hAnchor = new Vector3(a.x, p.y, a.z); hRot = Quaternion.LookRotation(wn);
-                    form2 = "StandWall";
+                    form2 = "StandWall"; form4 = "StandWall3";
                 }
                 if (mp != null) mp.SetForm(form2);
             }
@@ -487,7 +554,9 @@ namespace LifeSimProto
                 time = mp.t;
                 return true;
             }
-            public string MotionDebug { get { return mp == null ? "動きなし（キスだけ・愛撫まで）" : (MotionActive ? mp.form + "・" + mp.Part + "・" + mp.t.ToString("0.00") : "動きは前半から（今：" + phase + "）"); } }
+            /// <summary>自分以外の、いっしょに動いている人（手を相手の体に合わせるのに使う。2026-11-08 IK の B）。</summary>
+            public void Others(SimCharacter me, List<SimCharacter> list) { foreach (var k in rigs.Keys) if (k != me && k != null) list.Add(k); }
+            public string MotionDebug { get { return mp == null ? "動きなし" : (MotionActive ? mp.form + "・" + mp.Part + "・" + mp.t.ToString("0.00") : "動きなし（今：" + phase + "）"); } }
 
             // ---------------- 今の様子（キャラの情報の「ようす」に出す） ----------------
             static string PhaseName(string p)
@@ -645,7 +714,7 @@ namespace LifeSimProto
                     case "after": len = sick ? HBook.SickAfterMin : (bathKind == "shower" ? HBook.ShowerAfterMin : (bathKind == "bath" ? HBook.BathAfterMin : HBook.AfterMin)); break;
                     default: len = 10f; break;
                 }
-                if (mp != null) { int mi = MotionPhaseOf(p); if (mi >= 0) mp.SetPhase(mi); }
+                ApplyPhaseForm(p);
                 // ヒロインのスキル：篤の相手のとき、篤のフィニッシュまでの時間が短くなる
                 var dd = Direct;
                 if (dd != null && (p == "mid1" || p == "mid2" || p == "mid3" || p == "resume")) len *= HSkill.FinishTimeMul(dd.c.HLevel);

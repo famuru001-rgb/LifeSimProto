@@ -21,6 +21,8 @@ namespace LifeSimProto
         public int chosen = -1;
         public bool choiceOpen;
         public string pendingH;   // エッチへ・誘う（終わってから）
+        // 2人の動き（LifePair.cs。2026-11-08 モーション）
+        public LifePairBook.Spec pair; public bool pairParsed, pairSet; public Vector3 pairPos; public Quaternion pairRot; public float pairT0;
         public readonly List<SimCharacter> extras = new List<SimCharacter>();   // ほかに加わった寮生（複数人のできごと）
         public readonly List<KeyValuePair<SimCharacter, float>> goOut = new List<KeyValuePair<SimCharacter, float>>();   // 終わったら出かける人と分
         public string Names { get { string s = main.displayName + (partner != null ? "・" + partner.displayName : ""); foreach (var c in extras) s += "・" + c.displayName; return s; } }
@@ -645,6 +647,18 @@ namespace LifeSimProto
                         var c = a.Length > 2 ? w.characters.Find(x => x.letter == a[2].ToUpperInvariant()) : null;
                         if (c == null) return "life stroll: 記号がない";
                         return "life stroll: " + c.displayName + " " + c.LifeTestStroll();
+                    }
+                case "reach":
+                    {
+                        // 試験用（2026-11-08 IK の B）：life reach on / off（手を相手の体に合わせるのを入れる・切る）／ life reach 記号（今どこへ合わせているか）
+                        string v = a.Length > 2 ? a[2] : "";
+                        if (v == "on" || v == "off") { ProtoBody.ReachEnabled = v == "on"; return "life reach: " + (ProtoBody.ReachEnabled ? "合わせる" : "合わせない（今までどおり）"); }
+                        var c = w.characters.Find(x => x.letter == v.ToUpperInvariant());
+                        if (c == null) return "life reach: 記号がない（on・off・記号）";
+                        var pb = c.GetComponent<ProtoBody>();
+                        string cl; float tm; Vector3 ps; Quaternion rt;
+                        bool hm = c.HMotionNow(out cl, out tm, out ps, out rt);
+                        return "life reach: " + c.displayName + " 動き=" + (hm ? cl : "なし") + "・" + (pb != null && pb.ReachDebug != null ? pb.ReachDebug : "合わせていない（映っていない・表にない）");
                     }
                 case "look":
                     {

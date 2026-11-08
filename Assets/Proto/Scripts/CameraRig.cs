@@ -91,7 +91,7 @@ namespace LifeSimProto
             }
             else
             {
-            if (LoungeWorld.NewLayout) { pivot.x = Mathf.Clamp(pivot.x, -84f, 74f); pivot.z = Mathf.Clamp(pivot.z, -182f, 60f); } // 新しい学園（NewDorm.cs）：島の中だけ（正門の外の街へは行かない）2026-11-01 家具のチャット
+            if (LoungeWorld.NewLayout) { pivot.x = Mathf.Clamp(pivot.x, -136f, 74f); /* 北の森を2倍にしたので −84→−136（2026-11-08 家具のチャット） */ pivot.z = Mathf.Clamp(pivot.z, -182f, 60f); } // 新しい学園（NewDorm.cs）：島の中だけ（正門の外の街へは行かない）2026-11-01 家具のチャット
             else
             {
             pivot.x = Mathf.Clamp(pivot.x, -38f, 78f); // 東の3つの寮まで（2026-10-31）

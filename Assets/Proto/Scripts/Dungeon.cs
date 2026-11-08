@@ -408,17 +408,17 @@ namespace LifeSimProto
                 case DungeonRun.Ev.Monster:
                     if (choice == 2) { GoHome(r, "引き返した"); return; }
                     dur = choice == 0 ? Random.Range(6f, 10f) : 4;
-                    if (r.onStage) foreach (var m in r.members) m.DungeonPose(choice == 0 ? FightScene(m) : null, choice == 0 ? MonsterName(r.floor) + "と戦っている" : "そっと通り抜けている");
+                    if (r.onStage) foreach (var m in r.members) m.DungeonPose(choice == 0 ? FightScene(m) : "忍び足", choice == 0 ? MonsterName(r.floor) + "と戦っている" : "そっと通り抜けている");
                     break;
                 case DungeonRun.Ev.Trap:
                     if (choice == 2) { GoHome(r, "引き返した"); return; }
                     dur = choice == 0 ? 8 : 2;
-                    if (r.onStage) foreach (var m in r.members) m.DungeonPose(choice == 0 ? "工房" : null, choice == 0 ? "罠を調べている" : "罠を駆け抜けている");
+                    if (r.onStage) foreach (var m in r.members) m.DungeonPose(choice == 0 ? "工房" : "駆け抜け", choice == 0 ? "罠を調べている" : "罠を駆け抜けている");
                     break;
                 case DungeonRun.Ev.Chest:
                     if (choice == 2) { r.Log("宝箱はそのままにした"); NextRoom(r); return; }
                     dur = choice == 1 ? 8 : 2;
-                    if (r.onStage) foreach (var m in r.members) m.DungeonPose(choice == 1 ? "工房" : null, choice == 1 ? "宝箱を調べている" : "宝箱を開けている");
+                    if (r.onStage) foreach (var m in r.members) m.DungeonPose(choice == 1 ? "工房" : "宝箱", choice == 1 ? "宝箱を調べている" : "宝箱を開けている");
                     break;
                 case DungeonRun.Ev.Spring:
                     if (choice == 1) { NextRoom(r); return; }

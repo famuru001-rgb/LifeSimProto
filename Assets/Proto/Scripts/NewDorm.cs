@@ -33,7 +33,7 @@ namespace LifeSimProto
                 StairA0 = 0.4f; StairA1 = 5.2f; StairB0 = -0.4f; StairB1 = -5.2f;
                 KitchenX0 = 7.5f; KitchenDoorZ = 14.3f;
                 PassX0 = 3f; PassX1 = 5.2f;
-                Floor2Y = 3.5f; Floor3Y = 7f; RoofY = 10.5f;
+                Floor2Y = 3.5f; Floor3Y = 7f; RoofY = 14f; // 屋上の階＝北東の塔のてっぺんの天文台（寮の屋根より上。famuru 2026-11-08）
                 LoungeCenter = new Vector3(2.9f, 0f, -1.2f);
                 BirthdaySpot = new Vector3(-2.6f, 0f, 1.0f);
                 FireplaceSpot = new Vector3(-2.6f, 0f, 2.9f);
@@ -65,7 +65,7 @@ namespace LifeSimProto
 
         // 北西の大きな塔（先生の個室3つ）。中心は建物の角
         static readonly Vector2 TeacherTowerC = new Vector2(12f, -15.5f);
-        const float TeacherTowerR = 5f, TowerR = 3.5f;
+        const float TeacherTowerR = 4.5f, TowerR = 4.5f; // 3本とも半径 4.5m（famuru 2026-11-08）
         /// <summary>新しい学園の場所の注目点（DormPlaces.FocusOf が使う）。</summary>
         static readonly Dictionary<string, Vector3> NewFocus = new Dictionary<string, Vector3>();
 
@@ -88,6 +88,7 @@ namespace LifeSimProto
             NFrontRooms();
             NOuterWalls();
             NTowers();
+            NTowerRooms();      // 先生の塔の2・3階・南西の塔の1〜3階を、となりの部屋とつなぐ（2026-11-08）
             NFoodTower();       // 北東の塔：食料庫と屋上の天文台への階段
             NSpa();
             NCourtyard();       // 中庭（寮の裏）
@@ -104,6 +105,7 @@ namespace LifeSimProto
             NSchoolOutside();   // 学校の屋根・塔
             SkinAll();          // 本館の外壁の石の部品（依頼28）
             NPlacesOutside();   // 温室と工房（本館の北の離れ）
+            NShore();           // プールと浜辺の席・見どころ・場所（CampusShore.cs。2026-11-08 家具のチャット）
             FinishAreas();
             NNav();
             ApplyPlaces();
@@ -143,7 +145,11 @@ namespace LifeSimProto
                     Slab("Floor_Band", f, Rect.MinMaxRect(StairB0, BandZ0, WingIn, BandZ1), woodFloor); // 2階→3階の段（x −5.2〜−0.4）の上はあける
                 }
             }
-            Slab("Roof_Floor", 3, Rect.MinMaxRect(-WingOut, FrontOut, WingOut, BackOut), mortarDark); // 3階の天井（上に屋根）
+            {
+                // 3階の天井（上に屋根）。屋上の階（天文台）を 14m にしたので、軒の高さ（10.5m）に直接置く（2026-11-08）
+                var rf = Box("Roof_Floor", new Vector3(0f, EaveY - 0.075f, (FrontOut + BackOut) / 2f), new Vector3(WingOut * 2f, 0.15f, BackOut - FrontOut), mortarDark);
+                slabRenderers.Add(new KeyValuePair<float, Renderer>(EaveY, rf.GetComponent<Renderer>()));
+            }
         }
 
         // ================= 談話室 =================
@@ -451,7 +457,7 @@ namespace LifeSimProto
             // ベッド：位置・向き（頭板の側）、机：位置・向き
             var beds = new[] { new Vector3(10.9f, 0f, -17.75f), new Vector3(14.3f, 0f, -14.0f), new Vector3(14.25f, 0f, -17.35f) };
             float[] bedYaw = { 0f, -90f, -90f };
-            var desks = new[] { new Vector3(9.3f, 0f, -18.35f), new Vector3(14.7f, 0f, -12.55f), new Vector3(12.75f, 0f, -18.35f) };
+            var desks = new[] { new Vector3(9.6f, 0f, -18.2f), new Vector3(14.3f, 0f, -12.6f), new Vector3(12.75f, 0f, -18.35f) }; // 塔を半径 4.5m にしたので壁から出ないよう寄せた
             float[] deskYaw = { 0f, 180f, 0f };
             for (int i = 0; i < 3; i++)
             {
@@ -708,17 +714,27 @@ namespace LifeSimProto
                 float y = FloorY(f);
                 // 手前（z −15.5）：1階は入口（x 1.5）・先生の個室R2への扉（x 9.4）、2階は入口の通路（渡り廊下へ）
                 var gapsF = new List<Vector4>();
-                if (f == 0) { gapsF.Add(new Vector4(a0 + 0.5f, a0 + 2.5f, y, y + 2.6f)); gapsF.Add(new Vector4(a0 + 8.95f, a0 + 9.85f, y, y + 2.2f)); }
+                if (f == 0) { gapsF.Add(UseV3 ? new Vector4(a0 + DormDoorX - 0.83f, a0 + DormDoorX + 0.83f, y, y + 2.6f) : new Vector4(a0 + 0.5f, a0 + 2.5f, y, y + 2.6f)); gapsF.Add(new Vector4(a0 + 8.95f, a0 + 9.85f, y, y + 2.2f)); } // 入口の穴は、依頼28 の入口の口（幅 1.66m）と同じに
                 if (f == 1) gapsF.Add(new Vector4(a0 + PassX0 + 0.2f, a0 + PassX1 - 0.2f, y, y + 2.5f));
+                // 塔の中（famuru 2026-11-08「塔の中に前の壁が残っているので削除」）：塔の円の中は外の石の部品を張らない。
+                // 壁は、先生の塔は2・3階（1階は先生の個室の仕切り）、南西の塔は1〜3階とも消して、となりの部屋と塔をつなぐ
+                var skinF = new List<Vector4>(gapsF);
+                skinF.Add(new Vector4(a0 + WingOut - TowerR - 0.1f, a0 + WingOut + 0.3f, y, y + FloorH));
+                skinF.Add(new Vector4(-0.1f, a0 - WingOut + TowerR + 0.1f, y, y + FloorH));
+                if (f >= 1) gapsF.Add(new Vector4(a0 + WingOut - TowerR, a0 + WingOut + 0.15f, y, y + FloorH));
+                gapsF.Add(new Vector4(0f, a0 - WingOut + TowerR, y, y + FloorH));
                 var front = WallF(f, new Vector2(-WingOut - 0.15f, FrontOut), new Vector2(WingOut + 0.15f, FrontOut), gapsF.ToArray());
-                Outer(front, y, y + FloorH, Vector3.back, gapsF.ToArray(), f == 2);
+                Outer(front, y, y + FloorH, Vector3.back, skinF.ToArray(), f == 2);
+                if (f == 0) EntranceV3(front, "Entrance_Dorm", new Vector3(DormDoorX, y, FrontOut - WallT / 2f), Vector3.back, new Vector3(0.75f, 1f, 1f), 0.6f); // 寮の入口（依頼28 追記3。扉をあけた形）。すぐ横の2階の渡り廊下にかからないよう、横だけ 0.75 倍にして 0.25m 寄せる
                 float[] fwx = f == 0 ? new[] { -8.6f } : (f == 1 ? new[] { -8.6f, -1.2f } : new[] { -8.6f, -1.2f, 2.0f });
-                foreach (float x in fwx) Window(front, new Vector3(x, y, FrontOut), Vector3.forward, 1.0f, 1.0f, 1.3f);
+                foreach (float x in fwx) { if (x < -WingOut + TowerR + 0.6f || x > WingOut - TowerR - 0.6f) continue; Window(front, new Vector3(x, y, FrontOut), Vector3.forward, 1.0f, 1.0f, 1.3f); } // 塔の中の窓はなし
                 // 奥（z 15.5）：1階は食堂から庭へ（x 2.0）、浴場から露天風呂へ（x −9.6）
                 var gapsB = new List<Vector4>();
                 if (f == 0) { gapsB.Add(new Vector4(a0 + 1.0f, a0 + 3.0f, y, y + 2.6f)); gapsB.Add(new Vector4(a0 - 10.1f, a0 - 9.1f, y, y + 2.2f)); }
                 var back = WallF(f, new Vector2(-WingOut - 0.15f, BackOut), new Vector2(WingOut + 0.15f, BackOut), gapsB.ToArray());
-                Outer(back, y, y + FloorH, Vector3.forward, gapsB.ToArray(), f == 2);
+                var skinB = new List<Vector4>(gapsB);
+                skinB.Add(new Vector4(a0 + WingOut - NETowerR - 0.1f, a0 + WingOut + 0.3f, y, y + FloorH)); // 北東の塔の中は石の部品なし（壁は台所・図書室との仕切り）
+                Outer(back, y, y + FloorH, Vector3.forward, skinB.ToArray(), f == 2);
                 float[] bwx = f == 0 ? new[] { -1.2f, 5.6f, 9.8f } : new[] { -9f, -3f, 3f, 9f };
                 foreach (float x in bwx) Window(back, new Vector3(x, y, BackOut), Vector3.back, 1.0f, 1.0f, 1.3f);
                 // 北と南（x ±12）
@@ -728,10 +744,13 @@ namespace LifeSimProto
                     if (f == 0 && s > 0) gs.Add(new Vector4(-12.9f - (FrontOut) - 0.45f, -12.9f - FrontOut + 0.45f, y, y + 2.2f)); // 先生の個室R3への扉（z −12.9）
                     if (s > 0) gs.Add(new Vector4(TDoorZ - FrontOut - 0.45f, TDoorZ - FrontOut + 0.45f, y, y + 2.2f)); // 北東の塔への扉（z 13.7）
                     if (f == 0 && s < 0) gs.Add(new Vector4(LaundryDoorZ - FrontOut - 0.45f, LaundryDoorZ - FrontOut + 0.45f, y, y + 2.2f)); // ランドリーから物干し場への扉（z −10.6）
+                    var skinS = new List<Vector4>(gs);
+                    skinS.Add(new Vector4(-0.1f, TowerR + 0.1f, y, y + FloorH));                         // 先生の塔・南西の塔の中
+                    if (s > 0) skinS.Add(new Vector4(BackOut - FrontOut - NETowerR - 0.1f, BackOut - FrontOut + 0.1f, y, y + FloorH)); // 北東の塔の中
+                    if (s < 0 || f >= 1) gs.Add(new Vector4(0f, TowerR, y, y + FloorH));               // 塔とつなぐ（先生の塔は2・3階、南西の塔は1〜3階）
                     var side = WallF(f, new Vector2(s * WingOut, FrontOut), new Vector2(s * WingOut, BackOut), gs.ToArray());
-                    Outer(side, y, y + FloorH, new Vector3(s, 0f, 0f), gs.ToArray(), f == 2);
+                    Outer(side, y, y + FloorH, new Vector3(s, 0f, 0f), skinS.ToArray(), f == 2);
                     for (int i = 0; i < 5; i++) Window(side, new Vector3(s * WingOut, y, FrontZ + RoomW * (i + 0.5f)), new Vector3(-s, 0f, 0f), 1.0f, 0.9f, 1.2f);
-                    if (!(f == 0 && s > 0)) Window(side, new Vector3(s * WingOut, y, (FrontZ + FrontOut) / 2f), new Vector3(-s, 0f, 0f), 1.0f, 1.0f, 1.3f);
                     Window(side, new Vector3(s * WingOut, y, (BackZ + BackOut) / 2f), new Vector3(-s, 0f, 0f), 1.0f, 1.0f, 1.3f);
                 }
             }
@@ -747,28 +766,121 @@ namespace LifeSimProto
             TowerRing(new Vector2(-WingOut, FrontOut), TowerR, 90f, 360f, 10, 3, false);
             TowerRing(NETowerC, NETowerR, 270f, 540f, 12, 3, false); // 北東：食料庫と屋上への階段（NFoodTower。半径 4.5）
             // 屋根
-            PlaceKit("Roof_Cone", new Vector3(TeacherTowerC.x, FloorY(3), TeacherTowerC.y), 0f, new Vector3(TeacherTowerR / 3.5f, 1.1f, TeacherTowerR / 3.5f));
-            PlaceKit("Roof_Cone", new Vector3(-WingOut, FloorY(3), FrontOut), 0f, Vector3.one);
+            if (Tower3Kit(TeacherTowerR) != null)
+            {
+                // 依頼31（famuru 2026-11-08「寮の塔の形を修正して」）：寮の屋根の上に丸い段（3m）と、城壁の塔と同じ屋根（Tower2_Roof）。北東は天文台なので胸壁
+                TowerTop(TeacherTowerC, TeacherTowerR);
+                TowerTop(new Vector2(-WingOut, FrontOut), TowerR);
+                TowerBattlement(NETowerC, NETowerR);
+                return;
+            }
+            PlaceKit("Roof_Cone", new Vector3(TeacherTowerC.x, EaveY, TeacherTowerC.y), 0f, new Vector3(TeacherTowerR / 3.5f, 1.1f, TeacherTowerR / 3.5f));
+            PlaceKit("Roof_Cone", new Vector3(-WingOut, EaveY, FrontOut), 0f, Vector3.one);
             PlaceKit("Battlement_Top_Round", new Vector3(WingOut, FloorY(3), BackOut), 0f, new Vector3(NETowerR / 3.5f, 1f, NETowerR / 3.5f)); // 屋上の天文台（屋根なし）
+        }
+
+        // ================= 丸い塔の部品（依頼31 の寮の塔_v1。2026-11-08 家具のチャット） =================
+        // 部品は塔の中心が原点の 30° の曲がった石の壁。Logs\old_towers.txt で前の多角形の塔に戻す
+        static int tower3c = -1;
+        /// <summary>その半径の塔の部品の名前の頭（"Tower3_R50" など）。部品が無いか Logs\old_towers.txt があれば null。</summary>
+        static string Tower3Kit(float r)
+        {
+            if (tower3c < 0) tower3c = (UseV3 && Resources.Load<GameObject>("Furniture/Towers3/Furn_Tower3_R50_Plain") != null && !File.Exists(Path.GetFullPath(Path.Combine(Application.dataPath, "../Logs/old_towers.txt")))) ? 1 : 0;
+            if (tower3c == 0) return null;
+            string k = "Tower3_R" + Mathf.RoundToInt(r * 10f);
+            return Resources.Load<GameObject>("Furniture/Towers3/Furn_" + k + "_Plain") != null ? k : null;
+        }
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetTower3() { tower3c = -1; }
+        /// <summary>部品の弧の真ん中（Blender の +Y）が向く Unity の向きのずれ（度）。</summary>
+        static float Tower3YawOff = 180f;
+
+        /// <summary>塔の中心 c に、角度 deg（0° が +x、90° が +z）の向きの部品を置く。</summary>
+        GameObject Tower3Piece(string model, Vector2 c, float y, float deg, Vector3 scale)
+        {
+            Vector3 m = new Vector3(Mathf.Cos(deg * Mathf.Deg2Rad), 0f, Mathf.Sin(deg * Mathf.Deg2Rad));
+            float yaw = Quaternion.LookRotation(m).eulerAngles.y + Tower3YawOff;
+            return PlaceKit(model, new Vector3(c.x, y, c.y), yaw, scale);
+        }
+
+        /// <summary>寮の屋根の上の丸い段（360°）と屋根。</summary>
+        void TowerTop(Vector2 c, float r)
+        {
+            string k = Tower3Kit(r);
+            if (k == null) return;
+            // 案1（famuru 2026-11-08）：軒（10.5m）の上に丸い壁を1段（3.5m）と上の段（3m）で 17m、その上に屋根。寮の屋根（棟 約13.4m）より上に出る
+            for (int i = 0; i < 12; i++) Tower3Piece(k + (i % 3 == 1 ? "_Window" : "_Plain"), c, EaveY, i * 30f + 15f, Vector3.one);
+            for (int i = 0; i < 12; i++) Tower3Piece(k + (i % 3 == 1 ? "_TopWindow" : "_Top"), c, EaveY + 3.5f, i * 30f + 15f, Vector3.one);
+            // 依頼28 の Tower2_Roof（直径 8m・高さ 7m。城壁の塔 直径 7m 用）を、段の壁の外の半径（r＋0.64）に合わせる
+            float sx = (r + 0.64f) * 2f * (8f / 7f) / 8f;
+            PlaceKit("Tower2_Roof", new Vector3(c.x, EaveY + 6.5f, c.y), 0f, new Vector3(sx, 1.05f, sx));
+        }
+
+        /// <summary>北東の塔：屋上の天文台のまわりの胸壁（360°）。</summary>
+        void TowerBattlement(Vector2 c, float r)
+        {
+            string k = Tower3Kit(r);
+            if (k == null || Resources.Load<GameObject>("Furniture/Towers3/Furn_" + k + "_Battlement") == null)
+            {
+                PlaceKit("Battlement_Top_Round", new Vector3(c.x, FloorY(3), c.y), 0f, new Vector3(r / 3.5f, 1f, r / 3.5f));
+                return;
+            }
+            // 軒（10.5m）から天文台の床（14m）まで丸い壁を1段、その上に胸壁
+            for (int i = 0; i < 12; i++) Tower3Piece(k + (i % 3 == 1 ? "_Window" : "_Plain"), c, EaveY, i * 30f + 15f, Vector3.one);
+            for (int i = 0; i < 12; i++) Tower3Piece(k + "_Battlement", c, FloorY(3), i * 30f + 15f, Vector3.one);
         }
 
         /// <summary>多角形の塔の壁（角度 a0〜a1 の弧。0° が +x、90° が +z）。floors 階分。open なら中に入れる（床は別）。</summary>
         void TowerRing(Vector2 c, float r, float a0, float a1, int segs, int floors, bool open)
         {
+            string kit = Tower3Kit(r); // 依頼31 の丸い塔の部品（30° ごと）
+            if (kit != null) segs = Mathf.Max(1, Mathf.RoundToInt((a1 - a0) / 30f));
             for (int f = 0; f < floors; f++)
             {
+                WallSeg first = null, last = null;
                 for (int i = 0; i < segs; i++)
                 {
                     float t0 = Mathf.Deg2Rad * Mathf.Lerp(a0, a1, i / (float)segs), t1 = Mathf.Deg2Rad * Mathf.Lerp(a0, a1, (i + 1) / (float)segs);
                     Vector2 p0 = c + new Vector2(Mathf.Cos(t0), Mathf.Sin(t0)) * r, p1 = c + new Vector2(Mathf.Cos(t1), Mathf.Sin(t1)) * r;
-                    var w = WallF(f, p0, p1);
+                    // 丸い石の部品があるときは、内側の平らな板の壁は作らない（famuru 2026-11-08「塔の外壁にくっついている板のような壁を削除して」）。
+                    // カメラの前で石の部品を消すしくみのため、形のない壁の線だけ登録する
+                    WallSeg w;
+                    if (kit != null) { w = new WallSeg { a = p0, b = p1 }; walls.Add(w); }
+                    else w = WallF(f, p0, p1);
+                    if (i == 0) first = w;
+                    last = w;
                     Vector2 mo = ((p0 + p1) / 2f - c).normalized;
+                    if (kit != null)
+                    {
+                        // 曲がった石の壁（窓の所は窓つき）。壁と一緒にカメラの前で消える
+                        var go = Tower3Piece(kit + (i % 3 == 1 ? "_Window" : "_Plain"), c, FloorY(f), Mathf.Lerp(a0, a1, (i + 0.5f) / segs), Vector3.one);
+                        if (go != null && w != null) foreach (var rr in go.GetComponentsInChildren<Renderer>()) w.upper.Add(rr);
+                        // 外の石の厚みの所は歩けないように（1階だけ）
+                        if (f == 0)
+                            for (int s2 = 0; s2 < 4; s2++)
+                            {
+                                float tt = Mathf.Lerp(t0, t1, (s2 + 0.5f) / 4f);
+                                Vector2 q = c + new Vector2(Mathf.Cos(tt), Mathf.Sin(tt)) * (r + 0.45f);
+                                blockers[0].Add(new Rect(q.x - 0.3f, q.y - 0.3f, 0.6f, 0.6f));
+                            }
+                    }
+                    else
                     Outer(w, FloorY(f), FloorY(f) + FloorH, new Vector3(mo.x, 0f, mo.y), new Vector4[0], false); // 塔の外側も石の部品（依頼28）
-                    if (i % 3 == 1)
+                    if (i % 3 == 1 && kit == null) // 丸い石の部品は窓つき（Window の部品にガラスがある）
                     {
                         Vector2 m = (p0 + p1) / 2f, n = (c - m).normalized;
                         Window(w, new Vector3(m.x, FloorY(f), m.y), new Vector3(n.x, 0f, n.y), 1.0f, 0.8f, 1.3f);
                     }
+                }
+                // 寮の外壁につながる所の隅石（すき間をかくす）
+                if (kit != null)
+                {
+                    // 弧のはしは寮の壁の中心線の上なので、帯（幅 0.6m）が部屋の中に出ないよう、壁の外の石の厚みの所（0.45m 外）へずらす
+                    float dEnd = Mathf.Rad2Deg * 0.45f / (r + 0.4f);
+                    var e0 = Tower3Piece(kit + "_End", c, FloorY(f), a0 + dEnd, Vector3.one);
+                    var e1 = Tower3Piece(kit + "_End", c, FloorY(f), a1 - dEnd, Vector3.one);
+                    if (e0 != null && first != null) foreach (var rr in e0.GetComponentsInChildren<Renderer>()) first.upper.Add(rr);
+                    if (e1 != null && last != null) foreach (var rr in e1.GetComponentsInChildren<Renderer>()) last.upper.Add(rr);
                 }
             }
         }
@@ -791,18 +903,20 @@ namespace LifeSimProto
         // 部品は壁の上の部分と一緒に、カメラの前では消える（壁の upper に入れる）。Logs\old_buildings.txt で前の見た目。
         class SkinInfo
         {
-            public Vector2 a, dir; public float len, y0, y1; public Vector3 outward; public bool cornice, done;
+            public Vector2 a, dir; public float len, y0, y1, depth = 0.6f; public Vector3 outward; public bool cornice, done;
             public readonly List<Vector2> gaps = new List<Vector2>();
+            public readonly List<Vector2> full = new List<Vector2>(); // 床から天井までの穴（塔の中など。軒の帯も付けない）
             public readonly List<float> wins = new List<float>();
         }
         readonly Dictionary<WallSeg, SkinInfo> skins = new Dictionary<WallSeg, SkinInfo>();
 
-        void Outer(WallSeg w, float y0, float y1, Vector3 outward, Vector4[] gaps, bool cornice)
+        void Outer(WallSeg w, float y0, float y1, Vector3 outward, Vector4[] gaps, bool cornice, float depth = 0.6f)
         {
             if (!NewLayout || !UseV3 || w == null || skins.ContainsKey(w)) return;
-            var si = new SkinInfo { a = w.a, len = Vector2.Distance(w.a, w.b), y0 = y0, y1 = y1, outward = outward.normalized, cornice = cornice };
+            var si = new SkinInfo { a = w.a, len = Vector2.Distance(w.a, w.b), y0 = y0, y1 = y1, outward = outward.normalized, cornice = cornice, depth = depth };
             si.dir = (w.b - w.a).normalized;
             foreach (var g in gaps) if (g.z <= y0 + 0.05f) si.gaps.Add(new Vector2(g.x, g.y)); // 床からの出入口だけあける（窓の穴は窓の部品で）
+            foreach (var g in gaps) if (g.z <= y0 + 0.05f && g.w >= y1 - 0.05f) si.full.Add(new Vector2(g.x, g.y));
             skins[w] = si;
         }
 
@@ -843,15 +957,96 @@ namespace LifeSimProto
                 float cur = 0f;
                 foreach (var u in used) { if (u.x > cur + 0.05f) FillPlain(w, si, cur, u.x, yaw, hs); cur = Mathf.Max(cur, u.y); }
                 if (si.len > cur + 0.05f) FillPlain(w, si, cur, si.len, yaw, hs);
+                SkinBlockers(si);
                 // 軒の帯
                 if (si.cornice)
                 {
                     int n = Mathf.Max(1, Mathf.RoundToInt(si.len / 3f));
                     float seg = si.len / n;
-                    for (int k = 0; k < n; k++) SkinPiece(w, si, "Cornice2", seg * (k + 0.5f), seg, yaw, 1f, si.y1 - 0.6f);
+                    for (int k = 0; k < n; k++)
+                    {
+                        float cm = seg * (k + 0.5f);
+                        bool skip = false;
+                        foreach (var g in si.full) if (cm > g.x && cm < g.y) skip = true;
+                        if (!skip) SkinPiece(w, si, "Cornice2", cm, seg, yaw, 1f, si.y1 - 0.6f);
+                    }
                 }
             }
         }
+
+        /// <summary>
+        /// 入口（依頼28 追記3：扉の板を外して口をあけた Tripo 版の入口と、別の部品の左右の扉）を、壁の扉の穴の外に置く。
+        /// face：穴の真ん中の、壁の外の面の床の位置。模型の背面が石の壁の部品（厚み 0.6m）の外の面に付くように、大きさの箱で測って寄せる。扉は昼も夜も開けた形（生徒が出入りするので）。
+        /// </summary>
+        /// <summary>寮の入口の真ん中（反転の前の x）。依頼28 の入口を置くときは、すぐ横の2階の渡り廊下にかからないよう 0.25m 寄せた所。</summary>
+        static float DormDoorX { get { return UseV3 ? 1.25f : 1.5f; } }
+
+        void EntranceV3(WallSeg w, string model, Vector3 face, Vector3 outward, Vector3 scale, float passHalf)
+        {
+            if (!NewLayout || !UseV3) return;
+            outward = outward.normalized;
+            float yaw = Quaternion.LookRotation(outward).eulerAngles.y;
+            var go = PlaceKit(model, face, yaw, scale);
+            if (go == null) return;
+            var dr = PlaceKit(model + "_Door", face, yaw, scale);
+            // 背面（outward の向きでいちばん奥）を壁の部品の外の面へ
+            Vector3 wOut = root.TransformDirection(outward);
+            Vector3 wFace = root.TransformPoint(face);
+            float back = float.MaxValue;
+            foreach (var r in go.GetComponentsInChildren<Renderer>())
+            {
+                var bb = r.bounds;
+                for (int i = 0; i < 8; i++)
+                {
+                    var cpt = new Vector3((i & 1) == 0 ? bb.min.x : bb.max.x, (i & 2) == 0 ? bb.min.y : bb.max.y, (i & 4) == 0 ? bb.min.z : bb.max.z);
+                    back = Mathf.Min(back, Vector3.Dot(cpt - wFace, wOut));
+                }
+            }
+            float skinT = Resources.Load<GameObject>("Furniture/Buildings3/Furn_Wall2_Plain") != null ? 0.6f : 0f;
+            Vector3 move = wOut * (skinT + 0.01f - back);
+            go.transform.position += move;
+            if (dr != null)
+            {
+                dr.transform.position += move;
+                // 左右の扉を蝶番（子の原点）で外へ開く
+                foreach (var t in dr.GetComponentsInChildren<Transform>())
+                {
+                    if (t.name.EndsWith("_Door_L")) t.RotateAround(t.position, Vector3.up, EntranceOpenDeg);
+                    else if (t.name.EndsWith("_Door_R")) t.RotateAround(t.position, Vector3.up, -EntranceOpenDeg);
+                }
+            }
+            if (w != null)
+            {
+                foreach (var r in go.GetComponentsInChildren<Renderer>()) w.upper.Add(r);
+                if (dr != null) foreach (var r in dr.GetComponentsInChildren<Renderer>()) w.upper.Add(r);
+            }
+            // 入口の石の部分は歩けないように（口の真ん中の通り道 ±passHalf だけあける）。開いた扉の所も
+            Vector3 along3 = Vector3.Cross(Vector3.up, outward).normalized;
+            Vector2 al = new Vector2(along3.x, along3.z), ou = new Vector2(outward.x, outward.z), f2 = new Vector2(face.x, face.z);
+            float aMin = float.MaxValue, aMax = float.MinValue, oMax = float.MinValue;
+            foreach (var g in new[] { go, dr })
+            {
+                if (g == null) continue;
+                foreach (var r in g.GetComponentsInChildren<Renderer>())
+                {
+                    var bb = r.bounds;
+                    for (int i = 0; i < 8; i++)
+                    {
+                        var lp = root.InverseTransformPoint(new Vector3((i & 1) == 0 ? bb.min.x : bb.max.x, (i & 2) == 0 ? bb.min.y : bb.max.y, (i & 4) == 0 ? bb.min.z : bb.max.z));
+                        Vector2 q = new Vector2(lp.x, lp.z) - f2;
+                        aMin = Mathf.Min(aMin, Vector2.Dot(q, al)); aMax = Mathf.Max(aMax, Vector2.Dot(q, al)); oMax = Mathf.Max(oMax, Vector2.Dot(q, ou));
+                    }
+                }
+            }
+            int fl = Mathf.Clamp(Mathf.RoundToInt(face.y / FloorH), 0, 3);
+            foreach (var iv in new[] { new Vector2(aMin, -passHalf), new Vector2(passHalf, aMax) })
+            {
+                if (iv.y <= iv.x) continue;
+                Vector2 p0 = f2 + al * iv.x, p1 = f2 + al * iv.y + ou * oMax;
+                blockers[fl].Add(Rect.MinMaxRect(Mathf.Min(p0.x, p1.x), Mathf.Min(p0.y, p1.y), Mathf.Max(p0.x, p1.x), Mathf.Max(p0.y, p1.y)));
+            }
+        }
+        const float EntranceOpenDeg = 80f;
 
         void FillPlain(WallSeg w, SkinInfo si, float s0, float s1, float yaw, float hs)
         {
@@ -865,8 +1060,39 @@ namespace LifeSimProto
         {
             Vector2 p = si.a + si.dir * along;
             Vector3 pos = new Vector3(p.x, float.IsNaN(y) ? si.y0 : y, p.y) + si.outward * (WallT / 2f + 0.005f);
-            var go = PlaceKit(model, pos, yaw, new Vector3(width / 3f, hs, 1f));
+            var go = PlaceKit(model, pos, yaw, new Vector3(width / 3f, hs, si.depth / 0.6f));
             if (go != null) foreach (var r in go.GetComponentsInChildren<Renderer>()) w.upper.Add(r);
+        }
+
+        /// <summary>
+        /// 石の壁の部品の厚みの所は歩けないようにする（famuru 2026-11-07「見た目と動きに違いがある所を探して」：外の庭や外廊下で、生徒が壁の部品にめりこんでいた）。扉の穴の所はあける。
+        /// </summary>
+        void SkinBlockers(SkinInfo si)
+        {
+            int f = Mathf.Clamp(Mathf.RoundToInt(si.y0 / FloorH), 0, 3);
+            Vector2 o = new Vector2(si.outward.x, si.outward.z);
+            float d0 = WallT / 2f, d1 = WallT / 2f + si.depth + 0.05f;
+            bool axis = Mathf.Abs(si.dir.x) < 0.01f || Mathf.Abs(si.dir.y) < 0.01f;
+            var free = new List<Vector2>();
+            float cur = 0f;
+            var gs = new List<Vector2>(si.gaps); gs.Sort((p, q) => p.x.CompareTo(q.x));
+            foreach (var g in gs) { if (g.x > cur) free.Add(new Vector2(cur, g.x)); cur = Mathf.Max(cur, g.y); }
+            if (cur < si.len) free.Add(new Vector2(cur, si.len));
+            foreach (var iv in free)
+            {
+                if (axis)
+                {
+                    Vector2 p0 = si.a + si.dir * iv.x + o * d0, p1 = si.a + si.dir * iv.y + o * d1;
+                    blockers[f].Add(Rect.MinMaxRect(Mathf.Min(p0.x, p1.x), Mathf.Min(p0.y, p1.y), Mathf.Max(p0.x, p1.x), Mathf.Max(p0.y, p1.y)));
+                }
+                else
+                    for (float t = iv.x + 0.2f; t < iv.y; t += 0.4f)
+                    {
+                        Vector2 c2 = si.a + si.dir * t + o * ((d0 + d1) / 2f);
+                        float h = Mathf.Max(0.25f, (d1 - d0) / 2f);
+                        blockers[f].Add(Rect.MinMaxRect(c2.x - h, c2.y - h, c2.x + h, c2.y + h));
+                    }
+            }
         }
 
         GameObject PlaceKit(string name, Vector3 pos, float yaw, Vector3 scale)
@@ -884,6 +1110,7 @@ namespace LifeSimProto
             }
             var pf = Resources.Load<GameObject>("Furniture/Furn_" + name);
             if (pf == null) pf = Resources.Load<GameObject>("Furniture/Buildings3/Furn_" + name);
+            if (pf == null) pf = Resources.Load<GameObject>("Furniture/Towers3/Furn_" + name); // 依頼31 の寮の塔
             if (pf == null) return null;
             var holder = new GameObject(name).transform;
             holder.SetParent(root, false);
@@ -1004,6 +1231,55 @@ namespace LifeSimProto
             });
         }
 
+        // 3階 → 屋上（天文台 14m）の階段：塔の東寄りを南（z 12.4）から北（z 18.6）へ。屋上の床はその上をあける
+        const float ObsStairX = 13.4f, ObsStairZ0 = 12.4f, ObsStairZ1 = 18.6f, ObsHoleZ0 = 12.2f, ObsHoleZ1 = 17.0f;
+
+        /// <summary>塔の中の階段（z を zb→zt へ上がる）。2026-11-08 家具のチャット：屋上を 14m にしたので 3階からの階段を長く。</summary>
+        void TowerFlightZ(string name, float x, float zb, float zt, int lowerFloor)
+        {
+            float y0 = FloorY(lowerFloor), y1 = FloorY(lowerFloor + 1);
+            int n = Mathf.Max(12, Mathf.RoundToInt((y1 - y0) / 0.27f));
+            float run = zt - zb, w = 0.8f;
+            for (int i = 0; i < n; i++)
+            {
+                float z = zb + run * (i + 0.5f) / n, top = y0 + (y1 - y0) * (i + 1) / n;
+                Box(name + "_Step", new Vector3(x, top - 0.08f, z), new Vector3(w, 0.16f, Mathf.Abs(run) / n + 0.02f), woodDark);
+            }
+            float len = Mathf.Sqrt(run * run + (y1 - y0) * (y1 - y0));
+            var st = Box(name + "_Stringer", new Vector3(x, (y0 + y1) / 2f - 0.2f, (zb + zt) / 2f), new Vector3(w, 0.12f, len), woodDark);
+            st.transform.localRotation = Quaternion.Euler(-Mathf.Atan2(y1 - y0, run) * Mathf.Rad2Deg, 0f, 0f);
+            float dir = Mathf.Sign(run);
+            stairs.Add(new Stair
+            {
+                lowerFloor = lowerFloor,
+                bottomApproach = new Vector3(x, y0, zb - dir * 0.45f),
+                bottom = new Vector3(x, y0, zb),
+                top = new Vector3(x, y1, zt),
+                topApproach = new Vector3(x, y1, zt + dir * 0.45f),
+                lane = new Vector3(0.2f, 0f, 0f)
+            });
+        }
+
+        /// <summary>屋上（天文台）の床：北東の塔の円ぜんぶ（寮の屋根より上なので建物の内側の4分の1も）。階段の上はあける。</summary>
+        void ObservatoryFloor(Material m)
+        {
+            float cx = NETowerC.x, cz = NETowerC.y;
+            for (float z0 = cz - NEInR + 0.2f; z0 < cz + NEInR - 0.2f - 0.01f; z0 += 0.5f)
+            {
+                float z1 = Mathf.Min(z0 + 0.5f, cz + NEInR - 0.2f);
+                float hc = TowerChord(Mathf.Max(Mathf.Abs(z0 - cz), Mathf.Abs(z1 - cz)), NEInR);
+                if (hc < 0.3f) continue;
+                float x0 = cx - hc, x1 = cx + hc;
+                if (z1 > ObsHoleZ0 && z0 < ObsHoleZ1)
+                {
+                    float h0 = ObsStairX - 0.45f, h1 = ObsStairX + 0.45f;
+                    if (h0 - x0 > 0.05f) Slab("Tower_Floor", 3, Rect.MinMaxRect(x0, z0, h0, z1), m);
+                    if (x1 - h1 > 0.05f) Slab("Tower_Floor", 3, Rect.MinMaxRect(h1, z0, x1, z1), m);
+                }
+                else Slab("Tower_Floor", 3, Rect.MinMaxRect(x0, z0, x1, z1), m);
+            }
+        }
+
         void NFoodTower()
         {
             CreatePlaceMaterials(); // 天文台の家具の色（DormPlaces.cs）
@@ -1011,10 +1287,10 @@ namespace LifeSimProto
             TowerFloor(0, new Vector2(1f, 0f), new Vector2(1f, 0f), flagstone);
             TowerFloor(1, new Vector2(TXW, 12.4f), new Vector2(1f, 0f), woodFloor);
             TowerFloor(2, new Vector2(1f, 0f), new Vector2(11.8f, TXE), woodFloor);
-            TowerFloor(3, new Vector2(TXW, 12.4f), new Vector2(1f, 0f), flagstone);
+            ObservatoryFloor(flagstone);                    // 屋上（天文台。14m。塔の円ぜんぶ）
             TowerFlight("TowerStair1", TXE, TXW, TA1, 0);   // 1階 → 2階（西へ）
             TowerFlight("TowerStair2", TXW, TXE, TA2, 1);   // 2階 → 3階（東へ）
-            TowerFlight("TowerStair3", TXE, TXW, TA1, 2);   // 3階 → 屋上（西へ）
+            TowerFlightZ("TowerStair3", ObsStairX, ObsStairZ0, ObsStairZ1, 2); // 3階 → 屋上（7m 上がるので、塔の中を南から北へ長く）
             Label(new Vector3(TXE + 0.4f, 1.6f, TA1), "塔の階段（屋上へ）");
             // 1階：食料庫（たる・木箱・棚）
             PlaceFurn("Furn_BarrelFlour", null, new Vector3(14.9f, 0f, 12.5f), 0f);
@@ -1039,13 +1315,13 @@ namespace LifeSimProto
             float y = FloorY(3);
             var tel = new GameObject("Telescope").transform;
             tel.SetParent(root, false);
-            tel.localPosition = new Vector3(14.2f, y, 13.4f);
+            tel.localPosition = new Vector3(10.0f, y, 14.2f);
             if (PlaceFurn("Furn_Telescope", tel, Vector3.zero, 0f) == null)
                 Cyl("Telescope_Tube", new Vector3(0.05f, 1.45f, 0.25f), new Vector3(0.16f, 0.75f, 0.16f), Quaternion.Euler(55f, 20f, 0f), brassMat, tel);
-            blockers[3].Add(new Rect(13.75f, 12.95f, 0.9f, 0.9f));
-            if (PlaceFurn("Furn_StarChartTable", null, new Vector3(13.0f, y, 12.3f), 0f) == null)
-                Box("StarChart_Table", new Vector3(13.0f, y + 0.75f, 12.3f), new Vector3(1.2f, 0.06f, 0.8f), woodMid);
-            blockers[3].Add(new Rect(12.4f, 11.9f, 1.2f, 0.8f));
+            blockers[3].Add(new Rect(9.55f, 13.75f, 0.9f, 0.9f));
+            if (PlaceFurn("Furn_StarChartTable", null, new Vector3(10.4f, y, 17.4f), 0f) == null)
+                Box("StarChart_Table", new Vector3(10.4f, y + 0.75f, 17.4f), new Vector3(1.2f, 0.06f, 0.8f), woodMid);
+            blockers[3].Add(new Rect(9.8f, 17.0f, 1.2f, 0.8f));
             if (PlaceFurn("Furn_TerraceRug", null, new Vector3(15.0f, y, 15.3f), 90f, false, new Vector3(0.8f, 1f, 0.8f)) == null)
                 Box("Terrace_Rug", new Vector3(15.0f, y + 0.01f, 15.3f), new Vector3(1.8f, 0.02f, 2.2f), rugMat);
             foreach (var p in new[] { new Vector3(15.4f, y, 14.4f), new Vector3(15.5f, y, 15.4f), new Vector3(15.1f, y, 16.3f) })
@@ -1057,17 +1333,95 @@ namespace LifeSimProto
             if (PlaceFurn("Furn_Lantern", null, new Vector3(14.6f, y + 0.03f, 16.4f), 0f) == null)
                 Box("Lantern", new Vector3(14.6f, y + 0.2f, 16.4f), new Vector3(0.18f, 0.3f, 0.18f), glowLamp);
             Lamp(new Vector3(14.6f, y + 0.8f, 16.4f), 1.2f, 4f);
-            var star = MakePoi("望遠鏡で星を見ている", new Vector3(14.4f, y + 1.9f, 13.9f), new Vector3(14.2f, y, 12.65f), new Vector3(13.45f, y, 13.4f));
+            var star = MakePoi("望遠鏡で星を見ている", new Vector3(10.2f, y + 1.9f, 14.7f), new Vector3(10.0f, y, 13.45f), new Vector3(10.75f, y, 14.2f));
             star.outdoor = true; star.stars = true;
             pois.Add(star);
-            pois.Add(MakePoi("星図を広げている", new Vector3(13.0f, y + 0.8f, 12.3f), new Vector3(13.0f, y, 13.1f)));
+            pois.Add(MakePoi("星図を広げている", new Vector3(10.4f, y + 0.8f, 17.4f), new Vector3(10.4f, y, 16.6f)));
             pois[pois.Count - 1].outdoor = true;
             pois.Add(MakePoi("屋上から学園を眺めている", new Vector3(11.2f, y + 1.2f, 22f), new Vector3(10.8f, y, 18.7f), new Vector3(11.8f, y, 18.9f)));
             pois[pois.Count - 1].outdoor = true;
             Label(new Vector3(14.0f, y + 2.4f, 14.6f), "屋上の天文台");
             AddArea(Observatory, Rect.MinMaxRect(7.8f, 11.3f, 16.2f, BackOut + NETowerR), 3);
-            PlaceDoorAt(Observatory, 2, new Vector3(TXE + 0.5f, 0f, TA1), false, TBandMid - TBand0, 2.2f, Rect.MinMaxRect(TXE + 0.05f, TBand0 + 0.05f, TXE + 0.95f, TBandMid - 0.05f), woodDark);
+            PlaceDoorAt(Observatory, 2, new Vector3(ObsStairX, 0f, ObsStairZ0 - 0.2f), true, 0.8f, 2.2f, Rect.MinMaxRect(ObsStairX - 0.4f, ObsStairZ0 - 0.4f, ObsStairX + 0.4f, ObsStairZ0 - 0.05f), woodDark); // 3階の階段の下（南のはし）
             EndPlace(Observatory);
+        }
+
+        // ================= 先生の塔・南西の塔の中を、となりの部屋とつなぐ（famuru 2026-11-08「塔の内部が1階、2階、3階と屋内とつながるように」） =================
+        // 部屋割りは前に決めた間取り（第5案）のとおり：先生の塔＝1階 先生の個室（今のまま）・2階 小さな談話室（北）・3階 トレーニング部屋、
+        // 南西の塔＝1階 倉庫（ランドリーとつなぐ）・2階 小さな談話室（南）・3階 シャワールーム。外壁は NOuterWalls で塔の円の中だけ消してある
+        void NTowerRooms()
+        {
+            Vector2 tc = TeacherTowerC, sc = new Vector2(-WingOut, FrontOut);
+            // 南西の塔の床（先生の塔の床は NTeacherTower）
+            for (int f = 0; f <= 2; f++)
+            {
+                var d = Cyl("SWTower_Floor", new Vector3(sc.x, FloorY(f) - 0.07f, sc.y), new Vector3(TowerR * 2f, 0.06f, TowerR * 2f), Quaternion.identity, f == 0 ? flagstone : woodFloor);
+                slabRenderers.Add(new KeyValuePair<float, Renderer>(Mathf.Max(0.02f, FloorY(f)), d.GetComponent<Renderer>()));
+            }
+            // 場所（となりの部屋の名前を塔まで）
+            Rect tr = Rect.MinMaxRect(tc.x - TeacherTowerR, tc.y - TeacherTowerR, tc.x + TeacherTowerR, tc.y + TeacherTowerR);
+            Rect sr = Rect.MinMaxRect(sc.x - TowerR, sc.y - TowerR, sc.x + TowerR, sc.y + TowerR);
+            AddArea("小さな談話室（北）", tr, 1);
+            AddArea("トレーニング部屋", tr, 2);
+            AddArea("ランドリー", sr, 0);
+            AddArea("小さな談話室（南）", sr, 1);
+            AddArea("シャワールーム", sr, 2);
+            // 1階：南西の塔の倉庫（ランドリーの物置）
+            Label(new Vector3(sc.x - 2.2f, 2.0f, sc.y - 2.2f), "倉庫");
+            if (PlaceFurn("Furn_Crate", null, new Vector3(sc.x - 2.6f, 0f, sc.y - 2.0f), 20f) == null)
+                Box("Crate", new Vector3(sc.x - 2.6f, 0.35f, sc.y - 2.0f), new Vector3(0.7f, 0.7f, 0.7f), woodMid);
+            blockers[0].Add(new Rect(sc.x - 3.05f, sc.y - 2.45f, 0.9f, 0.9f));
+            if (PlaceFurn("Furn_BarrelWater", null, new Vector3(sc.x - 3.2f, 0f, sc.y - 0.6f), 0f) == null)
+                Cyl("Barrel", new Vector3(sc.x - 3.2f, 0.45f, sc.y - 0.6f), new Vector3(0.6f, 0.45f, 0.6f), Quaternion.identity, woodMid);
+            blockers[0].Add(new Rect(sc.x - 3.55f, sc.y - 0.95f, 0.7f, 0.7f));
+            if (PlaceFurn("Furn_LinenShelf", null, new Vector3(sc.x - 0.6f, 0f, sc.y - 3.6f), 0f) == null)
+                Box("LinenShelf", new Vector3(sc.x - 0.6f, 0.95f, sc.y - 3.6f), new Vector3(1.2f, 1.9f, 0.45f), woodDark);
+            blockers[0].Add(new Rect(sc.x - 1.25f, sc.y - 3.9f, 1.3f, 0.6f));
+            Lamp(new Vector3(sc.x - 1.8f, 2.4f, sc.y - 1.8f), 1.2f, 4.5f);
+            // 2・3階：塔の窓辺（窓は 45°・135°・225°。先生の塔は 180° から、南西の塔は 90° から）
+            for (int f = 1; f <= 2; f++)
+            {
+                TowerWindowPois(tc, TeacherTowerR, 180f, f);
+                TowerWindowPois(sc, TowerR, 90f, f);
+                Lamp(new Vector3(tc.x + 1.8f, FloorY(f) + 2.4f, tc.y - 1.8f), 1.2f, 4.5f);
+                Lamp(new Vector3(sc.x - 1.8f, FloorY(f) + 2.4f, sc.y - 1.8f), 1.2f, 4.5f);
+            }
+        }
+
+        void TowerWindowPois(Vector2 c, float r, float a0, int f)
+        {
+            float y = FloorY(f);
+            foreach (float a in new[] { a0 + 45f, a0 + 135f, a0 + 225f })
+            {
+                Vector2 d = new Vector2(Mathf.Cos(a * Mathf.Deg2Rad), Mathf.Sin(a * Mathf.Deg2Rad));
+                Vector2 q = c + d * (r - 0.95f), look = c + d * (r + 3f);
+                var p = MakePoi("塔の窓から外を眺めている", new Vector3(look.x, y + 1.5f, look.y), new Vector3(q.x, y, q.y));
+                pois.Add(p);
+            }
+        }
+
+        /// <summary>塔の円の中（壁の内側から 0.45m まで）を開ける（反転前の仮の網）。</summary>
+        void OpenCornerTower(GridNav n, Vector2 c, float r)
+        {
+            float rr = r - 0.15f - 0.3f;
+            for (float x = c.x - rr; x <= c.x + rr; x += 0.2f)
+                for (float z = c.y - rr; z <= c.y + rr; z += 0.2f)
+                    if ((x - c.x) * (x - c.x) + (z - c.y) * (z - c.y) <= rr * rr) n.Open(new Rect(x - 0.1f, z - 0.1f, 0.2f, 0.2f));
+        }
+
+        /// <summary>塔の壁と外の石の所（建物の外側）をふさぐ。sx は建物のある向き（先生の塔は −x、南西の塔は ＋x の側が建物 → +1／−1）。</summary>
+        void ClipCornerTower(GridNav n, Vector2 c, float r, float sx)
+        {
+            float r0 = r - 0.15f - 0.3f, r1 = r + 0.85f;
+            for (int y = 0; y < n.height; y++)
+                for (int x = 0; x < n.width; x++)
+                {
+                    Vector3 p = n.ToWorld(x, y);
+                    float dx = p.x - c.x, dz = p.z - c.y, d2 = dx * dx + dz * dz;
+                    if (d2 <= r0 * r0 || d2 >= r1 * r1) continue;
+                    if (sx * dx < 0f && dz > 0f) continue; // 建物の中
+                    n.Block(new Rect(p.x - 0.1f, p.z - 0.1f, 0.2f, 0.2f));
+                }
         }
 
         /// <summary>塔の中の歩ける所（反転前の仮の網に開ける）。</summary>
@@ -1080,12 +1434,15 @@ namespace LifeSimProto
                     Vector3 p = n.ToWorld(x, y);
                     float dx = p.x - cx, dz = p.z - cz;
                     if (dx * dx + dz * dz > r * r) continue;
-                    if (p.x < cx + 0.3f && p.z < cz + 0.3f) continue; // 建物の中
+                    if (f <= 2 && p.x < cx + 0.3f && p.z < cz + 0.3f) continue; // 建物の中（屋上の天文台は塔の円ぜんぶ）
                     bool a1 = p.z > TBand0 - 0.1f && p.z < TBandMid, a2 = p.z >= TBandMid && p.z < TBand1 + 0.1f;
                     bool inRun = p.x > TXW - 0.1f && p.x < TXE + 0.1f;
+                    bool s3 = Mathf.Abs(p.x - ObsStairX) < 0.55f; // 3階→屋上の階段の帯
                     if (f == 0 && a1 && inRun) continue;
-                    if ((f == 1 || f == 2) && (a1 || a2) && inRun) continue;
-                    if (f == 3 && a1 && p.x > TXW - 0.1f && p.x < 12.5f) continue;
+                    if (f == 1 && (a1 || a2) && inRun) continue;
+                    if (f == 2 && a2 && inRun) continue;
+                    if (f == 2 && s3 && p.z > ObsStairZ0 - 0.15f && p.z < ObsStairZ0 + 1.9f) continue; // 階段の低い所（頭がつかえる）
+                    if (f == 3 && s3 && p.z > ObsHoleZ0 - 0.1f && p.z < ObsHoleZ1 + 0.1f) continue;  // 床の穴
                     n.Open(new Rect(p.x - 0.1f, p.z - 0.1f, 0.2f, 0.2f));
                 }
             if (f <= 2) n.Open(DoorNav(WingOut, TDoorZ, false, 0.9f)); // 建物の北の外壁の扉
@@ -1252,7 +1609,7 @@ namespace LifeSimProto
         // ================= ランドリーと物干し場（famuru 2026-11-02「寮にランドリーと衣服を干す場所」。1階の倉庫だった部屋＋外の南の芝生） =================
         // 反転前の座標で書く（あとで MirrorDorm）。部屋は x −12〜−5.2・z −15.5〜−9.5、外への扉は南の外壁（x −12）の z −10.6。物干し場は外の x −18.6〜−12.4・z −11.4〜−1。
         // 家具は依頼22（Furn_WashTub・LaundryBasket・IroningTable・LinenShelf・ClothesLine・ClothesLineEmpty）。届くまでは箱で組み、届けば自動で入れかわる。
-        const float LaundryDoorZ = -10.6f;
+        const float LaundryDoorZ = -10.0f; // 南西の塔（半径 4.5m）とぶつからないよう −10.6 から寄せた（2026-11-08）
         static readonly Rect DryYard = Rect.MinMaxRect(-18.6f, -11.4f, -12.4f, -1.0f);
 
         void NLaundry()
@@ -1356,7 +1713,7 @@ namespace LifeSimProto
         // ================= 前庭と渡り廊下（2階の入口の通路から学校の側へ） =================
         void NFrontYardAndBridge()
         {
-            Box("Yard_FrontPath", new Vector3(1.5f, -0.02f, FrontOut - 4f), new Vector3(2.4f, 0.04f, 8f), flagstone);
+            Box("Yard_FrontPath", new Vector3(UseV3 ? DormDoorX : 1.5f, -0.02f, FrontOut - 4f), new Vector3(2.4f, 0.04f, 8f), flagstone);
             Bench(new Vector3(-2.6f, 0f, FrontOut - 2.0f), 180f);
             Label(new Vector3(1.5f, 1.6f, FrontOut - 3f), "前庭");
             AddArea("前庭", Rect.MinMaxRect(-8f, FrontOut - 8f, 8f, FrontOut), 0);
@@ -1380,7 +1737,7 @@ namespace LifeSimProto
         // ================= 屋根（高さの違う屋根の組み合わせ。屋上には出ない） =================
         void NRoof()
         {
-            float y = FloorY(3);
+            float y = EaveY;
             KitRoofZ(BackZ, BackOut, 0f, 24.6f, y, 6.0f);               // 奥の帯（いちばん高い。棟は x 方向…ではなく z の向きに長い）
             KitRoofZ(FrontOut, FrontZ, 0f, 24.6f, y, 4.6f);             // 手前の帯
             KitRoofX(FrontZ, BackZ, 8.6f, 7.4f, y, 4.8f);               // 北の個室の棟
@@ -1415,7 +1772,7 @@ namespace LifeSimProto
         // 2026-11-01 寮を左右反転（MirrorDorm）にしたので、学校は反転しない。
         const float SchoolWestZ = -26.5f;
         /// <summary>正門の内側（先生が来て帰る所）。配置図の正門の内側 (0, 12)。</summary>
-        public static Vector3 NewSchoolGate { get { return CampusPlan.G(0f, 12f); } }
+        public static Vector3 NewSchoolGate { get { return CampusPlan.G(0f, CampusPlan.V3 ? 14.8f : 12f); } } // 依頼28 の正門は奥行きが深い（北の面が y 13.7）ので、そのすぐ内側（2026-11-07 家具のチャット）
 
         void NSchool()
         {
@@ -1482,7 +1839,7 @@ namespace LifeSimProto
         // ================= 学校の外見（屋根・塔。依頼20の部品） =================
         void NSchoolOutside()
         {
-            float y3 = FloorY(3), y2 = FloorY(2);
+            float y3 = EaveY, y2 = FloorY(2);
             // 教室の棟（x −14〜7、z −96.5〜−26.5・3階建て）：棟が z に走る大きな屋根と、両はしの妻
             KitRoofX(-96.5f, -26.5f, -3.5f, 21.8f, y3, 7.5f);
             PlaceKit("Roof_GableEnd", new Vector3(-3.5f, y3, -96.5f), 0f, new Vector3(21.8f / 10f, 7.5f / 6f, 1f));
@@ -1499,7 +1856,7 @@ namespace LifeSimProto
             // 丸い塔：教室の棟の北の2つのすみと、北の面の真ん中（外にくっつける）
             SchoolTower(new Vector3(-16.6f, 0f, -23.9f), 4);
             SchoolTower(new Vector3(-16.6f, 0f, -99.1f), 4);
-            SchoolTower(new Vector3(-17.6f, 0f, -61.5f), 5);
+            SchoolTower(new Vector3(-17.6f, 0f, -61.5f + (UseV3 ? 9f : 0f)), 5); // 2026-11-07 家具のチャット：真ん中の塔が本館の北の玄関の真ん前をふさいでいたので、新しい入口（依頼28）を置くときは東へ 9m ずらす
         }
 
         void SchoolTower(Vector3 c, int floors)
@@ -1529,6 +1886,7 @@ namespace LifeSimProto
             float inflate = 0.1f;
             // 本当の網：寮・学校・学園の道（配置図の正門からほかの寮まで）
             for (int f = 0; f <= 2; f++) navs[f] = new GridNav(new Vector2(-30f, -142f), new Vector2(82f, 30f), 0.25f, FloorY(f));
+            navs[0] = new GridNav(new Vector2(-40f, -142f), new Vector2(82f, 78f), 0.25f, FloorY(0)); // 1階は北東の城壁の外の浜辺と桟橋まで（2026-11-08 家具のチャット：プールと浜辺で過ごせるように）
             navs[3] = new GridNav(new Vector2(-17.5f, 10f), new Vector2(-6.5f, 21f), 0.25f, FloorY(3)); // 屋上（北東の塔の天文台だけ）
             // ---- 寮（反転前の座標で仮の網に開ける） ----
             var t = new GridNav[4];
@@ -1565,7 +1923,8 @@ namespace LifeSimProto
             n0.Open(DoorNav(WingOut, -12.9f, false, 0.9f));
             n0.Open(DoorNav(12.65f, -15.5f, true, 0.9f));
             // 入口・前庭・庭・露天風呂
-            n0.Open(Rect.MinMaxRect(0.75f, FrontOut - 0.6f, 2.25f, FrontOut + 0.4f));
+            if (UseV3) n0.Open(Rect.MinMaxRect(DormDoorX - 0.6f, FrontOut - 0.8f, DormDoorX + 0.6f, FrontOut + 0.4f)); // 依頼28 の入口の口に合わせる
+            else n0.Open(Rect.MinMaxRect(0.75f, FrontOut - 0.6f, 2.25f, FrontOut + 0.4f));
             n0.Open(Rect.MinMaxRect(-8f + 0.25f, FrontOut - 8f + 0.25f, 8f - 0.25f, FrontOut - 0.45f));
             n0.Open(Rect.MinMaxRect(1.25f, BackOut - 0.4f, 2.75f, BackOut + 0.6f));
             n0.Open(Rect.MinMaxRect(-6f, BackOut + 0.45f, 7.3f, NCY0 - 0.45f));             // 寮の裏の庭（東は北東の塔まで、奥は中庭の塀まで）
@@ -1620,6 +1979,14 @@ namespace LifeSimProto
                     }
             }
             for (int f = 0; f <= 3; f++) OpenTowerNav(t[f], f);
+            // 先生の塔・南西の塔（2026-11-08 家具のチャット）：つないだ階は塔の円の中を開け、どの階も塔の壁の厚みの所はふさぐ
+            for (int f = 0; f <= 2; f++)
+            {
+                if (f >= 1) OpenCornerTower(t[f], TeacherTowerC, TeacherTowerR);
+                OpenCornerTower(t[f], new Vector2(-WingOut, FrontOut), TowerR);
+                ClipCornerTower(t[f], TeacherTowerC, TeacherTowerR, 1f);
+                ClipCornerTower(t[f], new Vector2(-WingOut, FrontOut), TowerR, -1f);
+            }
             for (int f = 0; f <= 3; f++) CopyMirrored(t[f], navs[f]);
             // ---- 学校（設計図どおり） ----
             for (int f = 0; f <= 2; f++) OpenSchoolNav(f);
@@ -1627,6 +1994,7 @@ namespace LifeSimProto
             navs[0].Open(SR(69.5f, 34.9f, 70.7f, 36.1f));  // 1階の東のはし（騎士団の寮への地上の廊下）
             // ---- 学園の道（正門・中庭の南の渡り廊下・ほかの寮。CampusPreview.cs の CampusPlan） ----
             CampusPlan.OpenPaths(navs[0]);
+            CampusPreview.OpenShore(navs[0]); // プールと浜辺（2026-11-08 家具のチャット）
             foreach (var r in outsidePlaceNav) navs[0].Open(r); // 温室と工房の中（扉は ApplyPlaces）
             for (int f = 0; f <= 3; f++)
                 foreach (var r in blockers[f]) navs[f].Block(Rect.MinMaxRect(r.xMin - inflate, r.yMin - inflate, r.xMax + inflate, r.yMax + inflate));

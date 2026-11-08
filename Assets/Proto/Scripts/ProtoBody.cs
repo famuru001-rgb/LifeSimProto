@@ -44,7 +44,7 @@ namespace LifeSimProto
     /// ・ない動きは、骨を直接曲げる簡単な動き（歩く・座る・正座・寝る・お風呂）で代わりにする
     /// ・お風呂ではタオルを巻いた見た目にする
     /// </summary>
-    public class ProtoBody : MonoBehaviour
+    public partial class ProtoBody : MonoBehaviour
     {
         static readonly string[] AlwaysOn = { "Body", "HeadMesh", "Face", "Tie", "Skirt", "Hair_Cap", "Hair_Bangs" };
         static Dictionary<string, AnimationClip> clipBook;
@@ -73,7 +73,7 @@ namespace LifeSimProto
         PlayableGraph graph;
         AnimationMixerPlayable mixer;
         AnimationClip curClip;
-        float fade = 1f;
+        float fade = 1f, fadeTime = 0.25f;
         float phase;
         float speed;
         Vector3 lastPos;
@@ -99,6 +99,47 @@ namespace LifeSimProto
         static readonly string[] TalkVariants = { "Talk", "Talk2", "Talk3", "Talk4" };
         AnimationClip sceneClip;
         string LetterNow() { return testMode ? testLetter : sim.Letter; }
+        // 座り方（2026-11-08 モーション。MotionBook.ChairSit・FloorSit）：キャラごとの椅子・床の座り方。動きが無ければ今までの Sit・SitFloor
+        string upBase;          // 立ち上がるときの動きの名前（最後に座っていた座り方）
+        bool chairDown; float chairT;
+        // 場面の動きのつなぎ（2026-11-08 モーション。famuru「立ちと歩きからつながるように」）：
+        // 立ち止まって 0.3秒たってから始める。「〇〇_In」があれば1回流してからくり返し、別の動きへ移るときは「〇〇_Out」を流す。
+        // _In・_Out の無い動きは、切りかえを 0.6秒かけてなめらかに
+        AnimationClip sceneCur, sceneOutTo; int scenePhase; float sceneT, stillT, pendingFade; bool sceneUsed, lastWasScene;
+        public static float SceneStillWait = 0.3f, SceneFade = 0.6f;
+        AnimationClip SceneFlow(AnimationClip want, float dt)
+        {
+            sceneUsed = true;
+            if (want != sceneCur && scenePhase != 3)
+            {
+                AnimationClip oc = sceneCur != null ? Clip(sceneCur.name + "_Out") : null;
+                if (sceneCur != null && scenePhase == 2 && oc != null) { scenePhase = 3; sceneT = 0f; sceneOutTo = want; pendingFade = 0.15f; }
+                else SceneStart(want);
+            }
+            else if (scenePhase == 3) sceneOutTo = want;
+            sceneT += dt;
+            if (scenePhase == 1) { var ic = Clip(sceneCur.name + "_In"); if (ic == null || sceneT >= ic.length - 0.1f) { scenePhase = 2; pendingFade = 0.15f; } else return ic; }
+            if (scenePhase == 3) { var oc = Clip(sceneCur.name + "_Out"); if (oc == null || sceneT >= oc.length - 0.1f) SceneStart(sceneOutTo); else return oc; }
+            if (scenePhase == 1) return Clip(sceneCur.name + "_In");
+            return sceneCur;
+        }
+        void SceneStart(AnimationClip want)
+        {
+            sceneCur = want; sceneT = 0f;
+            var ic = want != null ? Clip(want.name + "_In") : null;
+            scenePhase = ic != null ? 1 : 2;
+            pendingFade = ic != null ? 0.25f : SceneFade;
+        }
+        string ChairNow() { if (testMode) return "Sit"; var n = MotionBook.ChairSit(LetterNow(), sim.IsMale); return Clip(n) != null ? n : "Sit"; }
+        string FloorNow() { if (string.IsNullOrEmpty(SitFloorClip) || testMode) return SitFloorClip; var n = MotionBook.FloorSit(LetterNow(), sim.IsMale); return Clip(n) != null ? n : SitFloorClip; }
+        /// <summary>座る動き（_Down）の始めの腰の位置へ、見た目を前の位置からつなぐ</summary>
+        void SitStartSnap(string name)
+        {
+            Vector2 so;
+            if (name == null || !MotionBook.SitStart.TryGetValue(name, out so)) return;
+            snapStart -= transform.rotation * new Vector3(so.x, 0f, so.y);
+            snapT = 0f; snapDur = Mathf.Max(SnapTime, snapStart.magnitude * 0.7f);
+        }
         string SceneNow() { return testMode ? testScene : sim.MotionScene; }
         string StyleNow() { return MotionBook.StyleOf(LetterNow(), testMode ? false : sim.IsMale); }
         string talkVariant, listenVariant, sitTalkVariant;
@@ -484,7 +525,7 @@ namespace LifeSimProto
         /// </summary>
         static void RandomStart(AnimationClipPlayable p, AnimationClip c)
         {
-            if (c == null || !c.isLooping || c.length < 0.5f || c.name.StartsWith("H_")) return;
+            if (c == null || !c.isLooping || c.length < 0.5f || c.name.StartsWith("H_") || c.name.EndsWith("_In") || c.name.EndsWith("_Out")) return;   // 始める・やめる動きは0秒目から
             p.SetTime(Random.Range(0f, c.length));
         }
 
@@ -646,6 +687,8 @@ namespace LifeSimProto
                 model.localPosition = Vector3.zero;
             }
             if (snapOff != Vector3.zero) model.localPosition += Quaternion.Inverse(transform.rotation) * snapOff;
+            // 浜の砂・階段・桟橋の上では見た目だけ下げる（歩く網は床の高さ。2026-11-08 家具のチャット）
+            if (transform.position.y < 0.5f) { float gl = CampusPreview.GroundLift(transform.position); if (gl != 0f) model.localPosition += Quaternion.Inverse(transform.rotation) * (Vector3.up * gl); }
 
             // Mixamo の動きがあれば使う
             AnimationClip clip = null;
@@ -654,15 +697,17 @@ namespace LifeSimProto
                 // 床から立ち上がる途中（SimCharacter がその場で止めている間）：立つ動きを1回流す
                 if (testMode && !string.IsNullOrEmpty(testClip)) clip = Clip(testClip);
                 if (hOn) clip = Clip(hName);
-                AnimationClip upC = clip != null ? null : !string.IsNullOrEmpty(SitFloorClip) && (testMode ? testStandUp : sim.StandingUpNow) ? Clip(SitFloorClip + "_Up") : null;
+                string upName = !testMode && sim.StandUpClipName != null ? sim.StandUpClipName : (upBase ?? SitFloorClip) + "_Up";   // 場面の動きをやめる（〇〇_Out）か、座っていたところから立つ
+                AnimationClip upC = clip != null ? null : (!string.IsNullOrEmpty(SitFloorClip) || upBase != null || (!testMode && sim.StandUpClipName != null)) && (testMode ? testStandUp : sim.StandingUpNow) ? Clip(upName) : null;
                 if (clip != null) { }
                 else if (pose == BodyPose.Stand && upC != null)
                 {
                     if (floorPhase != FloorPhase.Up)
                     {
                         // 座る途中だったら、同じ高さに近い所から立ち始める
-                        var dn = Clip(SitFloorClip + "_Down");
-                        upStartAt = floorPhase == FloorPhase.Down && dn != null ? Mathf.Max(0f, upC.length - floorT) : 0f;
+                        var dn = Clip((upBase ?? SitFloorClip) + "_Down");
+                        upStartAt = floorPhase == FloorPhase.Down && dn != null ? Mathf.Max(0f, upC.length - floorT) : (chairDown && dn != null ? Mathf.Max(0f, upC.length - chairT) : 0f);
+                        chairDown = false;
                         floorPhase = FloorPhase.Up;
                     }
                     clip = upC;
@@ -690,7 +735,7 @@ namespace LifeSimProto
                         if (listening) { if (listenVariant == null) { var lc = MotionBook.PickFrom(MotionBook.ListenPool, Clip); listenVariant = lc != null ? lc.name : talkVariant; } clip = Clip(listenVariant); }
                         if (clip == null) clip = Clip(talkVariant) ?? Clip("Talk") ?? Clip("Idle");
                     }
-                    else if ((sceneClip = MotionBook.StandClip(SceneNow(), LetterNow(), Clip)) != null) clip = sceneClip;   // 生活の場面（料理・魔法の練習など）
+                    else if ((sceneClip = MotionBook.StandClip(SceneNow(), LetterNow(), Clip)) != null && (testMode || stillT >= SceneStillWait || sceneCur != null)) clip = SceneFlow(sceneClip, dt);   // 生活の場面（料理・魔法の練習など）。歩いて来たら一度止まってから
                     else if (!testMode && sim.FaceNow == "Sad" && MotionBook.SadIdle(LetterNow(), Clip) != null) clip = MotionBook.SadIdle(LetterNow(), Clip);   // 気分が沈んでいるときの立ち方
                     else if (!testMode && sim.IsWaitingNow && Clip(MotionBook.WaitClip) != null) clip = Clip(MotionBook.WaitClip);      // 用事が終わるのを待っている
                     else if (!testMode && sim.FlirtNow && Clip(MotionBook.FlirtClip) != null) clip = Clip(MotionBook.FlirtClip);        // 好きな人（篤）のそば
@@ -700,7 +745,14 @@ namespace LifeSimProto
                 else if (pose == BodyPose.Sit)
                 {
                     if (talking && (!wasTalking || sitTalkVariant == null)) { var sc = MotionBook.PickFrom(MotionBook.SitTalkPool, Clip); sitTalkVariant = sc != null ? sc.name : "SitTalk"; }
-                    clip = talking ? (Clip(sitTalkVariant ?? "SitTalk") ?? Clip("SitTalk") ?? Clip("Sit")) : Clip("Sit");
+                    // 椅子に座る（2026-11-08 モーション）：座った瞬間は「座る」を1回流し、終わる少し前から座ったままのくり返しへ
+                    string cn = ChairNow(); upBase = cn;
+                    var cdn = Clip(cn + "_Down");
+                    if (lastPose != BodyPose.Sit) { chairDown = cdn != null; chairT = 0f; if (chairDown) SitStartSnap(cn); }
+                    chairT += dt;
+                    if (chairDown && chairT >= cdn.length - 0.3f) chairDown = false;
+                    if (chairDown) clip = cdn;
+                    else clip = talking ? (Clip(sitTalkVariant ?? "SitTalk") ?? Clip("SitTalk") ?? Clip(cn) ?? Clip("Sit")) : (Clip(cn) ?? Clip("Sit"));
                 }
                 else if ((pose == BodyPose.Lie || pose == BodyPose.LieFloor) && !string.IsNullOrEmpty(LieClip))
                 {
@@ -713,24 +765,31 @@ namespace LifeSimProto
                 else if (pose == BodyPose.SitFloor)
                 {
                     if (testMode && testSitFloorClip != null) { if (testSitFloorClip != "") clip = Clip(testSitFloorClip); }
-                    else if (!string.IsNullOrEmpty(SitFloorClip) && Clip(SitFloorClip) != null)
+                    else if (!string.IsNullOrEmpty(SitFloorClip) && Clip(FloorNow()) != null)
                     {
                         // 座った瞬間は「座る」を1回流し、終わる少し前から正座のくり返しへ（つなぎ目は PlayClip のなめらかな切りかえ）
-                        var dn = Clip(SitFloorClip + "_Down");
-                        if (lastPose != BodyPose.SitFloor) { floorPhase = dn != null ? FloorPhase.Down : FloorPhase.Seated; floorT = 0f; }
+                        // 座り方はキャラごと（正座・横座り・女の子座り・あぐら。2026-11-08 モーション）
+                        string fn = FloorNow(); upBase = fn;
+                        var dn = Clip(fn + "_Down");
+                        if (lastPose != BodyPose.SitFloor) { floorPhase = dn != null ? FloorPhase.Down : FloorPhase.Seated; floorT = 0f; if (dn != null) SitStartSnap(fn); }
                         floorT += dt;
                         if (floorPhase == FloorPhase.Down && (dn == null || floorT >= dn.length - 0.3f)) floorPhase = FloorPhase.Seated;
                         if (floorPhase != FloorPhase.Down) floorPhase = FloorPhase.Seated;
-                        clip = floorPhase == FloorPhase.Down ? dn : Clip(SitFloorClip);
+                        clip = floorPhase == FloorPhase.Down ? dn : Clip(fn);
                     }
                 }
             }
+            // 場面の動きの後始末：使わなかったコマは場面を終える（やめる動きが無いときは 0.6秒でなめらかに戻す）
+            if (pose == BodyPose.Stand && speed > 0.25f) stillT = 0f; else stillT += dt;
+            if (!sceneUsed && sceneCur != null && !(testMode ? testStandUp : sim.StandingUpNow)) { sceneCur = null; scenePhase = 0; if (lastWasScene) pendingFade = SceneFade; }
+            lastWasScene = sceneUsed; sceneUsed = false;
             if (clip != null)
             {
+                if (clip != curClip && pendingFade > 0f) { fadeTime = pendingFade; pendingFade = 0f; } else if (clip != curClip) fadeTime = 0.25f;
                 PlayClip(clip);
                 if (fade < 1f)
                 {
-                    fade = Mathf.Min(1f, fade + dt / 0.25f);
+                    fade = Mathf.Min(1f, fade + dt / fadeTime);
                     mixer.SetInputWeight(0, fade);
                     mixer.SetInputWeight(1, 1f - fade);
                 }
@@ -763,6 +822,8 @@ namespace LifeSimProto
                 if (nk != null) nk.rotation = Quaternion.AngleAxis(28f * dozeW, transform.right) * nk.rotation;
             }
             // 話し相手・先生・作業の物のほうへ首と頭を向ける（動きの上から。2026-11-07 IK の A）
+            // 二人の動き：手を相手の体に合わせる（2026-11-08 IK の B。ProtoBody.Reach.cs）
+            UpdateReach(hOn ? hName : null, dt, clip != null && hOn);
             UpdateLook(dt, clip != null && !hOn && pose != BodyPose.Lie && pose != BodyPose.LieFloor && pose != BodyPose.Soak && !dozingNow && !(testMode ? testEyesClosed : sim.EyesClosedNow));
             if (pose != BodyPose.SitFloor && floorPhase != FloorPhase.Up) floorPhase = FloorPhase.None;
             lastPose = pose;
@@ -934,6 +995,9 @@ namespace LifeSimProto
             curOutfit = null;
             ShowOutfit("Uniform");
         }
+
+        /// <summary>その服（Outfit_（名前）_…）があるか。</summary>
+        public bool HasOutfit(string name) { return outfits.ContainsKey(name); }
 
         void ShowOutfit(string name)
         {

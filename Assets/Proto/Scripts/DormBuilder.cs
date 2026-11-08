@@ -63,7 +63,9 @@ namespace LifeSimProto
         public static float HalfW = 8.6f;   // 談話室（真ん中）の幅の半分
         public static float FloorH = 4.5f;  // 1階分の高さ（famuru 2026-10-25「1.5倍」。前は 3m）
         public static float RoomH { get { return FloorH * 3f; } } // 吹き抜けの高さ
-        public static float FloorY(int floor) { return floor * FloorH; }
+        public static float FloorY(int floor) { return floor >= 3 ? RoofY : floor * FloorH; } // 屋上の階（3）だけは RoofY（新しい学園は北東の塔の上の天文台 14m。2026-11-08 家具のチャット）
+        /// <summary>3階の上（屋根の下のふち・軒）の高さ。</summary>
+        public static float EaveY { get { return 3f * FloorH; } }
 
         // 棟：真ん中の端 x 8.6 → 廊下 → x 11 → 個室（奥行き6m）→ x 17（外壁）
         static float WingIn = 8.6f, WingCorr = 11f, WingOut = 17f, RoomW = 3.6f, RoomDepth = 6f;

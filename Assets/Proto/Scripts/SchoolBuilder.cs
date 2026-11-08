@@ -152,7 +152,7 @@ namespace LifeSimProto
             SWall(y, y + FloorH, 10, SCor1, 60, SCor1, gapsCS.ToArray());
             // 南の外壁：1階は玄関
             var gapsS = new List<Vector4>();
-            if (f == 0) gapsS.Add(new Vector4(35f - 1.2f, 35f + 1.2f, y, y + 2.8f));
+            if (f == 0) gapsS.Add(NewLayout && UseV3 ? new Vector4(35f - 0.8f, 35f + 0.8f, y, y + 2.6f) : new Vector4(35f - 1.2f, 35f + 1.2f, y, y + 2.8f)); // 新しい学園で依頼28 の入口を置くときは、入口の口（幅 1.6m）と同じ穴に
             var wS = SWall(y, y + FloorH, 0, SBack, SLen, SBack, gapsS.ToArray());
             // 西と東の外壁（1階の西は裏口：寮の前庭へ）
             var wW = f == 0 || (f == 1 && NewLayout) ? SWall(y, y + FloorH, 0, 25, 0, SBack, new Vector4(35.5f - 25f - 0.8f, 35.5f - 25f + 0.8f, y, y + 2.5f)) : SWall(y, y + FloorH, 0, 25, 0, SBack); // 新しい学園では2階の西のはしに寮の渡り廊下
@@ -162,8 +162,9 @@ namespace LifeSimProto
             for (int i = 1; i < south.Length; i++) SWall(y, y + FloorH, south[i].x0, SCor1, south[i].x0, SBack);
 
             // 2026-11-07 家具のチャット：外壁の外側に依頼28 の石の壁の部品を張る（新しい学園だけ。NewDorm.cs の Outer）
-            Outer(wN, y, y + FloorH, SDir(0, -1), SG(gapsN.ToArray()), f == 2);
+            Outer(wN, y, y + FloorH, SDir(0, -1), SG(gapsN.ToArray()), f == 2, 0.3f); // 外廊下の側は通る幅が狭くならないよう、部品の厚みを半分に
             Outer(wS, y, y + FloorH, SDir(0, 1), SG(gapsS.ToArray()), f == 2);
+            if (f == 0) EntranceV3(wS, "Entrance_Main", S3(35f, SBack, y) + SDir(0, 1) * (WallT / 2f), SDir(0, 1), new Vector3(1f, 1f, 0.55f), 0.6f); // 本館の玄関（依頼28 追記3。奥行きが深い模型なので前後だけ 0.55 倍。北の道にかからないように）
             Outer(wW, y, y + FloorH, SDir(-1, 0), f == 0 || (f == 1 && NewLayout) ? SG(new[] { new Vector4(35.5f - 25f - 0.8f, 35.5f - 25f + 0.8f, y, y + 2.5f) }) : new Vector4[0], f == 2);
             Outer(wE, y, y + FloorH, SDir(1, 0), f == 0 && NewLayout ? SG(new[] { new Vector4(35.5f - 25f - 0.8f, 35.5f - 25f + 0.8f, y, y + 2.5f) }) : new Vector4[0], f == 2);
             // 窓
@@ -440,7 +441,8 @@ namespace LifeSimProto
             if (f == 0)
             {
                 n.Open(SR(-0.7f, 34.9f, 0.5f, 36.1f));                 // 裏口（寮の前庭へ）
-                n.Open(SR(33.9f, SBack - 0.5f, 36.1f, SBack + 0.6f));   // 玄関
+                if (NewLayout && UseV3) n.Open(SR(34.4f, SBack - 0.5f, 35.6f, SBack + 0.9f)); // 玄関（依頼28 の入口の口に合わせる）
+                else n.Open(SR(33.9f, SBack - 0.5f, 36.1f, SBack + 0.6f));   // 玄関
                 n.Open(SR(31.25f, SBack + 0.25f, 38.75f, SBack + 6f));  // 正門への道
                 n.Open(SIn(0, 0, 18f, SVer0));                         // 体育館
                 n.Open(SIn(52f, 0, SLen, SVer0));                      // 大講堂

@@ -26,11 +26,21 @@ namespace LifeSimProto
 
         public static string Family(string form)
         {
-            if (form.StartsWith("Ride")) return "ride";
-            if (form.StartsWith("Seat")) return "seat";
+            // 2026-11-08 モーション：背面騎乗位・背面座位・お風呂の対面座位、キス・愛撫・口や手・始まり・終わったあと・ほかの子を足した
+            if (form.StartsWith("Kiss")) return "kiss";
+            if (form.StartsWith("Pet")) return "pet";
+            if (form == "StartPush") return "start";
+            if (form.StartsWith("After")) return "after";
+            if (form == "GirlWait") return "wait";
+            if (form.StartsWith("Girl")) return "solo";
+            if (form == "Fellatio" || form == "Paizuri" || form == "Handjob" || form == "SixtyNine" || form == "Cunni") return "oral";
+            if (form.Contains("Ride")) return "ride";
+            if (form.Contains("Seat")) return "seat";
             if (form.StartsWith("Solo")) return "solo";
             return "mis";
         }
+        /// <summary>入れる形（挿入の音を鳴らす）</summary>
+        public static bool Inserts(string family) { return family == "mis" || family == "ride" || family == "seat"; }
 
         public static List<Step>[] Phases(string family)
         {
@@ -48,10 +58,30 @@ namespace LifeSimProto
                     r[2] = new List<Step> { new Step("Rock", 1.9f, 6), new Step("Bounce", 1.5f, 2) };
                     break;
                 case "solo":
+                case "oral":
                     r[0] = new List<Step> { new Step("Slow", 0.9f, 3), new Step("Slow", 1.3f, 2) };
                     r[1] = new List<Step> { new Step("Fast", 1.0f, 5) };
                     r[2] = new List<Step> { new Step("Fast", 1.4f, 4) };
                     break;
+                case "kiss":
+                    r[0] = new List<Step> { new Step("Light", 1f, 2), new Step("Deep", 1f, 2) };
+                    r[1] = r[2] = new List<Step> { new Step("Deep", 1f, 2), new Step("Light", 1f, 1) };
+                    r[3] = new List<Step> { new Step("Deep", 1f, 1) };
+                    return r;
+                case "pet":
+                    r[0] = new List<Step> { new Step("Breast", 1f, 3) };
+                    r[1] = new List<Step> { new Step("Crotch", 1f, 3), new Step("Breast", 1f, 1) };
+                    r[2] = new List<Step> { new Step("Crotch", 1.3f, 4) };
+                    break;
+                case "start":
+                    r[0] = r[1] = r[2] = r[3] = new List<Step> { new Step("Hug", 1f, 1) };
+                    return r;
+                case "after":
+                    r[0] = r[1] = r[2] = r[3] = new List<Step> { new Step("Idle", 1f, 2), new Step("Stroke", 1f, 2) };
+                    return r;
+                case "wait":
+                    r[0] = r[1] = r[2] = r[3] = new List<Step> { new Step("Idle", 1f, 2), new Step("Fidget", 1f, 1) };
+                    return r;
                 default:
                     r[0] = new List<Step> { new Step("Deep", 0.7f, 3), new Step("Grind", 0.8f, 1) };
                     r[1] = new List<Step> { new Step("Deep", 1.2f, 2), new Step("Shallow", 1.2f, 1), new Step("Deep", 1.2f, 2) };
@@ -67,11 +97,14 @@ namespace LifeSimProto
         {
             switch (pose)
             {
-                case "騎乗位": two = "Ride"; four = "Ride4"; break;
-                case "後背位": two = "Doggy"; four = "Doggy4"; break;
-                case "立位": two = StandFree[seed % StandFree.Length]; four = null; break;
-                case "対面座位": two = "Seat"; four = "Seat4"; break;
-                default: two = (seed & 1) == 0 ? "MisA" : "MisB"; four = "MisB3"; break;
+                // 2026-11-08 モーション：同じ体位の中で形を選ぶ（騎乗位・背面騎乗位／後背位・寝バック／対面座位・背面座位／正常位A・B・屈曲位・側位）。立位も3人の形
+                case "騎乗位": if (seed % 3 == 2) { two = "ReverseRide"; four = "ReverseRide3"; } else { two = "Ride"; four = "Ride4"; } break;
+                case "後背位": if (seed % 3 == 2) { two = "Prone"; four = "Prone3"; } else { two = "Doggy"; four = "Doggy4"; } break;
+                case "立位": two = StandFree[seed % StandFree.Length]; four = two + "3"; break;
+                case "対面座位": if (seed % 3 == 2) { two = "ReverseSeat"; four = "ReverseSeat3"; } else { two = "Seat"; four = "Seat4"; } break;
+                default:
+                    switch (seed % 5) { case 3: two = "Fold"; four = "Fold3"; break; case 4: two = "Spoon"; four = "MisB3"; break; default: two = (seed & 1) == 0 ? "MisA" : "MisB"; four = "MisB3"; break; }
+                    break;
             }
         }
 
@@ -124,7 +157,7 @@ namespace LifeSimProto
             var c = CurClip(HMotionBook.Family(form) == "solo" ? "F" : "M") ?? CurClip("F");
             float len = c != null ? Mathf.Max(0.1f, c.length) : 1f;
             float fps = c != null && c.frameRate > 1f ? 30f / c.frameRate : 1f;   // 24コマ/秒 で記録された物は、コマ数どおりの長さで流す
-            if (snd && insertPending && HMotionBook.Family(form) != "solo") HSound.Play("insert", soundPos, 0.8f);
+            if (snd && insertPending && HMotionBook.Inserts(HMotionBook.Family(form))) HSound.Play("insert", soundPos, 0.8f);
             insertPending = false;
             float t0 = t;
             t += dt * Cur.speed * speedMul * fps;

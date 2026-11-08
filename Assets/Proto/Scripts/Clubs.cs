@@ -17,7 +17,7 @@ namespace LifeSimProto
         /// <summary>活動のようす（画面の「今：」に出す）。</summary>
         public static readonly string[] Doing = { "生徒会の仕事をしている", "剣術の稽古をしている", "魔法の練習をしている", "ほうきで飛ぶ練習をしている", "料理の練習をしている", "魔道具をいじっている" };
         /// <summary>動きを選ぶ言葉（MotionBook の場面）。</summary>
-        public static readonly string[] Scene = { null, "剣術", "魔法", null, "料理", "工房" };
+        public static readonly string[] Scene = { "生徒会", "剣術", "魔法", "ほうき", "料理", "工房" };   // 生徒会・ほうき部は 2026-11-08 モーション
         /// <summary>伸びる科目と能力。</summary>
         public static readonly int[] Subject = { Academics.History, Academics.Sword, Academics.MagicArts, Academics.Flight, Academics.Herb, Academics.Tools };
         public static readonly int[] Ability = { Abilities.Charm, Abilities.Body, Abilities.Magic, Abilities.Body, Abilities.Dex, Abilities.Dex };

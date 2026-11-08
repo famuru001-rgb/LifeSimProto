@@ -47,10 +47,52 @@ namespace LifeSimProto
             new Form("StandSide", "立位：側面", "mis", "M", "F"),
             new Form("StandCarry", "立位：駅弁", "mis", "M", "F"),
             new Form("StandSplit", "立位：片脚上げ（I字）", "mis", "M", "F"),
+            // 2026-11-08 モーション（famuru「全部入れる」）
+            new Form("Fold", "屈曲位", "mis", "M", "F"),
+            new Form("Spoon", "側位", "mis", "M", "F"),
+            new Form("Prone", "寝バック", "mis", "M", "F"),
+            new Form("ReverseRide", "背面騎乗位", "ride", "M", "F"),
+            new Form("ReverseSeat", "背面座位", "seat", "M", "F"),
+            new Form("BathSeat", "お風呂：対面座位", "seat", "M", "F"),
+            new Form("StandBath", "お風呂：立位（湯船のふち）", "mis", "M", "F"),
+            new Form("Fold3", "3人：屈曲位", "mis", "M", "F", "P"),
+            new Form("Prone3", "3人：寝バック", "mis", "M", "F", "P"),
+            new Form("ReverseRide3", "3人：背面騎乗位", "ride", "M", "F", "P"),
+            new Form("ReverseSeat3", "3人：背面座位", "seat", "M", "F", "P"),
+            new Form("StandFront3", "3人：立位 正面", "mis", "M", "F", "P"),
+            new Form("StandWall3", "3人：立位 壁", "mis", "M", "F", "P"),
+            new Form("StandDesk3", "3人：立位 机", "mis", "M", "F", "P"),
+            new Form("StandSide3", "3人：立位 側面", "mis", "M", "F", "P"),
+            new Form("StandCarry3", "3人：駅弁", "mis", "M", "F", "P"),
+            new Form("StandSplit3", "3人：I字", "mis", "M", "F", "P"),
+            new Form("KissStand", "キス：立って", "kiss", "M", "F"),
+            new Form("KissSit", "キス：座って", "kiss", "M", "F"),
+            new Form("KissLie", "キス：寝転んで", "kiss", "M", "F"),
+            new Form("PetSit", "愛撫：座って", "pet", "M", "F"),
+            new Form("PetLie", "愛撫：寝て", "pet", "M", "F"),
+            new Form("Fellatio", "フェラ", "oral", "M", "F"),
+            new Form("Handjob", "手で", "oral", "M", "F"),
+            new Form("Paizuri", "胸ではさむ", "oral", "M", "F"),
+            new Form("Cunni", "クンニ", "oral", "M", "F"),
+            new Form("SixtyNine", "69", "oral", "M", "F"),
+            new Form("StartPush", "始まり：抱き寄せる", "start", "M", "F"),
+            new Form("AfterArm", "あと：腕まくら", "after", "M", "F"),
+            new Form("AfterChest", "あと：胸の上", "after", "M", "F"),
+            new Form("AfterSpoon", "あと：後ろから", "after", "M", "F"),
+            new Form("GirlWait", "ほかの子：待つ", "wait", "F"),
+            new Form("GirlSelf", "ほかの子：自分で", "solo", "F"),
+            new Form("GirlStandSelf", "ほかの子：立って自分で", "solo", "F"),
         };
+        static bool IsStand(string k) { return k.StartsWith("Stand") || k == "KissStand" || k == "GirlStandSelf"; }
         static readonly string[] PhaseNames = { "前半", "中盤", "後半", "フィニッシュ" };
         static List<Step>[] Phases(string family)
         {
+            if (family == "oral" || family == "kiss" || family == "pet" || family == "start" || family == "after" || family == "wait")
+            {
+                var src = HMotionBook.Phases(family); var o = new List<Step>[4];
+                for (int i = 0; i < 4; i++) { o[i] = new List<Step>(); foreach (var st in src[i]) o[i].Add(new Step(st.part, st.speed, st.count)); }
+                return o;
+            }
             var r = new List<Step>[4];
             switch (family)
             {
@@ -83,6 +125,7 @@ namespace LifeSimProto
             { "Deep", "深く" }, { "Shallow", "浅く" }, { "Grind", "押しつけ・回す" }, { "Finish", "フィニッシュ" },
             { "Bounce", "上下（大）" }, { "BounceSmall", "上下（小）" }, { "Circle", "腰を回す" },
             { "Rock", "前後（大）" }, { "RockSmall", "前後（小）" }, { "Slow", "ゆっくり" }, { "Fast", "速く" },
+            { "Light", "軽く" }, { "Breast", "胸" }, { "Crotch", "股" }, { "Hug", "抱き寄せる" }, { "Push", "押し倒す" }, { "Idle", "そのまま" }, { "Stroke", "なでる" }, { "Fidget", "もじもじ" },
         };
         static readonly string[] Letters = { "I", "B", "G", "J", "K", "Q", "R" };
 
@@ -157,7 +200,7 @@ namespace LifeSimProto
             bodies.Clear();
             var f = Forms[formIx];
             phases = Phases(f.family);
-            bool stand = f.key.StartsWith("Stand");
+            bool stand = IsStand(f.key);
             bedGo.SetActive(!stand); wallGo.SetActive(f.key == "StandWall"); deskGo.SetActive(f.key == "StandDesk");
             anchor.localPosition = new Vector3(0f, stand ? 0f : BedTop, 0f);
             foreach (var rig in f.rigs)
@@ -244,7 +287,7 @@ namespace LifeSimProto
         }
         void PlaceCam()
         {
-            Vector3 target = anchor.position + Vector3.up * (Forms[formIx].key.StartsWith("Stand") ? 0.95f : 0.35f);
+            Vector3 target = anchor.position + Vector3.up * (IsStand(Forms[formIx].key) ? 0.95f : 0.35f);
             cam.transform.rotation = Quaternion.Euler(pitch, yaw, 0f);
             cam.transform.position = target - cam.transform.forward * dist;
         }

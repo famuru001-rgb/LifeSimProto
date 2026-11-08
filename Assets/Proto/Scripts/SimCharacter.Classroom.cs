@@ -67,7 +67,8 @@ namespace LifeSimProto
             switch (Academics.Names[subject])
             {
                 case "剣術": return "剣術";
-                case "魔法術": case "飛行術": return "魔法";
+                case "魔法術": return "魔法";
+                case "飛行術": return "ほうき";   // ほうきで飛ぶ練習の動き（2026-11-08 モーション）
                 case "薬草学": case "魔法医学": return "薬草";
                 case "魔道具学": return "工房";
                 case "錬成": return "釜";

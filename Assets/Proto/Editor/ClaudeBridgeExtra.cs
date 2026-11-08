@@ -75,6 +75,9 @@ namespace LifeSimProto.EditorTools
                 case "dgo":
                 case "dtrain":
                 case "navcheck":
+                case "navpng":
+                case "goto":
+                case "wall":
                 case "dpick":
                 case "dstat":
                 case "cup":
@@ -254,6 +257,57 @@ namespace LifeSimProto.EditorTools
                         var f = w.RomanceTarget;
                         f.vigor = float.Parse(a[1], System.Globalization.CultureInfo.InvariantCulture);
                         log.AppendLine("hvigor: " + f.vigor);
+                        break;
+                    }
+                    case "wall":
+                    {
+                        // 試験用：wall all|low|auto（壁の見せ方。campos のあとに使う。2026-11-08 家具のチャット）
+                        w.wallMode = a.Length > 1 && a[1] == "all" ? WallMode.All : a.Length > 1 && a[1] == "auto" ? WallMode.Auto : WallMode.Low;
+                        log.AppendLine("wall: " + w.wallMode);
+                        break;
+                    }
+                    case "goto":
+                    {
+                        // 試験用：goto 番号 名前（その子を、その名前の席（空いている物）か見どころへ行かせる。2026-11-08 家具のチャット）
+                        var c = w.characters[int.Parse(a[1])];
+                        if (a[2] == "@") { var ci2 = System.Globalization.CultureInfo.InvariantCulture; c.OrderMove(new Vector3(float.Parse(a[3], ci2), 0f, float.Parse(a[4], ci2))); log.AppendLine("goto: " + c.displayName + " move"); break; } // goto 番号 @ x z（指示で歩かせる）
+                        string label = string.Join(" ", a, 2, a.Length - 2);
+                        var t = typeof(SimCharacter);
+                        var actT = t.GetNestedType("Act", System.Reflection.BindingFlags.NonPublic);
+                        var bf = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+                        var s = w.seats.Find(x => x.label == label && x.occupant == null);
+                        bool ok = false;
+                        if (s != null) ok = (bool)t.GetMethod("StartSitAt", bf).Invoke(c, new object[] { s, System.Enum.Parse(actT, "Rest"), null });
+                        else
+                        {
+                            var pp = w.pois.Find(x => x.label == label && x.FreeSlot() >= 0);
+                            if (pp != null) ok = (bool)t.GetMethod("GoToPoi", bf).Invoke(c, new object[] { pp, System.Enum.Parse(actT, "Fun"), pp.label, 600f });
+                        }
+                        log.AppendLine("goto: " + c.displayName + " " + label + " " + ok);
+                        break;
+                    }
+                    case "navpng":
+                    {
+                        // 試験用：navpng x0 z0 x1 z1（1階の歩ける所を Logs\navpng.png に。白＝歩ける、10m ごとに線。2026-11-08 家具のチャット）
+                        var ci = System.Globalization.CultureInfo.InvariantCulture;
+                        float x0 = float.Parse(a[1], ci), z0 = float.Parse(a[2], ci), x1 = float.Parse(a[3], ci), z1 = float.Parse(a[4], ci);
+                        var nv = w.Nav(0);
+                        int W = Mathf.CeilToInt((x1 - x0) / 0.25f), H = Mathf.CeilToInt((z1 - z0) / 0.25f);
+                        var tex = new Texture2D(W, H, TextureFormat.RGB24, false);
+                        for (int j = 0; j < H; j++)
+                            for (int i = 0; i < W; i++)
+                            {
+                                float x = x0 + (i + 0.5f) * 0.25f, z = z0 + (j + 0.5f) * 0.25f;
+                                bool free = nv.IsFree(new Vector3(x, 0f, z));
+                                Color c = free ? new Color(0.95f, 0.95f, 0.9f) : new Color(0.15f, 0.17f, 0.2f);
+                                if (Mathf.Abs(Mathf.Repeat(x, 10f)) < 0.25f || Mathf.Abs(Mathf.Repeat(z, 10f)) < 0.25f) c = free ? new Color(0.9f, 0.6f, 0.6f) : new Color(0.45f, 0.2f, 0.2f);
+                                if (Mathf.Abs(x) < 0.25f || Mathf.Abs(z) < 0.25f) c = new Color(0.2f, 0.5f, 1f);
+                                tex.SetPixel(i, j, c);
+                            }
+                        tex.Apply();
+                        File.WriteAllBytes(Path.Combine(Dir, "navpng.png"), tex.EncodeToPNG());
+                        Object.DestroyImmediate(tex);
+                        log.AppendLine("navpng: " + W + "x" + H);
                         break;
                     }
                     case "navcheck":

@@ -84,6 +84,17 @@ namespace LifeSimProto
                 if (LoungeWorld.InSchool(c)) continue;
                 add("area:" + a.name, a.name, c);
             }
+            // プールと浜辺（更衣小屋の中・浜の休憩小屋の中・浜のはしの岩かげ・だれもいない寝椅子。famuru 2026-11-08）
+            foreach (var an in LoungeWorld.ShoreHAreas)
+            {
+                var a = world.areaList.Find(x => x.name == an);
+                if (a != null) add("area:" + an, an, new Vector3(a.rect.center.x, LoungeWorld.FloorY(a.floor), a.rect.center.y));
+            }
+            foreach (var sl in LoungeWorld.ShoreHSeats)
+            {
+                var s = world.seats.Find(x => x.label == sl && x.occupant == null);
+                if (s != null) add("seat:" + sl, sl, s.position);
+            }
             var rooms = world.HSchoolRooms();
             for (int i = 0; i < rooms.Count; i++)
             {
@@ -123,6 +134,19 @@ namespace LifeSimProto
                 }
                 var a = world.areaList.Find(x => x.name == place);
                 return a != null ? AreaSpot(a, place, n) : null;
+            }
+            if (key.StartsWith("seat:"))
+            {
+                // 名前の同じ席（寝椅子など）のうち、空いているものを近い順に（2026-11-08 プールと浜辺）
+                string label = key.Substring(5);
+                var free = world.seats.FindAll(x => x.label == label && x.kind == SeatKind.Sit && x.occupant == null);
+                if (free.Count == 0) return null;
+                var first = free[Random.Range(0, free.Count)];
+                free.Sort((x, y) => (x.position - first.position).sqrMagnitude.CompareTo((y.position - first.position).sqrMagnitude));
+                var ps = new PrivateSpot { name = label };
+                for (int i = 0; i < Mathf.Min(n, free.Count); i++) { ps.seatList.Add(free[i]); ps.walkTo.Add(free[i].approach); }
+                if (ps.seatList.Count < n) { var a = world.AreaAt(first.position); if (a != null) return AreaSpot(a, label, n); }
+                return ps;
             }
             if (key.StartsWith("area:"))
             {

@@ -39,6 +39,7 @@ namespace LifeSimProto
         public bool kitchen;      // 台所（お菓子づくり）
         public bool stars;        // 星を見る場所（夜でも行きやすい）
         public bool seated;       // 椅子に座って行う（机など。2026-10-30 モーション）
+        public bool shore;        // プールと浜辺（遠いので行きやすくする。休日はもっと。2026-11-08 家具のチャット）
 
         public int FreeSlot()
         {

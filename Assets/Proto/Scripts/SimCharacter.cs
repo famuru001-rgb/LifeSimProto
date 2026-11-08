@@ -2413,6 +2413,7 @@ namespace LifeSimProto
                 w *= Mathf.Exp(0.35f * Mathf.Clamp(PlaceBonus(p.slots[fs]), -4f, 6f));
                 if (p.dynamicSpot) w *= 4f;
                 if (world.BadWeatherToday && p.label == "暖炉にあたっている") w *= 2f;
+                if (p.shore) w *= world.IsHolidayToday ? 6f : 3f; // プールと浜辺は遠いので行きやすく（2026-11-08）
                 if (p.outdoor && (world.BadWeatherToday || LoungeWorld.IsNight(world.MinuteOfDay))) w *= p.stars && !world.BadWeatherToday ? 1.5f : 0.08f; // 外は雨・雪・夜は行きにくい（星は夜）
                 candidates.Add(p);
                 weights.Add(w);
@@ -4186,17 +4187,37 @@ namespace LifeSimProto
         Vector3 standUpPos, standUpAfter;
         Quaternion standUpRot;
         public bool StandingUpNow { get { return Time.time < standUpUntil; } }
+        string standUpClipName;
+        /// <summary>その場で流している「やめる」動きの名前（無ければ null。座っていた所から立つときは ProtoBody が決める）</summary>
+        public string StandUpClipName { get { return StandingUpNow ? standUpClipName : null; } }
 
         void LeaveCurrentSpot()
         {
-            bool wasFloor = CurrentPose() == Pose.SitFloor && !string.IsNullOrEmpty(ProtoBody.SitFloorClip);
+            var poseNow = CurrentPose();
+            bool wasFloor = poseNow == Pose.SitFloor && !string.IsNullOrEmpty(ProtoBody.SitFloorClip);
+            // 椅子から立つ動き（Sit_〇〇_Up）がある子は、椅子からもその場で立ち上がる（2026-11-08 モーション）
+            var upClip = poseNow == Pose.SitFloor ? ProtoBody.FindClip(MotionBook.FloorSit(Letter, male) + "_Up") : (poseNow == Pose.Sit ? ProtoBody.FindClip(MotionBook.ChairSit(Letter, male) + "_Up") : null);
+            bool wasChair = poseNow == Pose.Sit && upClip != null && !IsMob;
+            // 場面の動きに「やめる」（〇〇_Out）があれば、その場で流してから離れる（2026-11-08 モーション）
+            AnimationClip sceneOut = null;
+            if (poseNow == Pose.Stand && (state == State.Activity || state == State.Idle) && !IsMob)
+            {
+                var scn = MotionScene; var sc0 = scn != null ? MotionBook.StandClip(scn, Letter, ProtoBody.FindClip) : null;
+                sceneOut = sc0 != null ? ProtoBody.FindClip(sc0.name + "_Out") : null;
+            }
+            standUpClipName = null;
             EndChat();
             bool atSeat = seat != null && (state == State.Sitting || state == State.Eating || state == State.Bathing || state == State.Sleeping);
-            if (atSeat && wasFloor && seat.floorSeat)
+            if (atSeat && ((wasFloor && seat.floorSeat) || (wasChair && !seat.floorSeat && seat.kind == SeatKind.Sit)))
             {
                 standUpPos = transform.position; standUpRot = transform.rotation;
                 standUpAfter = world.NearestFree(seat.approach);
-                standUpUntil = Time.time + StandUpSeconds;
+                standUpUntil = Time.time + (upClip != null ? Mathf.Clamp(upClip.length, 1f, 4f) : StandUpSeconds);
+            }
+            else if (sceneOut != null)
+            {
+                standUpPos = transform.position; standUpRot = transform.rotation; standUpAfter = transform.position;
+                standUpUntil = Time.time + Mathf.Clamp(sceneOut.length, 0.5f, 4f); standUpClipName = sceneOut.name;
             }
             else if (atSeat) transform.position = world.NearestFree(seat.approach);
             ReleaseSeatAndPoi();
@@ -4243,9 +4264,12 @@ namespace LifeSimProto
             {
                 if (sceneLabel != null && (state == State.Activity || state == State.Idle)) return sceneLabel; // 部活・ダンジョン
                 if (state == State.Activity && poi != null) return poi.label;
+                if (state == State.Activity && poi == null && gathering != null) return gathering.label;   // 行事（花火・ごちそう など。2026-11-08 モーション）
+                if (state == State.Idle && actionText == "起きた") return "のび";   // 起きたら、のびをする（2026-11-08 モーション）
                 if (state == State.Eating) return act == Act.Tea ? "#お茶" : "#食べる";
                 if (state == State.Sitting)
                 {
+                    if (sceneLabel != null && lifeEv != null) return sceneLabel;   // 生活のできごとで座っているとき（晩酌・宝物みがき など。2026-11-08 モーション）
                     if (act == Act.Study) return "#勉強";
                     if (act == Act.Meal || act == Act.Snack) return "#食べる";
                     if (act == Act.Tea) return "#お茶";
@@ -4297,6 +4321,8 @@ namespace LifeSimProto
             {
                 if (state == State.Bathing) return "Towel";
                 if (state == State.Sleeping && !napping && !dozing) return "Sleep";
+                // プールと浜辺では水着（昼だけ。水着の服がない子はいつもの服のまま。famuru 2026-11-08）
+                if (world != null && CampusPreview.InSwimZone(transform.position) && !LoungeWorld.IsNight(world.MinuteOfDay) && HasSwimOutfit) return "Swim";
                 if (world != null && world.IsHolidayToday) return "Casual";
                 return "Uniform";
             }
@@ -4374,7 +4400,14 @@ namespace LifeSimProto
             }
         }
 
-        public float HeadHeight
+        /// <summary>水着の服（Outfit_Swim_…）を持っているか。</summary>
+        bool HasSwimOutfit { get { if (pbCache == null) pbCache = GetComponent<ProtoBody>(); return pbCache != null && pbCache.HasOutfit("Swim"); } }
+        ProtoBody pbCache;
+        /// <summary>浜の砂・階段・桟橋の上では見た目を下げる量（CampusPreview.GroundLift。2026-11-08）。</summary>
+        public float GroundLift { get { return transform.position.y < 0.5f ? CampusPreview.GroundLift(transform.position) : 0f; } }
+        public float HeadHeight { get { return HeadHeightRaw + GroundLift; } }
+
+        float HeadHeightRaw
         {
             get
             {

@@ -300,7 +300,41 @@ namespace LifeSimProto
         {
             clip = null; time = 0f; pos = transform.position; rot = transform.rotation;
             if (hs != null) { soloMp = null; return state == State.Private && hs.MotionFor(this, out clip, out time, out pos, out rot); }
+            if (LifePairMotion(out clip, out time, out pos, out rot)) return true;
             return LifeSoloMotion(out clip, out time, out pos, out rot);
+        }
+
+        /// <summary>生活のできごとの2人の動き（LifePair.cs。2026-11-08 モーション）。篤が相手のときは、篤がその場に止まっている間だけ。</summary>
+        bool LifePairMotion(out string clip, out float time, out Vector3 pos, out Quaternion rot)
+        {
+            clip = null; time = 0f; pos = transform.position; rot = transform.rotation;
+            var r = lifeEv;
+            if (r == null || r.def == null || r.phase != LifeRun.Phase.Active || r.partner == null) return false;
+            if (!r.pairParsed) { r.pairParsed = true; r.pair = LifePairBook.Parse(r.def.scene); }
+            var sp = r.pair;
+            if (sp == null || (r.partnerIsF && !r.fHeld)) return false;
+            var mC = sp.mIsMain ? r.main : r.partner; var fC = sp.mIsMain ? r.partner : r.main;
+            if (this != mC && this != fC) return false;
+            bool m = this == mC;
+            if (!r.pairSet)
+            {
+                if (ProtoBody.FindClip(LifePairBook.Clip(sp, 0, false)) == null) return false;
+                r.pairSet = true; r.pairT0 = Time.time;
+                LifePairBook.Anchor(sp, fC.transform.position, fC.transform.rotation, out r.pairPos, out r.pairRot);
+            }
+            float t = Time.time - r.pairT0;
+            var c0 = ProtoBody.FindClip(LifePairBook.Clip(sp, 0, m));
+            if (c0 == null) return false;
+            int ix = 0;
+            if (sp.parts.Length > 1 && t >= c0.length)
+            {
+                ix = 1; var c1 = ProtoBody.FindClip(LifePairBook.Clip(sp, 1, m));
+                if (c1 == null) return false;
+                t = (t - c0.length) % Mathf.Max(0.1f, c1.length);
+            }
+            else if (sp.parts.Length == 1) t %= Mathf.Max(0.1f, c0.length);
+            clip = LifePairBook.Clip(sp, ix, m); time = t; pos = r.pairPos; rot = r.pairRot;
+            return true;
         }
 
         /// <summary>ひとりの時間（できごとのグループ solo_…）：自分のベッドの上で、あおむけか横向き（キャラごと）。</summary>
@@ -393,6 +427,7 @@ namespace LifeSimProto
                 if (d.sqrMagnitude > 0.04f) transform.rotation = Quaternion.LookRotation(d.normalized);
                 sceneLabel = string.IsNullOrEmpty(scene) ? null : scene;
             }
+            else if (state == State.Sitting) sceneLabel = string.IsNullOrEmpty(scene) ? null : scene;   // 座ったままの動き（2026-11-08 モーション）
             if (state != State.Sleeping && state != State.Bathing) actionText = text;
         }
 

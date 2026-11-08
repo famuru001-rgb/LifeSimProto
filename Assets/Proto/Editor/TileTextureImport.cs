@@ -17,6 +17,8 @@ namespace LifeSimProto
             string n = System.IO.Path.GetFileNameWithoutExtension(p).ToLowerInvariant();
             if (n.EndsWith("_normal")) ti.textureType = TextureImporterType.NormalMap;
             else if (n.EndsWith("_ms")) { ti.sRGBTexture = false; ti.alphaIsTransparency = false; }
+            else if (n == "ground_macro") ti.sRGBTexture = false; // 依頼30 の大きな色むら（灰色 0.5 が中立のデータ）
+            else if (n == "ground_card") { ti.alphaIsTransparency = true; ti.mipMapsPreserveCoverage = true; ti.alphaTestReferenceValue = 0.5f; } // 依頼30 の草・花の切り抜き（遠くで細くなって消えないように）
         }
     }
 }

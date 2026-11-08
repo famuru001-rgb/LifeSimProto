@@ -79,6 +79,14 @@ namespace LifeSimProto
                 bool ok = a.name == "前庭" || a.name == "本館の中庭" || (a.name == LoungeWorld.Courtyard && world.PlaceOpen(LoungeWorld.Courtyard));
                 if (ok) for (int i = 0; i < 5; i++) add(world.RandomPointIn(a));
             }
+            // 砂浜とプールのまわり（famuru 2026-11-08「砂浜を散歩」）
+            if (LoungeWorld.NewLayout && CampusPreview.PoolBeachOn)
+            {
+                float L = CampusPreview.ShoreLen;
+                for (int i = 0; i < 8; i++) add(CampusPreview.ShoreW(3f + (L - 6f) * (i + Random.value * 0.6f) / 8f, Random.Range(2.5f, 7f)));
+                Rect pr = CampusPreview.PoolRim;
+                foreach (var q in new[] { new Vector2(pr.xMin - 1.5f, pr.center.y), new Vector2(pr.center.x, pr.yMax + 1.0f), new Vector2(pr.center.x, pr.yMin - 0.8f) }) add(CampusPreview.PlanW(q.x, q.y));
+            }
             strollPoints = res;
             return res;
         }

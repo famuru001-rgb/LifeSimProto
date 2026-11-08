@@ -124,6 +124,35 @@ namespace LifeSimProto
         public static string Bow(string style) { return "BN_bow_" + style; }
         public static string Bye(string style) { return "BN_bye_" + style; }
 
+        // ---- 座り方（2026-11-08 famuru「HY版（1本目）」。椅子：とじる・ふつう・ひらく／床：正座・横座り・女の子座り・あぐら）----
+        // キャラのらしさで決め、らしさが決まっていない子はキャラごとにくじ（同じ子はいつも同じ）。仮の割り当て。famuru が見て直す
+        static readonly Dictionary<string, string> ChairByStyle = new Dictionary<string, string>
+        { { "feminine", "Sit_Closed" }, { "proud", "Sit_Closed" }, { "normal", "Sit_Normal" }, { "happy", "Sit_Normal" }, { "childish", "Sit_Open" }, { "active", "Sit_Open" }, { "masculinity", "Sit_Open" } };
+        static readonly Dictionary<string, string> FloorByStyle = new Dictionary<string, string>
+        { { "feminine", "SitFloor_Yoko" }, { "proud", "SitFloor" }, { "normal", "SitFloor" }, { "happy", "SitFloor_Girl" }, { "childish", "SitFloor_Girl" }, { "active", "SitFloor_Agura" }, { "masculinity", "SitFloor_Agura" } };
+        static readonly string[] ChairAll = { "Sit_Closed", "Sit_Normal", "Sit_Open" };
+        static readonly string[] FloorAll = { "SitFloor", "SitFloor_Yoko", "SitFloor_Girl", "SitFloor_Agura" };
+        /// <summary>椅子に座る動きの名前（Sit_〇〇。_Down＝座る・_Up＝立つ）</summary>
+        public static string ChairSit(string letter, bool male)
+        {
+            string s;
+            if (!string.IsNullOrEmpty(letter) && StyleByLetter.TryGetValue(letter, out s) && ChairByStyle.TryGetValue(s, out s)) return s;
+            return male ? "Sit_Open" : ChairAll[Pick(letter, "chair", ChairAll.Length)];
+        }
+        /// <summary>床に座る動きの名前（SitFloor は正座）</summary>
+        public static string FloorSit(string letter, bool male)
+        {
+            string s;
+            if (!string.IsNullOrEmpty(letter) && StyleByLetter.TryGetValue(letter, out s) && FloorByStyle.TryGetValue(s, out s)) return s;
+            return male ? "SitFloor_Agura" : FloorAll[Pick(letter, "floor", FloorAll.Length)];
+        }
+        /// <summary>座る動き（_Down）の始めの腰の位置（座ったときの腰から。Unity の体の向きで x＝右・z＝前、m）。見た目を前の位置からつなぐのに使う</summary>
+        public static readonly Dictionary<string, Vector2> SitStart = new Dictionary<string, Vector2>
+        {
+            { "Sit_Closed", new Vector2(-0.008f, 0.209f) }, { "Sit_Normal", new Vector2(-0.016f, 0.239f) }, { "Sit_Open", new Vector2(-0.002f, 0.136f) },
+            { "SitFloor_Yoko", new Vector2(-0.062f, 0.097f) }, { "SitFloor_Girl", new Vector2(0.011f, 0.248f) }, { "SitFloor_Agura", new Vector2(-0.233f, 0.155f) },
+        };
+
         // ---- 待機（キャラごとに1つ）----
         static readonly string[] Idles = { "Idle", "R_RegularLight", "R_RegularMedium", "R_Light", "R_Medium", "R_HeadTilts" };
         // ほかの立ち方：待っているとき（足でとんとん）・絶好調（踊る）・好きな人のそば（ちょっと気を引く）。R_RegularHeavyCHECK は名前に CHECK（要確認）とあるので使わない
@@ -155,6 +184,54 @@ namespace LifeSimProto
             P("楽器", "R_PlayingGuitar", "R_PlayingPiano"),            // 娯楽室（楽器の模型はまだ無い）
             P("職員室で仕事", "R_ClipboardLeverComputer"),            // 先生
             P("授業をして", "Talk", "Talk2", "Talk3", "Talk4", "M_Talking", "M_Talking_1", "M_Talking_2", "M_Talking_3"), // 教室の前で教える（2026-11-04）
+            // ---- 2026-11-08 モーション（famuru「名前は動きがあっているか確かめて合わせて」「新しい動きを作って」）----
+            // 名前の合わせ：浜辺のたき火は暖炉と同じ手をかざす動き／ひらがなの「ながめ」／新しい寮の「本を探している」は本棚の動き
+            P("たき火", "HY_WarmHands_a", "HY_WarmHands_b"),
+            P("ながめ", "HY_Gaze_a", "HY_Gaze_b", "M_LookAround"),
+            P("本を探", "HY_BrowseBooks_a", "HY_BrowseBooks_b"),
+            P("散歩", "HY_Gaze_a", "HY_Gaze_b", "M_LookAround"),          // 砂浜の散歩・中庭のぶらぶら：立ち止まってながめる
+            P("ぶらぶら", "HY_Gaze_a", "HY_Gaze_b", "M_LookAround"),
+            P("生徒会", "R_ClipboardLeverComputer"),                    // 生徒会の仕事（書類を見る）
+            // 新しい動き（N_。HY-Motion で作った）
+            P("ほうき", "N_Broom"),                                     // ほうきで飛ぶ練習・ほうき部・飛行術の授業・飛行レース
+            P("飛行", "N_Broom"),
+            P("体を鍛え", "N_Squat", "N_JumpingJack", "N_PushUp", "N_SitUp", "N_StretchWarm"),   // 腕立て・腹筋は「立つ→床に伏せる／寝転ぶ」の始める動きを作って戻した（2026-11-08）   // 種目ごとの動き（20秒ごとに次の種目へ。2026-11-08 famuru「動き毎に分けて」）
+            P("洗濯物を干", "N_LaundryHang"),
+            P("洗濯物をたた", "N_LaundryFold"),
+            P("洗濯", "N_LaundryWash"),
+            P("アイロン", "N_Iron"),
+            P("おやつ", "N_SnackTake"),
+            P("水ぎわ", "N_WaterPlay"),
+            P("水遊び", "N_WaterPlay"),
+            P("シャワー", "N_Shower"),
+            P("歯みがき", "N_BrushTeeth"),
+            P("顔を洗", "N_WashFace"),
+            P("戸をたたく", "N_Knock"),
+            P("物音", "N_ListenNoise"),
+            P("渡す", "N_GiveItem"),                                   // 物を渡す（タオル・毛布・編み物・落とし物）
+            P("のび", "N_WakeStretch"),
+            P("雪", "N_SnowPlay"),
+            // 行事（集まりの名前）
+            P("花火", "N_Fireworks"),
+            P("ごちそう", "N_EatStand"),
+            P("歓迎会", "N_Toast", "N_EatStand"),
+            P("送別会", "N_Toast", "N_EatStand"),
+            P("苗を植え", "M_plantaplant", "M_digandplantseeds", "M_watering"),
+            P("野外実習", "HY_Herbs_a", "HY_Herbs_b", "M_pickfruit"),
+            P("魔道具", "HY_Tinker_a", "HY_Tinker_b"),
+            P("出し物", "R_Singer", "R_PlayingGuitar", "R_HappyDance"),
+            P("星を見", "HY_Gaze_a", "HY_Gaze_b"),
+            // ダンジョン
+            P("忍び足", "N_ListenNoise"),   // 前へ進む忍び足は足がすべるので、身をすくめて耳をすます動きにした（2026-11-08）
+            P("駆け抜け", "L_Jog_Jog_F"),
+            P("宝箱", "N_OpenChest"),
+            P("勝った", "N_Victory"),
+            // 生活のできごと（表の「動き」の欄。L_ は 2026-11-04 に作った生活の動き）
+            P("掃除", "L_Sweep_Sweep_F", "L_Sweep_Wipe_F"),
+            P("運動", "L_Jog_Jog_F", "N_Squat", "N_JumpingJack", "N_StretchWarm"),
+            P("ばらまく", "L_DropPick_Pick_F"),
+            P("荷物", "L_CarryBox_Hold_F"),
+            P("ずぶ濡れ", "L_Shiver_Shiver_F", "L_Shiver_Wring_F"),
         };
 
         // ---- 座って行う場面（上半身だけ重ねる）----
@@ -165,8 +242,15 @@ namespace LifeSimProto
             P("#読書", "HY_Read_a", "HY_Read_b"),
             P("#勉強", "HY_Write_a", "HY_Write_b", "R_TypingUsingMouse"),
             P("机で", "HY_Write_a", "HY_Write_b", "R_SitDownUseLaptop"),
+            // 生活のできごと（2026-11-08 モーション。表の「動き」の欄）
+            P("宝物", "L_Polish_Polish_F", "L_Polish_Admire_F"),
+            P("晩酌", "L_Drink_Sip_F", "L_Drink_Tipsy_F"),
+            P("編み物", "L_Knit_Knit_F"),
         };
 
+        /// <summary>同じ場面の中で動きを順に変える場面（体を鍛える・朝の運動）と、変える間かく（秒）</summary>
+        static readonly string[] RotateKeys = { "体を鍛え", "運動" };
+        public static float RotateSeconds = 20f;   // 腕立て・腹筋は始める・やめるに時間がかかるので 20秒
         static KeyValuePair<string, string[]> P(string k, params string[] v) { return new KeyValuePair<string, string[]>(k, v); }
 
         /// <summary>立って行う場面の動き（無ければ null）</summary>
@@ -181,6 +265,7 @@ namespace LifeSimProto
             {
                 if (!scene.Contains(kv.Key)) continue;
                 int start = Pick(letter, kv.Key, kv.Value.Length);
+                if (System.Array.IndexOf(RotateKeys, kv.Key) >= 0) start = (start + (int)(Time.time / RotateSeconds)) % kv.Value.Length;   // 種目を順に変える
                 for (int i = 0; i < kv.Value.Length; i++)
                 {
                     var c = find(kv.Value[(start + i) % kv.Value.Length]);

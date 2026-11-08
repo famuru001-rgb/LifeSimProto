@@ -14,6 +14,10 @@ namespace LifeSimProto
         class Chunk { public Bounds b; public Matrix4x4[] m; public MaterialPropertyBlock mpb; public int n; }
         readonly List<Chunk> chunks = new List<Chunk>();
         Mesh mesh; Material mat;
+        Material[] subMats; // 部品（依頼30 の地面_v1 の草・花など）の材質。submesh ごと
+        Matrix4x4 baseM = Matrix4x4.identity; // FBX の根元の回転など（部品の中の位置）
+        float drawDist = DrawDist;
+        ShadowCastingMode shadows = ShadowCastingMode.Off;
         readonly Plane[] planes = new Plane[6];
         const float ChunkSize = 12f, DrawDist = 75f;
 
@@ -21,6 +25,21 @@ namespace LifeSimProto
         {
             mat = m; mat.enableInstancing = true;
             mesh = MakeClump();
+            BuildChunks(worldPos, yaw, scale, colors);
+        }
+
+        /// <summary>部品の形（FBX）をたくさん並べる（依頼30 の地面_v1）。mats は submesh ごとの材質、baseMatrix は部品の中の位置と向き。</summary>
+        public void BuildParts(Mesh m, Material[] mats, Matrix4x4 baseMatrix, List<Vector3> worldPos, List<float> yaw, List<float> scale, List<Color> colors, float drawDistance, bool castShadows)
+        {
+            mesh = m; subMats = mats; baseM = baseMatrix; drawDist = drawDistance;
+            shadows = castShadows ? ShadowCastingMode.On : ShadowCastingMode.Off;
+            foreach (var x in mats) if (x != null) x.enableInstancing = true;
+            mat = mats.Length > 0 ? mats[0] : null;
+            BuildChunks(worldPos, yaw, scale, colors);
+        }
+
+        void BuildChunks(List<Vector3> worldPos, List<float> yaw, List<float> scale, List<Color> colors)
+        {
             var map = new Dictionary<long, List<int>>();
             for (int i = 0; i < worldPos.Count; i++)
             {
@@ -40,11 +59,11 @@ namespace LifeSimProto
                     for (int j = 0; j < n; j++)
                     {
                         int i = ids[s + j];
-                        c.m[j] = Matrix4x4.TRS(worldPos[i], Quaternion.Euler(0f, yaw[i], 0f), Vector3.one * scale[i]);
+                        c.m[j] = Matrix4x4.TRS(worldPos[i], Quaternion.Euler(0f, yaw[i], 0f), Vector3.one * scale[i]) * baseM;
                         cols[j] = colors[i];
                         b.Encapsulate(worldPos[i]);
                     }
-                    b.Expand(new Vector3(1f, 1.2f, 1f));
+                    b.Expand(new Vector3(2f, 2f, 2f));
                     c.b = b;
                     c.mpb.SetVectorArray("_InstColor", cols);
                     chunks.Add(c);
@@ -60,9 +79,11 @@ namespace LifeSimProto
             Vector3 cp = cam.transform.position;
             foreach (var c in chunks)
             {
-                if ((c.b.ClosestPoint(cp) - cp).sqrMagnitude > DrawDist * DrawDist) continue;
+                if ((c.b.ClosestPoint(cp) - cp).sqrMagnitude > drawDist * drawDist) continue;
                 if (!GeometryUtility.TestPlanesAABB(planes, c.b)) continue;
-                Graphics.DrawMeshInstanced(mesh, 0, mat, c.m, c.n, c.mpb, ShadowCastingMode.Off, true, 0, null, LightProbeUsage.Off);
+                if (subMats == null) Graphics.DrawMeshInstanced(mesh, 0, mat, c.m, c.n, c.mpb, ShadowCastingMode.Off, true, 0, null, LightProbeUsage.Off);
+                else for (int s = 0; s < subMats.Length && s < mesh.subMeshCount; s++)
+                        if (subMats[s] != null) Graphics.DrawMeshInstanced(mesh, s, subMats[s], c.m, c.n, c.mpb, shadows, true, 0, null, LightProbeUsage.Off);
             }
         }
 

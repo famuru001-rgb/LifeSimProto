@@ -245,7 +245,7 @@ namespace LifeSimProto
             {
                 water.SetColor("_SkyColor", Color.Lerp(hor, top, 0.3f));
                 water.SetColor("_ShallowColor", Color.Lerp(new Color(0.08f, 0.14f, 0.2f, 0.6f), new Color(0.40f, 0.68f, 0.66f, 0.55f), day));
-                water.SetColor("_DeepColor", Color.Lerp(new Color(0.03f, 0.05f, 0.09f, 0.96f), new Color(0.15f, 0.34f, 0.48f, 0.95f), day));
+                water.SetColor("_DeepColor", Color.Lerp(new Color(0.03f, 0.05f, 0.09f, 0.96f), new Color(0.15f, 0.41f, 0.6f, 0.95f), day)); // 沖は暗い紺→明るい深い青（2026-11-08）
                 water.SetFloat("_Night", 1f - day);
             }
             else if (water != null) water.SetColor("_BaseColor", Color.Lerp(new Color(0.02f, 0.04f, 0.07f), new Color(0.16f, 0.34f, 0.46f), day));
@@ -344,7 +344,7 @@ namespace LifeSimProto
                 for (int x = 0; x < S; x++)
                 {
                     float u = x / (float)S * Mathf.PI * 2f, v = y / (float)S * Mathf.PI * 2f;
-                    h[y * S + x] = Mathf.Sin(u * 3f + Mathf.Sin(v * 2f)) * 0.5f + Mathf.Sin(v * 5f + u) * 0.3f + Mathf.Sin((u + v) * 7f) * 0.2f; // くり返せるさざ波
+                    h[y * S + x] = WaveH(x / (float)S, y / (float)S); // 向きのばらばらな波を重ねる（くり返しが目立たない。2026-11-08）
                 }
             var tex = new Texture2D(S, S, TextureFormat.RGBA32, true, true) { wrapMode = TextureWrapMode.Repeat };
             var px = new Color[S * S];
@@ -372,10 +372,31 @@ namespace LifeSimProto
                 m.renderQueue = -1;
                 m.SetTexture("_NormalTex", tex);
                 m.SetTexture("_NoiseTex", MakeNoise());
-                m.SetFloat("_FoamDist", 0.32f);
+                m.SetFloat("_FoamDist", 0.9f); // 岸へ寄せる泡の帯が見える幅（2026-11-08）
                 waterToon = true;
             }
         }
+
+        /// <summary>くり返せる波の高さ：向きと細かさのちがう波を 16 本重ねる（整数の波数なので画像のはしでつながる）。</summary>
+        static float WaveH(float u, float v)
+        {
+            if (waveK == null)
+            {
+                var rnd = new System.Random(11);
+                waveK = new Vector4[16];
+                for (int i = 0; i < 16; i++)
+                {
+                    int kx, ky;
+                    do { kx = rnd.Next(-11, 12); ky = rnd.Next(-11, 12); } while (kx * kx + ky * ky < 9);
+                    float k = Mathf.Sqrt(kx * kx + ky * ky);
+                    waveK[i] = new Vector4(kx, ky, (float)rnd.NextDouble() * 6.2831f, 0.9f / k);
+                }
+            }
+            float h = 0f;
+            foreach (var w in waveK) h += w.w * Mathf.Sin((w.x * u + w.y * v) * 6.2831f + w.z);
+            return h * 1.6f;
+        }
+        static Vector4[] waveK;
 
         static Texture2D MakeNoise()
         {
@@ -416,7 +437,13 @@ namespace LifeSimProto
                 if (dome != null) dome.position = cam.transform.position;
             }
             float dt = Time.deltaTime;
-            foreach (var c in clouds) { c.position += new Vector3(1.2f, 0f, 0.5f) * dt; if ((c.position - Center).magnitude > 760f) c.position = Center - (c.position - Center).normalized * 700f + Vector3.up * (c.position.y - Center.y); }
+            foreach (var c in clouds)
+            {
+                c.position += new Vector3(1.2f, 0f, 0.5f) * dt;
+                // 遠くへ出た雲は反対がわへ戻す。高さはそのまま（前は戻すたびに下がり、雲が湖の水面まで沈んで白い点に見えた。2026-11-08）
+                Vector3 d = c.position - Center; d.y = 0f;
+                if (d.magnitude > 760f) c.position = Center - d.normalized * 700f + Vector3.up * (c.position.y - Center.y);
+            }
             if (water != null && !waterToon) { waterOff += new Vector2(0.006f, 0.004f) * dt; water.SetTextureOffset("_BumpMap", waterOff); }
             if (Time.unscaledTime >= nextSky) { nextSky = Time.unscaledTime + 1f; UpdateSky(false); }
         }

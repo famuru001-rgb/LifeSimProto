@@ -96,6 +96,28 @@ namespace LifeSimProto.EditorTools
                 // （2026-10-31 本体。famuru「椅子に座る直前に高速移動がある」）
                 if (file.StartsWith("BN_") || file.Contains("walk") || file.Contains("Walk"))
                     c.keepOriginalPositionXZ = false;
+                // 生活のできごとの動き（Motions/Life、名前が L_。2026-11-08 モーション）：2人の位置関係を保つため H_ と同じく前後左右も体に焼き込む（歩きもその場歩き）。
+                // 始まり・終わりの1回だけの部品（In・Out・LieDown・GetUp・Drop・Don・Catch）はくり返さない
+                // 座り方（Motions/Sit。HY-Motion の1本目。2026-11-08 モーション）：座る・立つの間も足が床をすべらないよう、前後左右も体に焼き込む
+                if (System.Text.RegularExpressions.Regex.IsMatch(file, "^(Sit_(Closed|Normal|Open)|SitFloor_(Yoko|Girl|Agura))"))
+                {
+                    c.keepOriginalPositionXZ = true;
+                    c.lockRootPositionXZ = true;
+                }
+                // 新しい生活の動き（Motions/New、名前が N_。HY-Motion。2026-11-08 モーション）：足が床をすべらないよう前後左右も焼き込む。忍び足は前へ進むので体の重心に合わせる
+                if (file.StartsWith("N_"))
+                {
+                    bool travel = file == "N_Sneak";
+                    c.keepOriginalPositionXZ = !travel;
+                    c.lockRootPositionXZ = !travel;
+                    if (file.EndsWith("_In") || file.EndsWith("_Out")) c.loopTime = false;   // 始める・やめる動きは1回だけ（2026-11-08）
+                }
+                if (file.StartsWith("L_"))
+                {
+                    c.keepOriginalPositionXZ = true;
+                    c.lockRootPositionXZ = true;
+                    c.loopTime = !System.Text.RegularExpressions.Regex.IsMatch(file, "_(In|Out|LieDown|GetUp|Drop|Don|Catch)_[A-Z]$");
+                }
                 if (file.StartsWith("H_"))
                 {
                     c.lockRootPositionXZ = true;
