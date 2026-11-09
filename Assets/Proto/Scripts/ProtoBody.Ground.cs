@@ -94,7 +94,7 @@ namespace LifeSimProto
                 if (g == "なし")
                     foreach (var r in Object.FindObjectsByType<Renderer>(FindObjectsSortMode.None))
                         if (r.bounds.Contains(m) || r.bounds.SqrDistance(m) < 0.04f) { var tt = r.transform; near += tt.name + (tt.parent != null ? "<" + tt.parent.name + (tt.parent.parent != null ? "<" + tt.parent.parent.name : "") : "") + " "; if (near.Length > 200) break; }
-                sb.Append("［" + i + " 階" + st.lowerFloor + " 当たり " + g + "・ほか " + any + (near.Length > 0 ? "・近く " + near : "") + "］");
+                sb.Append("［" + i + " 階" + st.lowerFloor + " 中(" + m.x.ToString("0.0") + "," + m.y.ToString("0.0") + "," + m.z.ToString("0.0") + ") 当たり " + g + "・ほか " + any + (near.Length > 0 ? "・近く " + near : "") + "］");
                 i++;
             }
             return sb.ToString();

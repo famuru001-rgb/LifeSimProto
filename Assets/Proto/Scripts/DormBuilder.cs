@@ -1819,8 +1819,50 @@ namespace LifeSimProto
             foreach (var r in root.GetComponentsInChildren<Renderer>(true))
             {
                 if (r.GetComponentInParent<SimCharacter>() != null) continue;
-                levelRenderers[LevelOf(r)].Add(r);
+                int sl = StairLevelOf(r);   // 階段は下の階の物（2026-11-10 famuru「今表示している階につながっている階段は表示したい」）
+                levelRenderers[sl >= 0 ? sl : LevelOf(r)].Add(r);
             }
+        }
+
+        static readonly string[] StairPartWords = { "Stair", "Step", "階段", "Banister", "Handrail" };
+
+        /// <summary>階段の部品なら、その階段の下の端の階（つながる2つの階のうち下）。階段でなければ -1。</summary>
+        int StairLevelOf(Renderer r)
+        {
+            bool named = false;
+            for (var t = r.transform; t != null && t != root; t = t.parent)
+            {
+                foreach (var w in StairPartWords) if (t.name.IndexOf(w, System.StringComparison.OrdinalIgnoreCase) >= 0) { named = true; break; }
+                if (named) break;
+            }
+            if (!named) return -1;
+            Stair st = NearestStair(r.bounds.center, 6f);
+            if (st == null) return -1;
+            return Mathf.Clamp(FloorOf(Mathf.Min(st.bottom.y, st.top.y) + 0.3f), 0, 3);
+        }
+
+        /// <summary>点にいちばん近い階段（下の端と上の端を結ぶ線から maxDist 以内）。</summary>
+        Stair NearestStair(Vector3 p, float maxDist)
+        {
+            Stair best = null; float bd = maxDist * maxDist;
+            var all = new List<Stair>(stairs);
+            if (roofStair != null) all.Add(roofStair);
+            foreach (var st in all)
+            {
+                Vector3 ab = st.top - st.bottom;
+                float k = Mathf.Clamp01(Vector3.Dot(p - st.bottom, ab) / Mathf.Max(1e-4f, ab.sqrMagnitude));
+                float d = (st.bottom + ab * k - p).sqrMagnitude;
+                if (d < bd) { bd = d; best = st; }
+            }
+            return best;
+        }
+
+        /// <summary>キャラが、今見ている階につながる階段の上にいるか（隠さない）。</summary>
+        bool OnViewedStair(Vector3 p)
+        {
+            if (ViewFloor < 0 || OnFloorLevel(p)) return false;
+            var st = NearestStair(p, 2.5f);
+            return st != null && FloorOf(Mathf.Min(st.bottom.y, st.top.y) + 0.3f) <= ViewFloor;
         }
 
         static int LevelOf(Renderer r)
@@ -1854,7 +1896,7 @@ namespace LifeSimProto
                 for (int lv = 0; lv < levelRenderers.Length; lv++)
                     foreach (var r in levelRenderers[lv]) if (r != null) r.enabled = lv <= vf;
             }
-            foreach (var c in characters) if (c != null) c.SetFloorHidden(!FloorVisible(c.transform.position.y));
+            foreach (var c in characters) if (c != null) c.SetFloorHidden(!FloorVisible(c.transform.position.y) && !OnViewedStair(c.transform.position));
         }
 
         /// <summary>その高さの物が今見えている階か。</summary>
