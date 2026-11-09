@@ -166,6 +166,33 @@ namespace LifeSimProto
         bool[] closed;
         int search;
 
+        /// <summary>立ち止まっている人のまわり（points の半径 r）を一時的に通れないことにして道を探す（回り道。2026-11-09）。
+        /// 出発・到着のマスはふさがない。見つからなければ null。</summary>
+        public List<Vector3> FindPathAvoiding(Vector3 from, Vector3 to, List<Vector3> points, float r)
+        {
+            var changed = new List<int>();
+            Vector2Int s = ToCell(from), g = ToCell(to);
+            int rc = Mathf.Max(1, Mathf.CeilToInt(r / cell));
+            foreach (var p in points)
+            {
+                Vector2Int c = ToCell(p);
+                for (int dy = -rc; dy <= rc; dy++)
+                    for (int dx = -rc; dx <= rc; dx++)
+                    {
+                        int x = c.x + dx, y = c.y + dy;
+                        if (!InBounds(x, y) || (dx * dx + dy * dy) * cell * cell > r * r) continue;
+                        if ((Mathf.Abs(x - s.x) <= 1 && Mathf.Abs(y - s.y) <= 1) || (x == g.x && y == g.y)) continue;
+                        int i = y * width + x;
+                        if (blocked[i]) continue;
+                        blocked[i] = true; changed.Add(i);
+                    }
+            }
+            List<Vector3> res = null;
+            try { res = FindPath(from, to); }
+            finally { foreach (int i in changed) blocked[i] = false; }
+            return res;
+        }
+
         /// <summary>道を探す。見つからなければ null。返す点の高さはこの階の床の高さ。</summary>
         public List<Vector3> FindPath(Vector3 from, Vector3 to)
         {

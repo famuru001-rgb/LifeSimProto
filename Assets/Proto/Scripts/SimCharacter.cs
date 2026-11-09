@@ -3903,8 +3903,12 @@ namespace LifeSimProto
                 }
                 else
                 {
-                    transform.position = pos + to / d * step;
-                    FaceTowards(pos + Flat(to), dt);
+                    // ほかのキャラをよけて歩く（2026-11-09。SimCharacter.Avoid.cs）
+                    Vector3 mv = SteerStep(pos, to / d, step, dt, d);
+                    transform.position = pos + mv;
+                    FaceTowards(pos + (Flat(mv).sqrMagnitude > 1e-6f ? Flat(mv) : Flat(to)), dt);
+                    // よけて道の点の横を通り過ぎたら、その点は済んだことにする
+                    if (path.Count > 1 && Flat(path[0] - transform.position).magnitude < 0.35f) path.RemoveAt(0);
                     step = 0f;
                 }
             }
@@ -3963,8 +3967,10 @@ namespace LifeSimProto
             return true;
         }
 
+        public static int UnstickCount, StuckGiveUpCount;   // 試験用（life avoid）
         void Unstick(bool offFloor)
         {
+            UnstickCount++;
             Vector3 p = transform.position;
             warpNote = offFloor ? "見張り：階段の途中" : "見張り：動けない（道の点 " + path.Count + "）";
             if (offFloor)
@@ -4018,6 +4024,7 @@ namespace LifeSimProto
             progressTimer = 0f;
             if (moved > 0.25f) { stuckCount = 0; return; }
             stuckCount++;
+            if (stuckCount >= 3) StuckGiveUpCount++;
             if (state == State.Approaching)
             {
                 if (stuckCount >= 3) { GiveUp(); return; }

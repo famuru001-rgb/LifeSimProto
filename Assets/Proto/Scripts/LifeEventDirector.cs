@@ -671,6 +671,15 @@ namespace LifeSimProto
                         }
                         return "life touch: " + (c.AskTouch(f, v == "hug") ? "始めた" : "断られた・できない（近くにいるか）");
                     }
+                case "avoid":
+                    {
+                        // 試験用（2026-11-09）：life avoid on / off ／ life avoid（前に聞いてからの、よけた・待った・回り道の回数）
+                        string v = a.Length > 2 ? a[2] : "";
+                        if (v == "on" || v == "off") { SimCharacter.AvoidEnabled = v == "on"; return "life avoid: " + (SimCharacter.AvoidEnabled ? "よける" : "よけない（今までどおり）"); }
+                        string r = "life avoid: よけた " + SimCharacter.AvoidSteps + "歩・待った " + SimCharacter.AvoidWaits + "歩・回り道 " + SimCharacter.AvoidDetours + "回・動けず位置をずらした " + SimCharacter.UnstickCount + "回・詰まってあきらめた " + SimCharacter.StuckGiveUpCount + "回";
+                        SimCharacter.AvoidSteps = SimCharacter.AvoidWaits = SimCharacter.AvoidDetours = SimCharacter.UnstickCount = SimCharacter.StuckGiveUpCount = 0;
+                        return r;
+                    }
                 case "collide":
                     {
                         // 試験用（2026-11-09 IK の D）：life collide on / off ／ life collide 記号（揺れの当たり：相手・床・座面・背もたれ）
