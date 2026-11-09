@@ -147,8 +147,16 @@ namespace LifeSimProto
             }
             {
                 // 3階の天井（上に屋根）。屋上の階（天文台）を 14m にしたので、軒の高さ（10.5m）に直接置く（2026-11-08）
-                var rf = Box("Roof_Floor", new Vector3(0f, EaveY - 0.075f, (FrontOut + BackOut) / 2f), new Vector3(WingOut * 2f, 0.15f, BackOut - FrontOut), mortarDark);
-                slabRenderers.Add(new KeyValuePair<float, Renderer>(EaveY, rf.GetComponent<Renderer>()));
+                // 吹き抜けの上（x ±5.2・z FrontZ〜BackZ）は、ガラスの明かり取り（依頼32 追記1）から下が見えるようにあける
+                bool sky = Resources.Load<GameObject>("Furniture/DormRoof3/Furn_DormRoof3_Skylight") != null;
+                var parts = sky
+                    ? new[] { Rect.MinMaxRect(-WingOut, FrontOut, WingOut, FrontZ), Rect.MinMaxRect(-WingOut, BackZ, WingOut, BackOut), Rect.MinMaxRect(-WingOut, FrontZ, -5.2f, BackZ), Rect.MinMaxRect(5.2f, FrontZ, WingOut, BackZ) }
+                    : new[] { Rect.MinMaxRect(-WingOut, FrontOut, WingOut, BackOut) };
+                foreach (var q in parts)
+                {
+                    var rf = Box("Roof_Floor", new Vector3(q.center.x, EaveY - 0.075f, q.center.y), new Vector3(q.width, 0.15f, q.height), mortarDark);
+                    slabRenderers.Add(new KeyValuePair<float, Renderer>(EaveY, rf.GetComponent<Renderer>()));
+                }
             }
         }
 
@@ -1111,6 +1119,7 @@ namespace LifeSimProto
             var pf = Resources.Load<GameObject>("Furniture/Furn_" + name);
             if (pf == null) pf = Resources.Load<GameObject>("Furniture/Buildings3/Furn_" + name);
             if (pf == null) pf = Resources.Load<GameObject>("Furniture/Towers3/Furn_" + name); // 依頼31 の寮の塔
+            if (pf == null) pf = Resources.Load<GameObject>("Furniture/DormRoof3/Furn_" + name); // 依頼32 追記1 の寮の屋根
             if (pf == null) return null;
             var holder = new GameObject(name).transform;
             holder.SetParent(root, false);
@@ -1137,6 +1146,7 @@ namespace LifeSimProto
         /// <summary>城の部品（屋外）の模様。依頼24 の作り直し（Resources\TilesV2）を先に探す。寮の中の模様は今のまま。</summary>
         static Texture2D OutTex(string n) { var t = Resources.Load<Texture2D>("TilesV2/Tile_" + n); return t != null ? t : TileTex(n); }
         static Texture2D OutAtlas() { var t = Resources.Load<Texture2D>("TilesV2/Castle_Atlas"); return t != null ? t : Resources.Load<Texture2D>("Tiles/Castle_Atlas"); }
+        Material dormerGlass;
         Material KitMat(string matName, string model)
         {
             string key = null;
@@ -1144,6 +1154,12 @@ namespace LifeSimProto
                 if (matName.StartsWith(k)) { key = k; break; }
             if (key == null) return null;
             if (key == "Metal_Iron" && model == "Roof_Dome") key = "Dome";
+            if (key == "Glass_Window" && model == "DormRoof3_Dormers")
+            {
+                // 屋根窓（依頼32 追記1）の向こうは屋根の中で何もないので、今までどおり光る窓（夜は灯り）
+                if (dormerGlass == null) { dormerGlass = ProtoArt.Glow(new Color(0.45f, 0.6f, 0.9f), 0.9f); windowMats.Add(dormerGlass); }
+                return dormerGlass;
+            }
             Material m;
             if (kitMats.TryGetValue(key, out m)) return m;
             switch (key)
@@ -1738,6 +1754,16 @@ namespace LifeSimProto
         void NRoof()
         {
             float y = EaveY;
+            // 依頼32 追記1（famuru 2026-11-08 案1）：外まわりの4つの棟をひとつながりにした屋根（約40°・棟は軒から 2.9m）＋屋根窓 18＋真ん中のガラスの明かり取り。
+            // 部品の正面（Blender −Y）を寮の前（−z）へ向けるので 180° 回す。塔の中心（±12, −15.5）（12, 15.5）で屋根を丸く切ってある
+            if (Resources.Load<GameObject>("Furniture/DormRoof3/Furn_DormRoof3_Main") != null)
+            {
+                PlaceKit("DormRoof3_Main", new Vector3(0f, y, 0f), 180f, Vector3.one);
+                PlaceKit("DormRoof3_Dormers", new Vector3(0f, y, 0f), 180f, Vector3.one);
+                PlaceKit("DormRoof3_Skylight", new Vector3(0f, y, 0f), 180f, Vector3.one);
+                PlaceKit("Chimney", new Vector3(0f, y + 2.5f, 10.5f), 0f, new Vector3(1.2f, 1.6f, 1.2f)); // 奥の帯の平らな棟の真ん中（棟飾りをあけてある所）
+                return;
+            }
             KitRoofZ(BackZ, BackOut, 0f, 24.6f, y, 6.0f);               // 奥の帯（いちばん高い。棟は x 方向…ではなく z の向きに長い）
             KitRoofZ(FrontOut, FrontZ, 0f, 24.6f, y, 4.6f);             // 手前の帯
             KitRoofX(FrontZ, BackZ, 8.6f, 7.4f, y, 4.8f);               // 北の個室の棟

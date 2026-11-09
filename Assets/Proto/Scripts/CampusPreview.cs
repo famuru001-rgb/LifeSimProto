@@ -270,6 +270,7 @@ namespace LifeSimProto
                     if (n.StartsWith("Fabric_Banner")) m = banner != null ? banner : bannerOurs;
                     else if (n.StartsWith("Metal_Iron") && name == "Roof_Dome") m = copper;
                     else if (n.StartsWith("Glass_Window") && name == "Lamp_Garden" && lampGlass != null) m = lampGlass; // 庭の灯りのガラスは夜に光る
+                    else if (n.StartsWith("Glass_Window") && (name == "Pool_Hut" || name == "Beach_Hut")) { if (hutGlass == null) hutGlass = ProtoArt.GlassClear(); m = hutGlass; } // 依頼29 追記4：小屋の窓は透明
                     else if (mats.TryGetValue(n + "@" + name, out var per)) m = per; // 物ごとの材質（依頼26 の崖：焼き込み画像が物ごとにちがう）
                     else if (mats.TryGetValue(n, out var exact)) m = exact; // 名前がぴったりの材質を先に（Leaf_Card と Leaf_Card_Fine など）
                     else foreach (var kv in mats) if (n.StartsWith(kv.Key)) { m = kv.Value; break; }
@@ -2524,6 +2525,7 @@ namespace LifeSimProto
         class SwingDoor { public Transform leaf, holder; public Quaternion closed; public Vector3 center; public float sign = -1f, k; }
         class HutRoof { public Renderer[] rs; public Vector3 pos; public bool hidden; }
         readonly List<SwingDoor> swingDoors = new List<SwingDoor>();
+        Material hutGlass;
         readonly List<HutRoof> hutRoofs = new List<HutRoof>();
         float nextRoofCheck;
 

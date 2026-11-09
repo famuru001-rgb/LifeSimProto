@@ -671,6 +671,17 @@ namespace LifeSimProto
                         }
                         return "life touch: " + (c.AskTouch(f, v == "hug") ? "始めた" : "断られた・できない（近くにいるか）");
                     }
+                case "collide":
+                    {
+                        // 試験用（2026-11-09 IK の D）：life collide on / off ／ life collide 記号（揺れの当たり：相手・床・座面・背もたれ）
+                        string v = a.Length > 2 ? a[2] : "";
+                        if (v == "on" || v == "off") { ProtoBody.ExtraHitEnabled = v == "on"; return "life collide: " + (ProtoBody.ExtraHitEnabled ? "当てる" : "当てない（今までどおり）"); }
+                        var c = w.characters.Find(x => x.letter == v.ToUpperInvariant());
+                        if (c == null) return "life collide: 記号がない（on・off・記号）";
+                        var pb = c.GetComponent<ProtoBody>();
+                        string ed = pb != null ? pb.ExtraDebug : null;   // 読むと0に戻るので1回だけ
+                        return "life collide: " + c.displayName + "（" + c.state + "）" + (ed ?? "まだ（映っていない）");
+                    }
                 case "ground":
                     {
                         // 試験用（2026-11-09 IK の C）：life ground on / off ／ life ground 記号（体の上げ下げ・足の合わせ）

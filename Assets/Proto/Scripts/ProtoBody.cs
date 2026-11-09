@@ -856,7 +856,7 @@ namespace LifeSimProto
             // 2026-10-30（軽量化のチャット）：揺れは画面に映っている子だけ計算する（映っていない子はそのまま止め、映ったら元の形から始める）
             if (!PerfProbe.NoSway)
             {
-                if (AnyVisible() && BigOnScreen()) { long ts = PerfProbe.Stamp(); UpdateSprings(dt, springsAsleep); springsAsleep = false; PerfProbe.Add(PerfProbe.Sway, ts); }
+                if (AnyVisible() && BigOnScreen()) { long ts = PerfProbe.Stamp(); PrepareExtraHits(pose); UpdateSprings(dt, springsAsleep); ExtraDebugText(); springsAsleep = false; PerfProbe.Add(PerfProbe.Sway, ts); }
                 else springsAsleep = true;
             }
         }
@@ -1521,7 +1521,9 @@ namespace LifeSimProto
             if (w < 1e-4f) return;
             Transform sp2 = B("Spine2") ?? B("Spine1") ?? B("Spine");
             AddHit(hips, sp2, w * 0.40f);                 // 腰〜胸の下
-            AddHit(sp2, B("Neck"), w * 0.30f);            // 胸の上〜首の付け根
+            AddHit(sp2, B("Neck"), w * 0.33f);            // 胸の上〜首の付け根（2026-11-09 IK の D：0.30→0.33 背中に合わせる）
+            AddHit(B("LeftShoulder"), la, w * 0.15f);     // 肩の上（2026-11-09 IK の D。長い髪が肩にめりこまない）
+            AddHit(B("RightShoulder"), ra, w * 0.15f);
             foreach (var s in springs)                    // 胸のふくらみ
                 if (BaseName(s.bone).StartsWith("Spring_Chest")) AddHit(s.bone, s.child, w * 0.24f);
             AddHit(la, B("LeftForeArm"), w * 0.17f);      // 二の腕
@@ -1699,6 +1701,7 @@ namespace LifeSimProto
                         s.tip = p;
                     }
                 }
+                if (!reset && (s.collide || s.kind != 0)) s.tip = ExtraHit(s, s.tip, root, s.length);   // 相手の体・床・座面・背もたれ（ProtoBody.Collide.cs）
                 s.rootPrev = root;
                 s.goalPrev = goal;
                 ApplyBone(s, root, restDir);
