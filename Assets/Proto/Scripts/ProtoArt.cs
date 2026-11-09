@@ -87,6 +87,26 @@ namespace LifeSimProto
             return m;
         }
 
+        /// <summary>透明な窓ガラス（famuru 2026-11-08「窓のガラスを透明にして」）：ほぼ透明で少し反射。夜は DormBuilder が灯りの色をうっすら足す。両面・影なし。</summary>
+        public static Material GlassClear()
+        {
+            var m = new Material(Lit);
+            m.name = "Glass_Clear";
+            m.SetColor("_BaseColor", new Color(0.82f, 0.9f, 1f, 0.1f));
+            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", 0.93f);
+            if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0f);
+            m.SetFloat("_Surface", 1f); m.SetFloat("_Blend", 1f); // 半透明・つやを残す（Premultiply）
+            m.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.One);
+            m.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            m.SetFloat("_ZWrite", 0f); m.SetFloat("_Cull", 0f);
+            m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT"); m.EnableKeyword("_ALPHAPREMULTIPLY_ON");
+            m.SetColor("_EmissionColor", Color.black); m.EnableKeyword("_EMISSION");
+            m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.None;
+            m.SetShaderPassEnabled("ShadowCaster", false); // 部屋に窓の影を落とさない
+            m.renderQueue = 3000;
+            return m;
+        }
+
         /// <summary>自分で光る材質（窓・炎・ランプ用）。</summary>
         public static Material Glow(Color color, float intensity)
         {

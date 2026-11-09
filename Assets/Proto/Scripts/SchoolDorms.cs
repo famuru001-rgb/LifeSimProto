@@ -29,7 +29,8 @@ namespace LifeSimProto
             Box("MobDorm_Ground", new Vector3(61.5f, -0.12f, -76f), new Vector3(35f, 0.1f, 112f), groundMat);
             var colors = new[] { new Color(0.62f, 0.45f, 0.30f), new Color(0.52f, 0.56f, 0.62f), new Color(0.46f, 0.38f, 0.62f) };
             var roofs = new[] { new Color(0.45f, 0.22f, 0.16f), new Color(0.22f, 0.28f, 0.42f), new Color(0.28f, 0.18f, 0.40f) };
-            Material win = sharedWindowMat ?? ProtoArt.Glow(new Color(0.45f, 0.6f, 0.9f), 0.9f);
+            // ほかの寮は中が無い箱なので、窓は今までどおり光る板（わたしたちの寮の窓だけ透明。2026-11-08）
+            Material win = ProtoArt.Glow(new Color(0.45f, 0.6f, 0.9f), 0.9f); windowMats.Add(win);
             for (int d = 0; d < 3; d++)
             {
                 float z0 = MobDormZ0[d], z1 = MobDormZ1[d], cz = (z0 + z1) / 2f, cx = (MobDormX0 + MobDormX1) / 2f;

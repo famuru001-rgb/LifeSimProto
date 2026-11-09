@@ -675,6 +675,7 @@ namespace LifeSimProto
                     {
                         // 試験用（2026-11-09 IK の C）：life ground on / off ／ life ground 記号（体の上げ下げ・足の合わせ）
                         string v = a.Length > 2 ? a[2] : "";
+                        if (v == "stairs") return "life ground: " + ProtoBody.ProbeStairs(w);
                         if (v == "on" || v == "off") { ProtoBody.GroundEnabled = v == "on"; return "life ground: " + (ProtoBody.GroundEnabled ? "合わせる" : "合わせない（今までどおり）") + "（当たりの面 " + ProtoBody.GroundInfo + "）"; }
                         var c = w.characters.Find(x => x.letter == v.ToUpperInvariant());
                         if (c == null) return "life ground: 記号がない（on・off・記号）";

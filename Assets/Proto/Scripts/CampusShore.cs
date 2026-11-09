@@ -32,8 +32,16 @@ namespace LifeSimProto
 
             // ---- 小さな区画（エッチできる所）を先に。区画を探すときは前のものが先に見つかる ----
             AddArea(PoolHutArea, CampusPreview.PlanRectW(CampusPreview.PoolHutInside), 0);
-            Vector3 bh = CampusPreview.ShoreW(CampusPreview.BeachHutAlong, CampusPreview.BeachHutAcross);
-            AddArea(BeachHutArea, new Rect(bh.x - 1.3f, bh.z - 1.3f, 2.6f, 2.6f), 0);
+            {
+                // 浜の休憩小屋の部屋（入れ物の座標 x −1.6〜1.6・z −1.9〜0.4。小屋は斜めなので、四すみを囲む矩形）
+                float mnx = float.MaxValue, mnz = float.MaxValue, mxx = float.MinValue, mxz = float.MinValue;
+                foreach (var c in new[] { new Vector2(-1.55f, -1.9f), new Vector2(1.55f, -1.9f), new Vector2(-1.55f, 0.35f), new Vector2(1.55f, 0.35f) })
+                {
+                    var p = CampusPreview.HutW(true, c.x, c.y);
+                    mnx = Mathf.Min(mnx, p.x); mxx = Mathf.Max(mxx, p.x); mnz = Mathf.Min(mnz, p.z); mxz = Mathf.Max(mxz, p.z);
+                }
+                AddArea(BeachHutArea, Rect.MinMaxRect(mnx, mnz, mxx, mxz), 0);
+            }
             Vector3 rs = CampusPreview.ShoreW(3.2f, 5f);
             AddArea(RockShadeArea, new Rect(rs.x - 2f, rs.z - 2f, 4f, 4f), 0);
             // ---- プールと浜辺（行事の会場「プール」「浜辺」にも使われる） ----
@@ -122,6 +130,34 @@ namespace LifeSimProto
                 var p = MakePoi("砂浜を散歩している", seaLook,
                     CampusPreview.ShoreW(4.5f, 4f), CampusPreview.ShoreW(14f, 3.5f), CampusPreview.ShoreW(19f, 4.2f), CampusPreview.ShoreW(29f, 3.2f), CampusPreview.ShoreW(36f, 4.5f), CampusPreview.ShoreW(44f, 3.8f));
                 p.outdoor = true; p.shore = true; pois.Add(p);
+            }
+
+            // ---- 小屋の長いす・外のベンチと壁（依頼29 追記3：中が見える小屋。座る目印 Seat_1/2・Seat_Out_1/2） ----
+            {
+                System.Action<bool, float, float, float, float, string, string> bench = (beach, sx, sz, ax, az, label, area) =>
+                    seats.Add(new Seat { kind = SeatKind.Sit, label = label, area = area, position = CampusPreview.HutW(beach, sx, sz), forward = CampusPreview.HutDir(beach, 0f, 1f), approach = CampusPreview.HutW(beach, ax, az) });
+                bench(false, 0.53f, -0.18f, 0.53f, 0.42f, "更衣小屋の長いす", PoolHutArea);
+                bench(false, -0.53f, -1.23f, -1.05f, -0.75f, "更衣小屋の長いす", PoolHutArea);
+                bench(true, 0.56f, -0.36f, 0.56f, 0.12f, "浜の小屋の長いす", BeachHutArea);
+                bench(true, -0.55f, -1.58f, -0.55f, -1.05f, "浜の小屋の長いす", BeachHutArea);
+                bench(true, 1.05f, 1.33f, 1.05f, 1.85f, "浜の小屋のベンチ", BeachArea);
+                bench(true, 0.2f, 1.33f, 0.2f, 1.85f, "浜の小屋のベンチ", BeachArea);
+                System.Action<bool, float[]> walls = (beach, ws) =>
+                {
+                    for (int i = 0; i + 3 < ws.Length; i += 4)
+                    {
+                        Vector2 a = new Vector2(ws[i], ws[i + 1]), b = new Vector2(ws[i + 2], ws[i + 3]);
+                        int k = Mathf.Max(1, Mathf.CeilToInt((b - a).magnitude / 0.1f));
+                        for (int j = 0; j <= k; j++)
+                        {
+                            Vector2 q = Vector2.Lerp(a, b, j / (float)k);
+                            var p = CampusPreview.HutW(beach, q.x, q.y);
+                            blockers[0].Add(new Rect(p.x - 0.07f, p.z - 0.07f, 0.14f, 0.14f)); // 細く（扉の口が歩ける幅に残るように）
+                        }
+                    }
+                };
+                walls(false, CampusPreview.PoolHutWalls);
+                walls(true, CampusPreview.BeachHutWalls);
             }
 
             // ---- 岩と流木（砂の上にかかる所） ----

@@ -102,7 +102,7 @@ namespace LifeSimProto
         readonly List<KeyValuePair<Flicker, float>> lamps = new List<KeyValuePair<Flicker, float>>();
         readonly List<Material> windowMats = new List<Material>();
         readonly Dictionary<Material, Material> furnMatCache = new Dictionary<Material, Material>();   // 家具の材質の使い回し（PlaceFurn）
-        Material sharedWindowMat;   // 窓のガラスは全部同じ材質（昼夜で色を変える）
+        Material sharedWindowMat;   // 窓のガラスは全部同じ材質（透明。夜は灯りの色をうっすら。2026-11-08）
         public readonly List<RoomInfo> rooms = new List<RoomInfo>();
         public readonly List<AreaInfo> areaList = new List<AreaInfo>();
         // 階ごとの「ふさがる所」（家具など。0＝1階 … 3＝屋上）
@@ -253,8 +253,16 @@ namespace LifeSimProto
             Color win = Color.Lerp(new Color(0.06f, 0.08f, 0.18f), dayWin, day);
             foreach (var wm in windowMats)
             {
+                if (wm == sharedWindowMat) continue;
                 if (wm.HasProperty("_BaseColor")) wm.SetColor("_BaseColor", win);
                 if (wm.HasProperty("_Color")) wm.SetColor("_Color", win);
+            }
+            if (sharedWindowMat != null)
+            {
+                // 透明の窓：夜は部屋の灯りの色がうっすら（中は見えたまま）。停電のときは灯りなし
+                float glow = (1f - day) * (Blackout ? 0f : 1f);
+                sharedWindowMat.SetColor("_EmissionColor", new Color(1f, 0.72f, 0.42f) * (0.05f * glow));
+                sharedWindowMat.SetColor("_BaseColor", new Color(0.82f, 0.9f, 1f, Mathf.Lerp(0.1f, 0.12f, glow)));
             }
 
             bool lateNight = m < 330f;
@@ -396,7 +404,7 @@ namespace LifeSimProto
         void Window(WallSeg w, Vector3 basePos, Vector3 inward, float sill = 1.2f, float width = 1.1f, float height = 2.2f)
         {
             RecordSkinWindow(w, basePos); // 2026-11-07 家具のチャット：外壁の石の部品（NewDorm.cs の SkinAll）に窓の位置を教える
-            if (sharedWindowMat == null) { sharedWindowMat = ProtoArt.Glow(new Color(0.45f, 0.6f, 0.9f), 0.9f); windowMats.Add(sharedWindowMat); }
+            if (sharedWindowMat == null) sharedWindowMat = ProtoArt.GlassClear();
             var mat = sharedWindowMat;
             float yaw = Quaternion.LookRotation(inward).eulerAngles.y;
             // 本番の部品の窓（原点は窓台の上面・壁の内側の面。ガラスは昼夜で明るさが変わる材質に）

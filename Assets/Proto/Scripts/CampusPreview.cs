@@ -781,7 +781,7 @@ namespace LifeSimProto
                     float s = cnt == 0 ? (s0 + Mathf.Max(0f, span) * 0.5f) : s0 + span * j / cnt;
                     if (cnt == 0 && span < -2f) s = L * 0.5f;
                     Vector2 p = a + d * s;
-                    if (poolBeach && NearBeach(p, 9f, 3f)) continue; // 浜辺の所は崖なし（依頼29。浜辺の両はしは下で1つずつ）
+                    if (poolBeach && NearBeach(p, 12f, 3f)) continue; // 浜辺の所は崖なし（依頼29。浜辺の両はしは下で1つずつ）
                     float h1 = Hash01(i * 31 + j, 41), h2 = Hash01(j, i * 17 + 5), h3 = Hash01(i + j * 13, 77);
                     string kind = Cliff2Walls[Mathf.Min(2, (int)(h1 * 3f))];
                     float sx = 0.96f + h3 * 0.16f;
@@ -1486,6 +1486,9 @@ namespace LifeSimProto
             if (ac >= BankS - 0.3f) return 0f;
             // 桟橋（板の上 −4.25 + 1.79）
             if (Mathf.Abs(al - PierAlong) < 1.4f && ac < 1.8f) return Mathf.Max(SandH(ac), -4.25f + 1.79f);
+            // 浜の休憩小屋の床（依頼29 追記3）
+            Vector2 hl = HutLocal(true, w);
+            if (Mathf.Abs(hl.x) < 1.95f && hl.y > -2.1f && hl.y < 2.4f) return SandH(BeachHutAcross);
             return Mathf.Max(SandH(ac), -3.1f);
         }
 
@@ -1552,7 +1555,42 @@ namespace LifeSimProto
         }
 
         /// <summary>更衣小屋の中（配置図の矩形）。</summary>
-        public static Rect PoolHutInside { get { float c = PoolRect.xMax + 3f + 2.2f, cy = PoolRect.center.y + 2f; return Rect.MinMaxRect(c - 1.2f, cy - 1.2f, c + 1.2f, cy + 1.2f); } }
+        public static Rect PoolHutInside { get { float c = PoolRect.xMax + 3f + 2.2f, cy = PoolRect.center.y + 2f; return Rect.MinMaxRect(c - 1.6f, cy - 1.6f, c + 1.6f, cy + 1.6f); } }
+
+        // ---- 依頼29 追記3 の小屋（プールと浜辺_v2）：置き方と、小屋の中の点（入れ物の座標 x＝横・z＝正面が＋）→ ゲームの座標 ----
+        public static void PoolHutPose(out Vector2 p, out float h, out float yaw) { p = new Vector2(PoolRect.xMax + 3f + 2.2f, PoolRect.center.y + 2f); h = 0f; yaw = -90f; }
+        public static void BeachHutPose(out Vector2 p, out float h, out float yaw) { Vector2 n; p = CoastPoint(BeachHutAlong, BeachHutAcross, out n); h = SandH(BeachHutAcross) - 0.05f; yaw = YawFacing(-n); }
+        public static Vector3 HutW(bool beach, float lx, float lz)
+        {
+            Vector2 p; float h, yaw; if (beach) BeachHutPose(out p, out h, out yaw); else PoolHutPose(out p, out h, out yaw);
+            Vector3 v = Quaternion.Euler(0f, yaw, 0f) * new Vector3(lx, 0f, lz);
+            return CampusPlan.G(p.x + v.x, p.y + v.z);
+        }
+        public static Vector3 HutDir(bool beach, float lx, float lz)
+        {
+            Vector2 p; float h, yaw; if (beach) BeachHutPose(out p, out h, out yaw); else PoolHutPose(out p, out h, out yaw);
+            Vector3 v = Quaternion.Euler(0f, yaw, 0f) * new Vector3(lx, 0f, lz);
+            return PlanDir(v.x, v.z).normalized;
+        }
+        /// <summary>ゲームの点を、小屋の入れ物の座標（x, z）に。</summary>
+        public static Vector2 HutLocal(bool beach, Vector3 w)
+        {
+            Vector2 p; float h, yaw; if (beach) BeachHutPose(out p, out h, out yaw); else PoolHutPose(out p, out h, out yaw);
+            Vector2 q = ToPlan(w) - p;
+            Vector3 v = Quaternion.Euler(0f, -yaw, 0f) * new Vector3(q.x, 0f, q.y);
+            return new Vector2(v.x, v.z);
+        }
+        /// <summary>小屋の壁（入れ物の座標の線分 x0,z0,x1,z1）。プールと浜辺_v2 の高さ 1m の平面図から（2026-11-09）。</summary>
+        public static readonly float[] PoolHutWalls = {
+            -1.75f, -1.7f, 1.75f, -1.7f,   -1.65f, -1.75f, -1.65f, 1.75f,   1.7f, -1.75f, 1.7f, 1.75f,   // 奥・左・右
+            -1.75f, 1.7f, -1.3f, 1.7f,   -0.25f, 1.7f, 0.28f, 1.7f,   1.38f, 1.7f, 1.75f, 1.7f,        // 正面（扉2つ。口は約 1m）
+            0f, 1.55f, 0f, 0.4f,   0f, 0.4f, -0.6f, 0.4f,   -0.6f, 0.4f, -0.6f, -0.5f,   -0.6f, -0.5f, 0.55f, -0.5f,   0.5f, -0.5f, 0.5f, -1.6f }; // 段違いの仕切り
+        public static readonly float[] BeachHutWalls = {
+            -1.85f, 0.5f, -1.5f, 0.5f,   -0.32f, 0.5f, 1.85f, 0.5f,                                       // 正面（扉1つ）
+            -1.7f, 0.5f, -1.7f, -2.0f,   1.7f, 0.5f, 1.7f, -2.0f,   -1.8f, -2.0f, 1.8f, -2.0f,            // 左・右・奥
+            1.1f, -1.15f, 1.6f, -1.15f,   1.1f, -1.65f, 1.6f, -1.65f,   1.1f, -1.15f, 1.1f, -1.65f,        // 小棚
+            -0.3f, 1.25f, 1.5f, 1.25f,                                                                     // 外のベンチ
+            -1.9f, 2.1f, -1.9f, 2.1f,   1.9f, 2.1f, 1.9f, 2.1f };                                         // ひさしの柱
         public const float BeachHutAlong = 37f, BeachHutAcross = 8.5f;
         public const float CampfireAlong = 31f, CampfireAcross = 5f;
         public static readonly float[] PoolLoungerX = { 2f, 4f, 11f, 13f }, PoolLoungerXS = { 8f, 10f };
@@ -1600,7 +1638,18 @@ namespace LifeSimProto
             Put("Pool_Ladder", x0 + 3.5f, -1.4f, y0 + 0.6f, 0f);
             Put("Pool_Ladder", x0 + 3.5f, -1.4f, y1 - 0.6f, 180f);
             // 更衣小屋（東。正面をプールへ）
-            Put("Pool_Hut", x1 + o + 2.2f, 0f, c.y + 2f, -90f);
+            {
+                // 依頼29 追記3：中が見える更衣小屋（扉が開く・カメラが近いと屋根を消す）
+                Vector2 hp; float hh, hy; PoolHutPose(out hp, out hh, out hy);
+                var hut = Put("Pool_Hut", hp.x, hh, hp.y, hy); SetupMoving(hut);
+                // 部品の床が奥の部屋と通路で欠けて芝生が見えるので、板の床を下に敷く
+                if (hut != null && mats.ContainsKey("Wood_Dark"))
+                {
+                    var f = GameObject.CreatePrimitive(PrimitiveType.Cube); f.name = "Pool_Hut_Floor"; Destroy(f.GetComponent<Collider>());
+                    f.transform.SetParent(hut.transform, false); f.transform.localPosition = new Vector3(0f, 0.02f, 0f); f.transform.localScale = new Vector3(3.4f, 0.03f, 3.4f);
+                    f.GetComponent<Renderer>().sharedMaterial = mats["Wood_Dark"];
+                }
+            }
             // 寝椅子とパラソル（北の石畳に4つ・南に2つ。頭は外側）
             foreach (float x in new[] { x0 + 2f, x0 + 4f, x0 + 11f, x0 + 13f }) Put("Lounger", x, 0.02f, y1 + 1.4f, 180f);
             Put("Parasol", x0 + 3f, 0.02f, y1 + 2.2f, 0f); Put("Parasol", x0 + 12f, 0.02f, y1 + 2.2f, 30f);
@@ -1706,7 +1755,7 @@ namespace LifeSimProto
             // 城壁の小さな扉（閉じた形。famuru「正門と橋は基本的に閉じている形」と同じく）
             {
                 Vector2 d = new Vector2(80, 108) - new Vector2(96, 86); Vector2 n = new Vector2(d.y, -d.x).normalized; if (n.x < 0f) n = -n;
-                Put("Castle_SmallDoor", BeachDoor.x, 0f, BeachDoor.y, YawFacing(n));
+                SetupMoving(Put("Castle_SmallDoor", BeachDoor.x, 0f, BeachDoor.y, YawFacing(n))); // 依頼29 追記3：人が通るときだけ開く
             }
             // 草原から砂浜へ降りる木の階段（上の踊り場が土手のふち、下が砂の上）
             {
@@ -1725,7 +1774,7 @@ namespace LifeSimProto
             // 浜の休憩小屋・寝椅子とパラソル・たき火・流木
             {
                 Vector2 n; Vector2 p = CoastPoint(37f, 8.5f, out n);
-                Put("Beach_Hut", p.x, SandH(8.5f) - 0.05f, p.y, YawFacing(-n));
+                { Vector2 hp; float hh, hy; BeachHutPose(out hp, out hh, out hy); SetupMoving(Put("Beach_Hut", hp.x, hh, hp.y, hy)); }
                 foreach (var al in new[] { 6f, 8f, 21f, 23f })
                 {
                     Vector2 q = CoastPoint(al, 5.5f, out n);
@@ -2471,12 +2520,122 @@ namespace LifeSimProto
             }
         }
 
+        // ---- 動く扉と、消せる屋根（依頼29 追記3） ----
+        class SwingDoor { public Transform leaf, holder; public Quaternion closed; public Vector3 center; public float sign = -1f, k; }
+        class HutRoof { public Renderer[] rs; public Vector3 pos; public bool hidden; }
+        readonly List<SwingDoor> swingDoors = new List<SwingDoor>();
+        readonly List<HutRoof> hutRoofs = new List<HutRoof>();
+        float nextRoofCheck;
+
+        void SetupMoving(GameObject h)
+        {
+            if (h == null) return;
+            foreach (var t in h.GetComponentsInChildren<Transform>())
+            {
+                if (t.name.StartsWith("Door_Leaf"))
+                {
+                    var r = t.GetComponent<Renderer>();
+                    var d = new SwingDoor { leaf = t, holder = h.transform, closed = t.rotation, center = r != null ? r.bounds.center : t.position };
+                    // 内側（入れ物の −z）へ開く向きを選ぶ
+                    Vector3 v = d.center - t.position;
+                    float zn = h.transform.InverseTransformDirection(Quaternion.AngleAxis(-90f, h.transform.up) * v).z, zp = h.transform.InverseTransformDirection(Quaternion.AngleAxis(90f, h.transform.up) * v).z;
+                    d.sign = zn < zp ? -1f : 1f;
+                    swingDoors.Add(d);
+                }
+                else if (t.name == "Roof") hutRoofs.Add(new HutRoof { rs = t.GetComponentsInChildren<Renderer>(), pos = h.transform.position });
+            }
+        }
+
+        void UpdateMoving()
+        {
+            var w = LoungeWorld.Instance;
+            if (swingDoors.Count > 0 && w != null)
+                foreach (var d in swingDoors)
+                {
+                    if (d.leaf == null) continue;
+                    bool want = false;
+                    foreach (var c in w.characters)
+                    {
+                        if (c == null) continue;
+                        Vector3 q = c.transform.position - d.center;
+                        if (Mathf.Abs(q.y) < 2.5f && q.x * q.x + q.z * q.z < 1.7f * 1.7f) { want = true; break; }
+                    }
+                    float k = Mathf.MoveTowards(d.k, want ? 1f : 0f, Mathf.Min(0.2f, Time.deltaTime) * 2.5f);
+                    if (k == d.k) continue;
+                    d.k = k;
+                    d.leaf.rotation = Quaternion.AngleAxis(d.sign * 90f * Mathf.SmoothStep(0f, 1f, k), d.holder.up) * d.closed;
+                }
+            if (hutRoofs.Count > 0 && Time.unscaledTime >= nextRoofCheck)
+            {
+                nextRoofCheck = Time.unscaledTime + 0.25f;
+                var cam = Camera.main;
+                foreach (var r in hutRoofs)
+                {
+                    bool hide = cam != null && (cam.transform.position - r.pos).sqrMagnitude < 26f * 26f; // カメラが近いと屋根を消す（影は残す）
+                    if (hide == r.hidden) continue;
+                    r.hidden = hide;
+                    foreach (var rr in r.rs) if (rr != null) rr.shadowCastingMode = hide ? UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly : UnityEngine.Rendering.ShadowCastingMode.On;
+                }
+            }
+        }
+
+        // 試験用：部品の子の名前・位置・大きさ（入れ物の座標）を Logs\model_dump.txt に足す
+        void DumpModel(GameObject h)
+        {
+            if (h == null) return;
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("== " + h.name + " pos(plan)=" + h.transform.localPosition + " yaw=" + h.transform.localEulerAngles.y);
+            foreach (var t in h.GetComponentsInChildren<Transform>())
+            {
+                var lp = h.transform.InverseTransformPoint(t.position);
+                string line = t.name + " p=" + lp.ToString("F3") + " fwd=" + h.transform.InverseTransformDirection(t.forward).ToString("F2") + " up=" + h.transform.InverseTransformDirection(t.up).ToString("F2");
+                var r = t.GetComponent<Renderer>();
+                if (r != null)
+                {
+                    var b = r.bounds; var a = h.transform.InverseTransformPoint(b.min); var c = h.transform.InverseTransformPoint(b.max);
+                    line += " box=" + Vector3.Min(a, c).ToString("F2") + ".." + Vector3.Max(a, c).ToString("F2") + " mats=" + string.Join(",", System.Array.ConvertAll(r.sharedMaterials, m => m != null ? m.name : "-"));
+                }
+                sb.AppendLine(line);
+            }
+            // 高さ 0.9〜1.3m の面の頂点・三角形の中心を 0.2m のます目に（壁の平面図）
+            var occ = new HashSet<Vector2Int>();
+            foreach (var mf in h.GetComponentsInChildren<MeshFilter>())
+            {
+                if (mf.name.StartsWith("Roof") || mf.name.StartsWith("Door")) continue;
+                var mesh = mf.sharedMesh; if (mesh == null) continue;
+                var vs = mesh.vertices; var tr = mesh.triangles;
+                for (int i = 0; i < tr.Length; i += 3)
+                {
+                    Vector3 v0 = h.transform.InverseTransformPoint(mf.transform.TransformPoint(vs[tr[i]])), v1 = h.transform.InverseTransformPoint(mf.transform.TransformPoint(vs[tr[i + 1]])), v2 = h.transform.InverseTransformPoint(mf.transform.TransformPoint(vs[tr[i + 2]]));
+                    for (float u = 0f; u <= 1f; u += 0.1f) for (float w = 0f; u + w <= 1f; w += 0.1f)
+                    {
+                        Vector3 q = v0 + (v1 - v0) * u + (v2 - v0) * w;
+                        if (q.y > 0.9f && q.y < 1.3f) occ.Add(new Vector2Int(Mathf.RoundToInt(q.x / 0.2f), Mathf.RoundToInt(q.z / 0.2f)));
+                    }
+                }
+            }
+            if (occ.Count > 0)
+            {
+                int mnx = int.MaxValue, mxx = int.MinValue, mnz = int.MaxValue, mxz = int.MinValue;
+                foreach (var c in occ) { mnx = Mathf.Min(mnx, c.x); mxx = Mathf.Max(mxx, c.x); mnz = Mathf.Min(mnz, c.y); mxz = Mathf.Max(mxz, c.y); }
+                sb.AppendLine("plan x " + (mnx * 0.2f) + ".." + (mxx * 0.2f) + "  z " + (mnz * 0.2f) + ".." + (mxz * 0.2f) + "（上の行が +z＝正面）");
+                for (int z = mxz; z >= mnz; z--)
+                {
+                    var row = new System.Text.StringBuilder();
+                    for (int x = mnx; x <= mxx; x++) row.Append(occ.Contains(new Vector2Int(x, z)) ? '#' : '.');
+                    sb.AppendLine(row.ToString() + "  z=" + (z * 0.2f).ToString("F1"));
+                }
+            }
+            try { File.AppendAllText(Path.Combine(LogsDir, "model_dump.txt"), sb.ToString()); } catch { }
+        }
+
         // ---------------- 写真 ----------------
         Camera shotCam;
         float nextPoll;
 
         void Update()
         {
+            UpdateMoving();
             // 正門の扉：朝6時に開け、夜9時に閉める（3秒かけて動かす）
             if (game && gateL != null && gateR != null && LoungeWorld.Instance != null)
             {
@@ -2508,6 +2667,27 @@ namespace LifeSimProto
                     var rig = w.mainCamera != null ? w.mainCamera.GetComponent<CameraRig>() : null;
                     if (rig != null && a[1] == "all") { rig.follow = null; rig.pivot = new Vector3(rig.pivot.x, 12f, rig.pivot.z); }
                     result.Add("view: " + a[1]);
+                    continue;
+                }
+                if (a.Length >= 2 && a[0] == "who" && LoungeWorld.Instance != null)
+                {
+                    // 試験用：who 番号 … その子の位置・していること
+                    for (int i = 1; i < a.Length; i++)
+                    {
+                        var c = LoungeWorld.Instance.characters[int.Parse(a[i])];
+                        result.Add(i + " " + c.displayName + " " + c.transform.position.ToString("F1") + " " + c.actionText + " / " + c.StateName() + " / " + c.DebugWhere());
+                    }
+                    continue;
+                }
+                if (a.Length >= 1 && a[0] == "doors" && LoungeWorld.Instance != null)
+                {
+                    // 試験用：動く扉の開き具合と、いちばん近い人
+                    foreach (var d in swingDoors)
+                    {
+                        string near = "-"; float best = 999f;
+                        foreach (var c in LoungeWorld.Instance.characters) { if (c == null) continue; float dd = Vector3.Distance(c.transform.position, d.center); if (dd < best) { best = dd; near = c.displayName + " " + c.transform.position.ToString("F1"); } }
+                        result.Add("door " + d.holder.name + "/" + d.leaf.name + " k=" + d.k.ToString("F2") + " sign=" + d.sign + " center=" + d.center.ToString("F1") + " near=" + near + " " + best.ToString("F1"));
+                    }
                     continue;
                 }
                 if (a.Length >= 8 && a[0] == "shot")

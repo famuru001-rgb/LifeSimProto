@@ -1158,7 +1158,7 @@ namespace LifeSimProto
                 case "Metal_Iron": m = ProtoArt.Mat(new Color(0.17f, 0.17f, 0.18f), null, null, 0.35f); break;
                 case "Dome": m = ProtoArt.Mat(new Color(0.36f, 0.6f, 0.53f), null, null, 0.4f); break;
                 case "Glass_Window":
-                    if (sharedWindowMat == null) { sharedWindowMat = ProtoArt.Glow(new Color(0.45f, 0.6f, 0.9f), 0.9f); windowMats.Add(sharedWindowMat); }
+                    if (sharedWindowMat == null) sharedWindowMat = ProtoArt.GlassClear(); // 透明（2026-11-08）
                     m = sharedWindowMat; break;
                 case "Fabric_Banner": m = ProtoArt.Mat(new Color(0.18f, 0.29f, 0.62f), null, null, 0.1f); break;
                 default:

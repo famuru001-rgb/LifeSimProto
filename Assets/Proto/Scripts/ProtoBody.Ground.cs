@@ -17,7 +17,8 @@ namespace LifeSimProto
     public partial class ProtoBody
     {
         public static bool GroundEnabled = true;
-        public const int GroundLayer = 30;
+        public const int GroundLayer = 30;           // 地面・階段の当たり
+        public const int SeatLayer = 29;             // 座る家具の当たり（足は見ない）
         public static float GroundSmooth = 14f;     // 体の上げ下げの追いつく速さ
         public static float FootPlantBand = 0.06f;  // 足首がこの高さより低ければ「床に着いている」
         public static float FootFadeBand = 0.10f;   // そこから、この幅で浮いている足へ移る
@@ -25,16 +26,17 @@ namespace LifeSimProto
 
         static bool groundBuilt;
         static int GroundMask { get { return 1 << GroundLayer; } }
+        static int SeatMask { get { return 1 << SeatLayer; } }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetGround() { groundBuilt = false; }
 
-        static readonly string[] GroundWords = { "Stair", "_Step", "Island_Ground", "Ground", "Beach", "Shore", "Slope", "Ramp", "Terrace", "Bridge" };
+        static readonly string[] GroundWords = { "Stair", "Step", "階段", "Island_Ground", "Ground", "Beach", "Shore", "Slope", "Ramp", "Terrace", "Bridge" };
 
         static bool NameHas(Transform t, string[] words)
         {
-            for (int k = 0; t != null && k < 4; k++, t = t.parent)
-                foreach (var w in words) if (t.name.Contains(w)) return true;
+            for (int k = 0; t != null && k < 8; k++, t = t.parent)
+                foreach (var w in words) if (t.name.IndexOf(w, System.StringComparison.OrdinalIgnoreCase) >= 0) return true;
             return false;
         }
 
@@ -47,6 +49,7 @@ namespace LifeSimProto
             foreach (var s in w.seats) if (s != null && s.kind == SeatKind.Sit && !s.floorSeat) seatPts.Add(s.position);
             foreach (var s in w.classSeats) if (s != null) seatPts.Add(s.position);
             int nG = 0, nS = 0;
+            var stairNames = new List<string>();
             foreach (var mf in Object.FindObjectsByType<MeshFilter>(FindObjectsSortMode.None))
             {
                 if (mf == null || mf.sharedMesh == null || !mf.gameObject.activeInHierarchy) continue;
@@ -64,18 +67,47 @@ namespace LifeSimProto
                 }
                 if (!ground && !seat) continue;
                 var go = new GameObject("IK_Hit");
-                go.layer = GroundLayer;
+                go.layer = ground ? GroundLayer : SeatLayer;
                 go.transform.SetParent(mf.transform, false);
                 var mc = go.AddComponent<MeshCollider>();
                 mc.sharedMesh = mf.sharedMesh;
-                if (ground) nG++; else nS++;
+                if (ground) { nG++; if (NameHas(mf.transform, StairWords) && stairNames.Count < 40) stairNames.Add(mf.transform.parent != null ? mf.transform.parent.name + "/" + mf.name : mf.name); } else nS++;
             }
-            Debug.Log("足の合わせ：当たりの面 地面 " + nG + "・座る家具 " + nS);
+            Debug.Log("足の合わせ：当たりの面 地面 " + nG + "・座る家具 " + nS + "・階段：" + string.Join("、", stairNames.ToArray()));
             GroundInfo = "地面 " + nG + "・座る家具 " + nS;
         }
         public static string GroundInfo = "まだ";
 
+        /// <summary>試験用（life ground stairs）：階段ごとに、真ん中の真下に当たりの面があるか。</summary>
+        public static string ProbeStairs(LoungeWorld w)
+        {
+            var sb = new System.Text.StringBuilder();
+            int i = 0;
+            foreach (var st in w.stairs)
+            {
+                Vector3 m = Vector3.Lerp(st.bottom, st.top, 0.5f);
+                RaycastHit h; string g = "なし", any = "なし";
+                if (Physics.Raycast(m + Vector3.up * 1.5f, Vector3.down, out h, 3f, GroundMask, QueryTriggerInteraction.Ignore)) g = h.collider.transform.parent.name + "(" + ((h.point.y - m.y) * 100f).ToString("0") + ")";
+                if (Physics.Raycast(m + Vector3.up * 1.5f, Vector3.down, out h, 3f, ~0, QueryTriggerInteraction.Ignore)) any = h.collider.name + "(" + ((h.point.y - m.y) * 100f).ToString("0") + ")";
+                // 近くの見える物の名前（当たりが無いとき、何でできているか）
+                string near = "";
+                if (g == "なし")
+                    foreach (var r in Object.FindObjectsByType<Renderer>(FindObjectsSortMode.None))
+                        if (r.bounds.Contains(m) || r.bounds.SqrDistance(m) < 0.04f) { var tt = r.transform; near += tt.name + (tt.parent != null ? "<" + tt.parent.name + (tt.parent.parent != null ? "<" + tt.parent.parent.name : "") : "") + " "; if (near.Length > 200) break; }
+                sb.Append("［" + i + " 階" + st.lowerFloor + " 当たり " + g + "・ほか " + any + (near.Length > 0 ? "・近く " + near : "") + "］");
+                i++;
+            }
+            return sb.ToString();
+        }
+
         /// <summary>p の真下（上 up m から down m まで）の当たりの面の高さ。無ければ false。</summary>
+        static bool SeatBelow(Vector3 p, float up, float down, out float y)
+        {
+            RaycastHit h;
+            if (Physics.Raycast(p + Vector3.up * up, Vector3.down, out h, up + down, SeatMask, QueryTriggerInteraction.Ignore)) { y = h.point.y; return true; }
+            y = p.y; return false;
+        }
+
         static bool GroundBelow(Vector3 p, float up, float down, out float y, out Vector3 n)
         {
             RaycastHit h;
@@ -88,10 +120,11 @@ namespace LifeSimProto
             }
             y = p.y; n = Vector3.up; return false;
         }
-        static readonly string[] StairWords = { "Stair", "_Step" };
+        static readonly string[] StairWords = { "Stair", "Step", "階段" };
 
         float ankleH = -1f;           // 足首の骨の高さ（立った形で床から）
         float groundShift, pelvisDrop;
+        int stairFrames; float stairMaxShift, stairMaxFoot;
         public string GroundDebug { get; private set; }
 
         void CaptureAnkle()
@@ -123,21 +156,31 @@ namespace LifeSimProto
             float want = 0f;
             if (sit)
             {
-                var s = sim.SeatNow;
-                float top; Vector3 nn;
+                float top;
                 Vector3 hp = new Vector3(hips.position.x, baseY, hips.position.z);
-                if (s != null && GroundBelow(hp, 1.0f, 0.2f, out top, out nn) && top > baseY + 0.12f && top < baseY + 0.95f)
+                if (SeatBelow(hp, 1.0f, 0.2f, out top) && top > baseY + 0.12f && top < baseY + 0.95f)
                 {
                     float butt = hips.position.y - SeatButt * Mathf.Max(1f, height);
                     want = Mathf.Clamp(top - butt, -0.35f, 0.35f);
                     why = "座面 " + ((top - baseY) * 100f).ToString("0") + "cm";
                 }
-                else why = "座面が見つからない";
+                else
+                {
+                    // 何も無い：ほかの層も含めて真下に何があるか（試験用）
+                    RaycastHit h2; string under = "なし";
+                    if (Physics.Raycast(hp + Vector3.up * 1.0f, Vector3.down, out h2, 1.2f, ~0, QueryTriggerInteraction.Ignore)) under = h2.collider.name + "(" + ((h2.point.y - baseY) * 100f).ToString("0") + "cm)";
+                    why = "座面が見つからない（真下：" + under + "・席 " + (sim.SeatNow != null ? sim.SeatNow.label : "なし") + "）";
+                }
+                why += "・腰の骨 " + ((hips.position.y - baseY) * 100f).ToString("0") + "cm・背 " + (height * 100f).ToString("0") + "cm";
             }
             else if (stand)
             {
                 float gy; Vector3 nn;
-                if (GroundBelow(new Vector3(transform.position.x, baseY, transform.position.z), 0.6f, 0.6f, out gy, out nn)) { want = Mathf.Clamp(gy - baseY, -0.5f, 0.5f); why = "地面 " + ((gy - baseY) * 100f).ToString("0") + "cm"; }
+                if (GroundBelow(new Vector3(transform.position.x, baseY, transform.position.z), 0.6f, 0.6f, out gy, out nn))
+                {
+                    want = Mathf.Clamp(gy - baseY, -0.5f, 0.5f); why = "地面 " + ((gy - baseY) * 100f).ToString("0") + "cm";
+                    if (Mathf.Abs(gy - baseY) > 0.02f) { stairFrames++; stairMaxShift = Mathf.Max(stairMaxShift, Mathf.Abs(gy - baseY)); }
+                }
             }
             groundShift = Mathf.Lerp(groundShift, want, k);
             if (Mathf.Abs(groundShift) > 0.001f) model.position += Vector3.up * groundShift;
@@ -156,7 +199,8 @@ namespace LifeSimProto
             pelvisDrop = Mathf.Lerp(pelvisDrop, dropNeed, k);
             if (pelvisDrop < -0.001f) { hips.position += Vector3.up * pelvisDrop; tl.y += 0f; }
             string dl = LegIK("Left", tl, wl), dr = LegIK("Right", tr, wr);
-            GroundDebug = why + "・体 " + (groundShift * 100f).ToString("0") + "cm・腰 " + (pelvisDrop * 100f).ToString("0") + "cm・左足 " + gl + dl + "・右足 " + gr2 + dr;
+            if (stairFrames > 0) { float fm = Mathf.Max(Mathf.Abs(tl.y - (fl != null ? fl.position.y : tl.y)), Mathf.Abs(tr.y - (fr != null ? fr.position.y : tr.y))); stairMaxFoot = Mathf.Max(stairMaxFoot, fm); }
+            GroundDebug = "【段・坂の上 " + stairFrames + "コマ・体の最大 " + (stairMaxShift * 100f).ToString("0") + "cm】" + why + "・体 " + (groundShift * 100f).ToString("0") + "cm・腰 " + (pelvisDrop * 100f).ToString("0") + "cm・左足 " + gl + dl + "・右足 " + gr2 + dr;
         }
 
         /// <summary>足首の行き先（w＝合わせる強さ。床に着いている足ほど 1）。</summary>
