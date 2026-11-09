@@ -16,10 +16,12 @@ namespace LifeSimProto
         public const string PoolArea = "プール", BeachArea = "浜辺";
         public const string PoolHutArea = "更衣小屋", BeachHutArea = "浜の休憩小屋", RockShadeArea = "浜のはしの岩かげ";
         public const string PoolLoungerLabel = "プールの寝椅子", BeachLoungerLabel = "浜の寝椅子";
-        /// <summary>エッチできる所（区画の名前）。</summary>
-        public static readonly string[] ShoreHAreas = { PoolHutArea, BeachHutArea, RockShadeArea };
-        /// <summary>エッチできる寝椅子（席の名前）。</summary>
-        public static readonly string[] ShoreHSeats = { PoolLoungerLabel, BeachLoungerLabel };
+        public const string PoolHutFrontBench = "更衣小屋（手前）の長いす", PoolHutBackBench = "更衣小屋（奥）の長いす";
+        public const string BeachHutFrontBench = "浜の小屋の長いす（入口側）", BeachHutBackBench = "浜の小屋の長いす（奥）";
+        /// <summary>エッチできる所（区画の名前。決まった席のない所）。</summary>
+        public static readonly string[] ShoreHAreas = { RockShadeArea };
+        /// <summary>エッチできる席の名前（寝椅子と、小屋の長いす。2人は同じ長いすに並ぶ。2026-11-09：小屋の区画の床に座ると、更衣小屋の仕切りのむこうどうしや浜の小屋の外に分かれることがあったので席に）。</summary>
+        public static readonly string[] ShoreHSeats = { PoolLoungerLabel, BeachLoungerLabel, PoolHutFrontBench, PoolHutBackBench, BeachHutFrontBench, BeachHutBackBench };
 
         void NShore()
         {
@@ -136,10 +138,15 @@ namespace LifeSimProto
             {
                 System.Action<bool, float, float, float, float, string, string> bench = (beach, sx, sz, ax, az, label, area) =>
                     seats.Add(new Seat { kind = SeatKind.Sit, label = label, area = area, position = CampusPreview.HutW(beach, sx, sz), forward = CampusPreview.HutDir(beach, 0f, 1f), approach = CampusPreview.HutW(beach, ax, az) });
-                bench(false, 0.53f, -0.18f, 0.53f, 0.42f, "更衣小屋の長いす", PoolHutArea);
-                bench(false, -0.53f, -1.23f, -1.05f, -0.75f, "更衣小屋の長いす", PoolHutArea);
-                bench(true, 0.56f, -0.36f, 0.56f, 0.12f, "浜の小屋の長いす", BeachHutArea);
-                bench(true, -0.55f, -1.58f, -0.55f, -1.05f, "浜の小屋の長いす", BeachHutArea);
+                // 長いす（長さ 1.8m）には 2 人ずつ並んで座る（目印 Seat_1/2 の左右 0.42m）
+                bench(false, 0.15f, -0.18f, 0.22f, 0.35f, PoolHutFrontBench, PoolHutArea);
+                bench(false, 0.95f, -0.18f, 0.95f, 0.42f, PoolHutFrontBench, PoolHutArea);
+                bench(false, -0.95f, -1.23f, -1.05f, -0.75f, PoolHutBackBench, PoolHutArea);
+                bench(false, -0.11f, -1.23f, -0.15f, -0.75f, PoolHutBackBench, PoolHutArea);
+                bench(true, 0.14f, -0.36f, 0.14f, 0.12f, BeachHutFrontBench, BeachHutArea);
+                bench(true, 0.98f, -0.36f, 0.98f, 0.12f, BeachHutFrontBench, BeachHutArea);
+                bench(true, -0.97f, -1.58f, -0.97f, -1.05f, BeachHutBackBench, BeachHutArea);
+                bench(true, -0.13f, -1.58f, -0.13f, -1.05f, BeachHutBackBench, BeachHutArea);
                 bench(true, 1.05f, 1.33f, 1.05f, 1.85f, "浜の小屋のベンチ", BeachArea);
                 bench(true, 0.2f, 1.33f, 0.2f, 1.85f, "浜の小屋のベンチ", BeachArea);
                 System.Action<bool, float[]> walls = (beach, ws) =>

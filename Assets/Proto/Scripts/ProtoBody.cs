@@ -281,10 +281,14 @@ namespace LifeSimProto
                 prefab = Resources.Load<GameObject>("Chars/" + letter + "/Char" + letter);
                 isReal = prefab != null;
             }
+            // ふだんのモブの学生は新しい3D（MOB07。ProtoBody.Mob.cs）
+            CharProfile mobProf = null;
+            if (prefab == null) { var mp = MobPrefabFor(letter, out mobProf); if (mp != null) { prefab = mp; isReal = true; } }
             if (prefab == null) prefab = Resources.Load<GameObject>(look.male ? "ProtoModels/ProtoMale" : "ProtoModels/ProtoFemale");
             if (prefab == null) return null;
             var inst = Instantiate(prefab, owner.transform, false);
             inst.name = "Model";
+            if (mobProf != null && mobProf.heightCm > 0f) inst.transform.localScale *= mobProf.heightCm / MobHeadTopCm;   // 身長（揺れの骨を作る前に）
             var pb = owner.AddComponent<ProtoBody>();
             pb.real = isReal;
             if (!pb.Setup(inst.transform, look))
@@ -293,6 +297,7 @@ namespace LifeSimProto
                 Destroy(pb);
                 return null;
             }
+            if (mobProf != null) pb.ApplyMobLook(mobProf);
             return pb;
         }
 
@@ -845,6 +850,7 @@ namespace LifeSimProto
             string face = testMode ? testFace : sim.FaceNow;
             UpdateFace(dt, eyesClosed, speaking, face);
             UpdateCorrectives(dt, pose);
+            UpdateArmDown();   // モブの上着：腕を下ろす補正（ProtoBody.Mob.cs）
             if (clip != null && pose == BodyPose.Stand && !hOn) StraightenFeet();
             if (FastWatch) FastWatchStep(dt);
             if (TraceWho == sim && sim != null && Time.time < TraceUntil && hips != null && TraceLog.Length < 2000000)
