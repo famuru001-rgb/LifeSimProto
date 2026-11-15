@@ -537,7 +537,7 @@ namespace LifeSimProto
             // 塔の床（1〜3階）
             for (int f = 0; f <= 2; f++)
             {
-                var d = Cyl("TeacherTower_Floor", new Vector3(c.x, FloorY(f) - 0.06f, c.y), new Vector3(TeacherTowerR * 2f, 0.06f, TeacherTowerR * 2f), Quaternion.identity, woodFloor);
+                var d = Cyl("TeacherTower_Floor", new Vector3(c.x, FloorY(f) - 0.15f, c.y), new Vector3(TeacherTowerR * 2f, 0.15f, TeacherTowerR * 2f), Quaternion.identity, woodFloor);
                 slabRenderers.Add(new KeyValuePair<float, Renderer>(Mathf.Max(0.02f, FloorY(f)), d.GetComponent<Renderer>()));
             }
         }
@@ -1232,17 +1232,27 @@ namespace LifeSimProto
         void TowerFloor(int f, Vector2 holeA1, Vector2 holeA2, Material m)
         {
             float cx = NETowerC.x, cz = NETowerC.y;
-            float[] zs = { cz - NEInR + 0.25f, 12.2f, 13.0f, 13.8f, 14.6f, cz, 16.05f, TBand0, TBandMid, TBand1, 18.95f, cz + NEInR - 0.25f };
-            for (int i = 0; i + 1 < zs.Length; i++)
+            // 2026-11-15 塔の円に合わせる：床を 0.08m の細い帯に分け、はしは壁の石の厚みの中（半径 4.4）まで（外にはみ出さない）
+            const float FR = 4.4f;
+            var zl = new List<float>();
+            float[] zb = { cz - FR, 12.2f, 13.0f, 13.8f, 14.6f, cz, 16.05f, TBand0, TBandMid, TBand1, 18.95f, cz + FR };
+            for (int i = 0; i + 1 < zb.Length; i++)
             {
-                float z0 = zs[i], z1 = zs[i + 1];
-                float hc = TowerChord(Mathf.Max(Mathf.Abs(z0 - cz), Mathf.Abs(z1 - cz)), NEInR);
+                int n = Mathf.Max(1, Mathf.CeilToInt((zb[i + 1] - zb[i]) / 0.08f - 0.001f));
+                for (int k = 0; k < n; k++) zl.Add(Mathf.Lerp(zb[i], zb[i + 1], k / (float)n));
+            }
+            zl.Add(zb[zb.Length - 1]);
+            for (int i = 0; i + 1 < zl.Count; i++)
+            {
+                float z0 = zl[i], z1 = zl[i + 1];
+                float dzMin = (z0 < cz && z1 > cz) ? 0f : Mathf.Min(Mathf.Abs(z0 - cz), Mathf.Abs(z1 - cz));
+                float hc = TowerChord(dzMin, FR);
                 if (hc < 0.3f) continue;
                 float x0 = cx - hc, x1 = cx + hc, zz0 = z0;
                 if (z1 <= cz + 0.01f) x0 = cx + WallT / 2f;           // 建物の中の4分の1は除く
                 if (Mathf.Abs(z0 - cz) < 0.01f) zz0 = cz + WallT / 2f; // 奥の外壁の外から
                 var segs = new List<Vector2> { new Vector2(x0, x1) };
-                Vector2 hole = Mathf.Approximately(z0, TBand0) ? holeA1 : (Mathf.Approximately(z0, TBandMid) ? holeA2 : new Vector2(1f, 0f));
+                Vector2 hole = (z0 >= TBand0 - 0.01f && z0 < TBandMid - 0.01f) ? holeA1 : ((z0 >= TBandMid - 0.01f && z0 < TBand1 - 0.01f) ? holeA2 : new Vector2(1f, 0f));
                 if (hole.x < hole.y)
                 {
                     segs.Clear();
@@ -1313,10 +1323,12 @@ namespace LifeSimProto
         void ObservatoryFloor(Material m)
         {
             float cx = NETowerC.x, cz = NETowerC.y;
-            for (float z0 = cz - NEInR + 0.2f; z0 < cz + NEInR - 0.2f - 0.01f; z0 += 0.5f)
+            const float FR = 4.4f; // 2026-11-15 塔の円に合わせる（細い帯・壁の石の厚みの中まで）
+            for (float z0 = cz - FR; z0 < cz + FR - 0.01f; z0 += 0.08f)
             {
-                float z1 = Mathf.Min(z0 + 0.5f, cz + NEInR - 0.2f);
-                float hc = TowerChord(Mathf.Max(Mathf.Abs(z0 - cz), Mathf.Abs(z1 - cz)), NEInR);
+                float z1 = Mathf.Min(z0 + 0.08f, cz + FR);
+                float dzMin = (z0 < cz && z1 > cz) ? 0f : Mathf.Min(Mathf.Abs(z0 - cz), Mathf.Abs(z1 - cz));
+                float hc = TowerChord(dzMin, FR);
                 if (hc < 0.3f) continue;
                 float x0 = cx - hc, x1 = cx + hc;
                 if (z1 > ObsHoleZ0 && z0 < ObsHoleZ1)
@@ -1404,7 +1416,7 @@ namespace LifeSimProto
             // 南西の塔の床（先生の塔の床は NTeacherTower）
             for (int f = 0; f <= 2; f++)
             {
-                var d = Cyl("SWTower_Floor", new Vector3(sc.x, FloorY(f) - 0.07f, sc.y), new Vector3(TowerR * 2f, 0.06f, TowerR * 2f), Quaternion.identity, f == 0 ? flagstone : woodFloor);
+                var d = Cyl("SWTower_Floor", new Vector3(sc.x, FloorY(f) - 0.15f, sc.y), new Vector3(TowerR * 2f, 0.15f, TowerR * 2f), Quaternion.identity, f == 0 ? flagstone : woodFloor);
                 slabRenderers.Add(new KeyValuePair<float, Renderer>(Mathf.Max(0.02f, FloorY(f)), d.GetComponent<Renderer>()));
             }
             // 場所（となりの部屋の名前を塔まで）

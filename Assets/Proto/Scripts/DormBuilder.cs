@@ -336,15 +336,38 @@ namespace LifeSimProto
             var gl = new List<Vector4>(gaps);
             gl.Sort((p, q) => p.x.CompareTo(q.x));
             float cursor = 0f;
-            foreach (var g in gl)
+            foreach (var g0 in gl)
             {
-                if (g.x > cursor) WallPiece(w, a, dir, alongX, cursor, g.x, baseY, topY, thick);
-                // 床から開いた出入口には、本番の部品の枠
+                var g = g0;
+                float archApex = -1f; float cs = 0f, sxF = 1f, syF = 1f;
+                // 床から開いた出入口には、本番の部品の枠。壁の穴は枠の内側（上は丸い）に合わせる（2026-11-15 famuru「ドア枠に合わせて」）
                 if (g.z <= baseY + 0.01f && g.y - g.x <= 2.0f)
                 {
                     Vector2 gc = a + dir * ((g.x + g.y) / 2f);
-                    var fr = PlaceFurn("Furn_DoorFrame", null, new Vector3(gc.x, baseY, gc.y), alongX ? 0f : 90f, false, new Vector3((g.y - g.x + 0.2f) / 1.2f, Mathf.Min(g.w - g.z + 0.15f, topY - baseY) / 2.5f, thick / 0.35f + 0.05f));
-                    if (fr != null) foreach (var r in fr.GetComponentsInChildren<Renderer>()) w.upper.Add(r);
+                    sxF = (g.y - g.x + 0.2f) / 1.2f; syF = Mathf.Min(g.w - g.z + 0.15f, topY - baseY) / 2.5f;
+                    var fr = PlaceFurn("Furn_DoorFrame", null, new Vector3(gc.x, baseY, gc.y), alongX ? 0f : 90f, false, new Vector3(sxF, syF, thick / 0.35f + 0.05f));
+                    if (fr != null)
+                    {
+                        foreach (var r in fr.GetComponentsInChildren<Renderer>()) w.upper.Add(r);
+                        // 枠の内側：はば 0.86×倍率、まっすぐな所は高さ 1.92、その上は丸くなって 2.34 で閉じる
+                        cs = (g.x + g.y) / 2f;
+                        float hw = 0.43f * sxF;
+                        archApex = baseY + 2.34f * syF;
+                        g = new Vector4(cs - hw, cs + hw, g.z, archApex);
+                    }
+                }
+                if (g.x > cursor) WallPiece(w, a, dir, alongX, cursor, g.x, baseY, topY, thick);
+                if (archApex > 0f)
+                {
+                    float[] ay = { 1.92f, 2.05f, 2.15f, 2.25f, 2.34f };
+                    float[] ah = { 0.42f, 0.39f, 0.31f, 0.18f };
+                    float hw0 = 0.43f * sxF;
+                    for (int i = 0; i < 4; i++)
+                    {
+                        float inner = ah[i] * sxF;
+                        WallPiece(w, a, dir, alongX, cs - hw0, cs - inner, baseY + ay[i] * syF, baseY + ay[i + 1] * syF, thick, true);
+                        WallPiece(w, a, dir, alongX, cs + inner, cs + hw0, baseY + ay[i] * syF, baseY + ay[i + 1] * syF, thick, true);
+                    }
                 }
                 // 穴の下と上
                 if (g.z > baseY + 0.01f) WallPiece(w, a, dir, alongX, g.x, g.y, baseY, g.z, thick);
@@ -380,7 +403,7 @@ namespace LifeSimProto
         WallSeg WallF(int floor, Vector2 a, Vector2 b, params Vector4[] gaps)
         {
             float y = FloorY(floor);
-            return Wall(a, b, y, y + FloorH, WallT, gaps);
+            return Wall(a, b, y, y + FloorH - 0.06f, WallT, gaps); // 2026-11-15 上の床の面と同じ高さだとちらつくので、少し低く（床の板に隠れる）
         }
 
         /// <summary>壁の扉の穴（壁の始めからの位置 along、幅 w）。</summary>
@@ -479,7 +502,7 @@ namespace LifeSimProto
         void Slab(string name, int floor, Rect r, Material m)
         {
             float y = FloorY(floor);
-            float th = floor == 0 ? 0.1f : 0.15f;
+            float th = floor == 0 ? 0.1f : 0.3f;   // 2026-11-15 床を厚く（下の階の壁の上と重ならないように）
             var go = Box(name, new Vector3(r.center.x, y - th / 2f, r.center.y), new Vector3(r.width, th, r.height), m);
             slabRenderers.Add(new KeyValuePair<float, Renderer>(Mathf.Max(0.02f, y), go.GetComponent<Renderer>()));
         }
@@ -1871,6 +1894,9 @@ namespace LifeSimProto
             if (n == "Chandelier_Ring" || n == "Candle" || n == "Pillar" || n == "Fireplace_Chimney") return 0; // 吹き抜けの高い所にある1階の物
             if (!NewLayout && r.transform.position.z > BackOut + 0.3f) return 0; // 寮の奥（中庭・温室・工房）は地面の物（新しい学園では奥に北東の塔があるので高さで決める）
             float bottom = r.transform.position.y - Mathf.Abs(r.transform.lossyScale.y) * 0.5f;
+            // うすい床の板は上の面で決める（2026-11-15 本体チャット：床の厚みが 0.3 になって、2階の床の下の面が 1階 と数えられ、1階を見ても2階の床が出ていた）
+            if (Mathf.Abs(r.transform.lossyScale.y) <= 0.6f && r.GetComponent<MeshFilter>() != null && r.GetComponent<MeshFilter>().sharedMesh != null && r.GetComponent<MeshFilter>().sharedMesh.name.StartsWith("Cube"))
+                bottom = Mathf.Max(bottom, r.transform.position.y + Mathf.Abs(r.transform.lossyScale.y) * 0.5f - 0.1f);
             for (var tp = r.transform; tp != null; tp = tp.parent)
             {
                 if (tp.name == "Furn_Chandelier") return 0;                     // 吹き抜けに吊るす本番の家具

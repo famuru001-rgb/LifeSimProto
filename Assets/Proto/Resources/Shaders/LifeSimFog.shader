@@ -36,6 +36,36 @@ Shader "Hidden/LifeSim/Fog"
             float4 _FogSight;           // 見通し：篤の x, z, 遠さ, 1＝使う
             float4 _FogSightY;          // 見通し：高さの下, 上, 当たった物の表面の幅, 線の数
             TEXTURE2D(_FogSightTex); SAMPLER(sampler_FogSightTex);
+            // 階と階のあいだの床の穴（吹き抜け・階段・建物の外。2026-11-15）：r＝1階と2階のあいだ、g＝2階と3階、b＝3階と屋上。1＝穴
+            TEXTURE2D(_FogHoleTex); SAMPLER(sampler_FogHoleTex);
+            float4 _FogHoleRect;        // x0, z0, 1/幅, 1/奥行き
+            float4 _FogFloorY;          // 各階の床の高さ
+            float _FogEyeFloor;
+
+            int PixFloor(float y)
+            {
+                int f = 0;
+                if (y >= _FogFloorY.y - 0.15) f = 1;
+                if (y >= _FogFloorY.z - 0.15) f = 2;
+                if (y >= _FogFloorY.w - 0.15) f = 3;
+                return f;
+            }
+
+            float HoleOpen(float3 p)
+            {
+                int pf = PixFloor(p.y);
+                int ef = (int)(_FogEyeFloor + 0.5);
+                if (pf == ef) return 1.0;
+                float2 huv = (p.xz - _FogHoleRect.xy) * _FogHoleRect.zw;
+                if (huv.x < 0.0 || huv.y < 0.0 || huv.x > 1.0 || huv.y > 1.0) return 1.0;
+                float4 hm = SAMPLE_TEXTURE2D_LOD(_FogHoleTex, sampler_FogHoleTex, huv, 0);
+                int lo = min(pf, ef), hi = max(pf, ef);
+                float ok = 1.0;
+                if (lo < 1 && hi >= 1) ok *= step(0.5, hm.r);
+                if (lo < 2 && hi >= 2) ok *= step(0.5, hm.g);
+                if (lo < 3 && hi >= 3) ok *= step(0.5, hm.b);
+                return ok;
+            }
 
             struct A { float4 positionOS : POSITION; };
             struct V { float4 positionCS : SV_POSITION; };
@@ -71,7 +101,7 @@ Shader "Hidden/LifeSim/Fog"
                     float d = distance(p.xz, _FogCircle.xy);
                     lit = max(lit, 1.0 - smoothstep(_FogCircle.z - _FogLook.z, _FogCircle.z, d));
                 }
-                if (_FogSight.w > 0.5 && p.y >= _FogSightY.x && p.y <= _FogSightY.y)
+                if (_FogSight.w > 0.5 && HoleOpen(p) > 0.5)
                 {
                     float2 v = p.xz - _FogSight.xy;
                     float d = length(v);

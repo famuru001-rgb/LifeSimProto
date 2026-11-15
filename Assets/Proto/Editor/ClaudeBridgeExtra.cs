@@ -282,9 +282,10 @@ namespace LifeSimProto.EditorTools
                         else if (m == "sight") LoungeWorld.FogSightMode = true;     // 段B：見通し
                         else if (m == "rooms") LoungeWorld.FogSightMode = false;    // 段A：部屋ごと
                         else if (m == "rebuild") w.RebuildFogSight();               // 見えない当たりを作り直す
+                        else if (m == "hits") { log.AppendLine("fog hits: " + w.FogHitReport(12)); break; }   // 線がよく当たっている物
                         int hid = 0, all = 0;
                         foreach (var c in w.characters) if (c != null && c.Present) { all++; if (c.FogHidden) hid++; }
-                        log.AppendLine("fog: " + (LoungeWorld.FogEnabled ? "入" : "切") + "・" + (LoungeWorld.FogShadowMode ? "影" : "隠す") + "・" + w.FogStatus + "・見えない子 " + hid + "/" + all + "・出入口 " + w.FogDoorCount + "・見通しの当たり " + w.FogSightColliders);
+                        log.AppendLine("fog: " + (LoungeWorld.FogEnabled ? "入" : "切") + "・" + (LoungeWorld.FogShadowMode ? "影" : "隠す") + "・" + w.FogStatus + "・見えない子 " + hid + "/" + all + "・出入口 " + w.FogDoorCount + "・見通しの当たり " + w.FogSightColliders + "（形どおり " + w.FogMeshColliders + "・窓 " + w.FogWindowColliders + "）・床の穴のマス " + w.FogHoleCells);
                         break;
                     }
                     case "goto":

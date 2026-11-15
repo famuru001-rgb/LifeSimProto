@@ -96,7 +96,7 @@ namespace LifeSimProto
             float lit = 0f;
             for (int k = 0; k < fogLit.Count; k++) if (InRect4(p, fogLit[k], fogLitY[k])) { lit = 1f; break; }
             if (lit < 1f && fogCircle.w > 0.5f && new Vector2(p.x - fogCircle.x, p.z - fogCircle.y).magnitude <= fogCircle.z) lit = 1f;
-            if (lit < 1f && fogSight.w > 0.5f && p.y >= fogSightY.x && p.y <= fogSightY.y)
+            if (lit < 1f && fogSight.w > 0.5f && HoleOpen(p))
             {
                 Vector2 v = new Vector2(p.x - fogSight.x, p.z - fogSight.y);
                 float d = v.magnitude;
@@ -236,6 +236,13 @@ namespace LifeSimProto
             fogMat.SetVector("_FogSight", fogSight);
             fogMat.SetVector("_FogSightY", fogSightY);
             if (fogSightTex != null) fogMat.SetTexture("_FogSightTex", fogSightTex);
+            if (fogHoleTex != null)
+            {
+                fogMat.SetTexture("_FogHoleTex", fogHoleTex);
+                fogMat.SetVector("_FogHoleRect", new Vector4(holeRect.xMin, holeRect.yMin, 1f / holeRect.width, 1f / holeRect.height));
+            }
+            fogMat.SetVector("_FogFloorY", new Vector4(FloorY(0), FloorY(1), FloorY(2), FloorY(3)));
+            fogMat.SetFloat("_FogEyeFloor", fogEyeFloor);
             fogMat.SetVector("_FogTint", new Vector4(0.93f, 0.95f, 1.02f, 1f));
             var rp = new RenderParams(fogMat)
             {
@@ -257,7 +264,11 @@ namespace LifeSimProto
 
         // ================= 段B：見通し =================
 
-        /// <summary>篤の目の高さから、まわりに線を出して、さえぎる物までの長さを測る。</summary>
+        readonly RaycastHit[] fogRayBuf = new RaycastHit[12];
+        public int FogWindowColliders, FogMeshColliders;
+        public static float FogWindowPass = 0.7f;   // 窓に当たったあと、この長さまでの壁は通りぬける（壁の厚み＋外側の石）
+
+        /// <summary>篤の目の高さから、まわりに線を出して、さえぎる物までの長さを測る。窓は通りぬける（2026-11-15 famuru「窓から見える外」）。</summary>
         void BuildSight(SimCharacter f, bool outdoor)
         {
             EnsureSightColliders();
@@ -265,24 +276,43 @@ namespace LifeSimProto
             float range = outdoor ? FogOutdoorRadius : FogSightIndoor;
             Vector3 eye = fp + Vector3.up * FogEyeH;
             int mask = 1 << SightLayer;
-            RaycastHit h;
             for (int i = 0; i < FogRays; i++)
             {
                 float a = (i + 0.5f) / FogRays * Mathf.PI * 2f;
                 var dir = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
-                fogHits[i] = Physics.Raycast(eye, dir, out h, range, mask, QueryTriggerInteraction.Ignore) ? h.distance : range;
+                fogHits[i] = SightRay(eye, dir, range, mask);
             }
             if (fogSightTex == null)
-            {
                 fogSightTex = new Texture2D(FogRays, 1, TextureFormat.RFloat, false, true) { name = "FogSight", filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Repeat };
-            }
             fogSightTex.SetPixelData(fogHits, 0);
             fogSightTex.Apply(false, false);
             fogSight = new Vector4(fp.x, fp.z, range, 1f);
-            int floor = FloorOf(fp.y);
-            Vector4 yr = FloorRange(floor);
-            if (outdoor) yr = new Vector4(fp.y - 8f, fp.y + 12f, 0f, 0f);
-            fogSightY = new Vector4(yr.x, yr.y, 0.35f, FogRays);   // z：当たった物の表面も明るくする幅
+            fogEyeFloor = PixFloor(fp.y + 0.3f);
+            fogSightY = new Vector4(-1000f, 1000f, 0.35f, FogRays);   // z：当たった物の表面も明るくする幅（高さは階ごとの穴で決める＝HoleOpen）
+        }
+
+        /// <summary>1本の線：さえぎる物までの長さ。窓（FogWindow）に当たったら、その先 FogWindowPass m までの物は通りぬける。</summary>
+        float SightRay(Vector3 eye, Vector3 dir, float range, int mask)
+        {
+            int n = Physics.RaycastNonAlloc(eye, dir, fogRayBuf, range, mask, QueryTriggerInteraction.Ignore);
+            if (n == 0) return range;
+            System.Array.Sort(fogRayBuf, 0, n, RayHitComparer.Instance);
+            float passUntil = -1f;
+            for (int k = 0; k < n; k++)
+            {
+                var hh = fogRayBuf[k];
+                if (hh.collider == null) continue;
+                if (hh.collider.gameObject.name == "FogWindow") { passUntil = hh.distance + FogWindowPass; continue; }
+                if (hh.distance <= passUntil) continue;
+                return hh.distance;
+            }
+            return n >= fogRayBuf.Length ? fogRayBuf[n - 1].distance : range;
+        }
+
+        class RayHitComparer : IComparer<RaycastHit>
+        {
+            public static readonly RayHitComparer Instance = new RayHitComparer();
+            public int Compare(RaycastHit a, RaycastHit b) { return a.distance.CompareTo(b.distance); }
         }
 
         float SightHitAt(Vector2 v)
@@ -293,48 +323,194 @@ namespace LifeSimProto
             return fogHits[i];
         }
 
-        static readonly string[] SightSkipWords = { "Glow", "Flame", "Sky", "Water", "Ground", "Grass", "Leaf", "Foliage", "Mountain", "Cloud", "Sea", "Swash", "Light", "Candle" };
+        // さえぎらない物。DoorFrame・Arcade：枠の形なのに箱にすると出入口をふさぐ（fog hits で1位・2位だった。2026-11-15）。Stairs：段の形が箱になる
+        static readonly string[] SightSkipWords = { "Glow", "Flame", "Sky", "Water", "Ground", "Grass", "Leaf", "Foliage", "Mountain", "Cloud", "Sea", "Swash", "Light", "Candle", "DoorFrame", "Arcade", "Stairs", "Stair", "Step", "Railing", "Banister" };
+        static readonly string[] WindowWords = { "Window", "Glass", "Mullion", "Pane" };
 
-        /// <summary>線が当たる見えない当たりを、寮・学園・家具の物につける（最初に1回。命令 fog rebuild で作り直す）。</summary>
+        static bool IsWindowPart(MeshRenderer mr)
+        {
+            for (var t = mr.transform; t != null; t = t.parent)
+            {
+                foreach (var w in WindowWords) if (t.name.IndexOf(w, System.StringComparison.OrdinalIgnoreCase) >= 0) return true;
+                if (t.name.StartsWith("Furn_") || t.parent == null) break;
+            }
+            foreach (var m in mr.sharedMaterials) if (m != null && m.name.IndexOf("Glass", System.StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            return false;
+        }
+
+        /// <summary>
+        /// 線が当たる見えない当たりを、寮・学園・家具の物につける（最初に1回。命令 fog rebuild で作り直す）。
+        /// ・箱（Unity の立方体）や小さな物は箱の当たり。大きな形（2m より大きい家具・壁の部品）は形どおりの当たり（MeshCollider）。
+        ///   前は大きな形も箱にしていて、部屋ひとつ分の箱が出入口の先をふさいでいた（2026-11-15 famuru「他の部屋も視界が通っていれば明るく」）
+        /// ・窓・ガラスは FogWindow（通りぬける目じるし）
+        /// あわせて、階と階のあいだの床の穴（吹き抜け・階段・建物の外）を調べる（BuildFloorHoles）。
+        /// </summary>
         void EnsureSightColliders()
         {
             if (fogSightBuilt) return;
             fogSightBuilt = true;
-            int n = 0;
+            int n = 0, nw = 0, nm = 0;
+            var slabs = new List<Bounds>[4];
+            for (int b = 0; b < 4; b++) slabs[b] = new List<Bounds>();
             foreach (var mr in Object.FindObjectsByType<MeshRenderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
             {
                 if (mr == null || mr.GetComponentInParent<SimCharacter>() != null) continue;
                 var mf = mr.GetComponent<MeshFilter>();
                 if (mf == null || mf.sharedMesh == null) continue;
                 int layer = mr.gameObject.layer;
-                if (layer == 29 || layer == 30 || layer == SightLayer) continue;    // 座面・地面と階段（ProtoBody.Ground）
+                if (layer == SightLayer) continue;
                 Bounds wb = mr.bounds;
+                // 床の板（階と階のあいだ）：うすくて、上の面がその階の床の高さ
+                if (wb.size.y < 0.7f && wb.size.x * wb.size.z >= 0.25f && layer != 29)
+                    for (int b = 1; b < 4; b++)
+                    {
+                        float fy = FloorY(b);
+                        if (wb.max.y >= fy - 0.7f && wb.max.y <= fy + 0.3f) { slabs[b].Add(wb); break; }
+                    }
+                if (layer == 29 || layer == 30) continue;    // 座面・地面と階段（ProtoBody.Ground）
                 if (wb.size.y < 0.3f) continue;
                 if (wb.size.x * wb.size.z > 150f && Mathf.Min(wb.size.x, wb.size.z) > 2f) continue;   // 地面・大きなかたまり
                 bool skip = false;
-                foreach (var w in SightSkipWords) if (mr.name.IndexOf(w, System.StringComparison.OrdinalIgnoreCase) >= 0) { skip = true; break; }
-                if (!skip)
+                string pn = mr.transform.parent != null ? mr.transform.parent.name : "";
+                foreach (var w in SightSkipWords) if (mr.name.IndexOf(w, System.StringComparison.OrdinalIgnoreCase) >= 0 || pn.IndexOf(w, System.StringComparison.OrdinalIgnoreCase) >= 0) { skip = true; break; }
+                bool window = !skip && IsWindowPart(mr);
+                if (!skip && !window)
                     foreach (var m in mr.sharedMaterials)
                         if (m != null && m.shader != null && (m.shader.name.Contains("Foliage") || m.shader.name.Contains("Water") || m.shader.name.Contains("Sky") || m.renderQueue >= 2900)) { skip = true; break; }
                 if (skip) continue;
-                var go = new GameObject("FogSight");
+                var mesh = mf.sharedMesh;
+                var go = new GameObject(window ? "FogWindow" : "FogSight");
                 go.layer = SightLayer;
                 go.transform.SetParent(mr.transform, false);
-                var bc = go.AddComponent<BoxCollider>();
-                var b = mf.sharedMesh.bounds;
-                bc.center = b.center;
-                bc.size = new Vector3(Mathf.Max(b.size.x, 0.02f), Mathf.Max(b.size.y, 0.02f), Mathf.Max(b.size.z, 0.02f));
-                n++;
+                var lb = mesh.bounds;
+                bool big = Mathf.Max(wb.size.x, wb.size.z) > 2f && !window && mesh.name != "Cube" && !mesh.name.StartsWith("Cube");
+                if (big && mesh.isReadable)
+                {
+                    var mc = go.AddComponent<MeshCollider>();
+                    mc.sharedMesh = mesh;
+                    nm++;
+                }
+                else
+                {
+                    var bc = go.AddComponent<BoxCollider>();
+                    bc.center = lb.center;
+                    bc.size = new Vector3(Mathf.Max(lb.size.x, 0.02f), Mathf.Max(lb.size.y, 0.02f), Mathf.Max(lb.size.z, 0.02f));
+                }
+                if (window) nw++; else n++;
             }
-            FogSightColliders = n;
+            FogSightColliders = n; FogWindowColliders = nw; FogMeshColliders = nm;
+            BuildFloorHoles(slabs);
         }
 
         /// <summary>家具を動かしたあとなど：見えない当たりを作り直す。</summary>
         public void RebuildFogSight()
         {
-            foreach (var bc in Object.FindObjectsByType<BoxCollider>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-                if (bc != null && bc.gameObject.name == "FogSight" && bc.gameObject.layer == SightLayer) Destroy(bc.gameObject);
+            foreach (var c in Object.FindObjectsByType<Collider>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                if (c != null && c.gameObject.layer == SightLayer && (c.gameObject.name == "FogSight" || c.gameObject.name == "FogWindow")) Destroy(c.gameObject);
             fogSightBuilt = false;
+        }
+
+        // ---- 階と階のあいだの床の穴（吹き抜け・階段・建物の外）。2026-11-15 famuru「吹き抜け・階段から見える上下の階」 ----
+        const float HoleCell = 0.5f;
+        public static int FogHoleGrow = 2;   // 穴を広げるマス（0.5m×2＝1m。手すりのきわや真下も見えるように）
+        Rect holeRect;
+        int holeW, holeH;
+        byte[] holeOpen;          // [ (z*W+x)*4 + 境 ]：1＝穴（上下が見える）。境 b＝b-1階と b階のあいだ（1〜3）
+        Texture2D fogHoleTex;
+        int fogEyeFloor;
+        public int FogHoleCells;
+
+        void BuildFloorHoles(List<Bounds>[] slabs)
+        {
+            float x0 = float.MaxValue, z0 = float.MaxValue, x1 = float.MinValue, z1 = float.MinValue;
+            for (int b = 1; b < 4; b++) foreach (var s in slabs[b]) { x0 = Mathf.Min(x0, s.min.x); z0 = Mathf.Min(z0, s.min.z); x1 = Mathf.Max(x1, s.max.x); z1 = Mathf.Max(z1, s.max.z); }
+            if (x0 > x1) { x0 = -1; z0 = -1; x1 = 1; z1 = 1; }
+            x0 -= 2f; z0 -= 2f; x1 += 2f; z1 += 2f;
+            holeW = Mathf.Clamp(Mathf.CeilToInt((x1 - x0) / HoleCell), 1, 2048);
+            holeH = Mathf.Clamp(Mathf.CeilToInt((z1 - z0) / HoleCell), 1, 2048);
+            holeRect = Rect.MinMaxRect(x0, z0, x0 + holeW * HoleCell, z0 + holeH * HoleCell);
+            var cover = new bool[4][];
+            for (int b = 1; b < 4; b++)
+            {
+                cover[b] = new bool[holeW * holeH];
+                foreach (var s in slabs[b])
+                {
+                    int ax = Mathf.Max(0, Mathf.CeilToInt((s.min.x - x0) / HoleCell - 0.5f)), bx = Mathf.Min(holeW - 1, Mathf.FloorToInt((s.max.x - x0) / HoleCell - 0.5f));
+                    int az = Mathf.Max(0, Mathf.CeilToInt((s.min.z - z0) / HoleCell - 0.5f)), bz = Mathf.Min(holeH - 1, Mathf.FloorToInt((s.max.z - z0) / HoleCell - 0.5f));
+                    for (int z = az; z <= bz; z++) for (int x = ax; x <= bx; x++) cover[b][z * holeW + x] = true;
+                }
+            }
+            holeOpen = new byte[holeW * holeH * 4];
+            int open = 0;
+            for (int z = 0; z < holeH; z++)
+                for (int x = 0; x < holeW; x++)
+                    for (int b = 1; b < 4; b++)
+                    {
+                        // 近く（FogHoleGrow マス）に床の無いマスがあれば穴
+                        bool hole = false;
+                        for (int dz = -FogHoleGrow; dz <= FogHoleGrow && !hole; dz++)
+                            for (int dx = -FogHoleGrow; dx <= FogHoleGrow; dx++)
+                            {
+                                int xx = x + dx, zz = z + dz;
+                                if (xx < 0 || zz < 0 || xx >= holeW || zz >= holeH) { hole = true; break; }
+                                if (!cover[b][zz * holeW + xx]) { hole = true; break; }
+                            }
+                        if (hole) { holeOpen[(z * holeW + x) * 4 + (b - 1)] = 255; open++; }
+                    }
+            FogHoleCells = open;
+            fogHoleTex = new Texture2D(holeW, holeH, TextureFormat.RGBA32, false, true) { name = "FogHoles", filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp };
+            fogHoleTex.SetPixelData(holeOpen, 0);
+            fogHoleTex.Apply(false, false);
+        }
+
+        /// <summary>高さ y がどの階の物か（その階の床より 0.15m 下から上。1階の壁の上のほうも1階。シェーダーと同じ決め方）。</summary>
+        static int PixFloor(float y) { int f = 0; for (int k = 1; k < 4; k++) if (y >= FloorY(k) - 0.15f) f = k; return f; }
+
+        /// <summary>その場所の高さの階と、篤の階のあいだの床がぜんぶ穴か（同じ階なら true）。</summary>
+        bool HoleOpen(Vector3 p)
+        {
+            int pf = PixFloor(p.y);
+            if (pf == fogEyeFloor || holeOpen == null) return true;
+            int x = Mathf.FloorToInt((p.x - holeRect.xMin) / HoleCell), z = Mathf.FloorToInt((p.z - holeRect.yMin) / HoleCell);
+            if (x < 0 || z < 0 || x >= holeW || z >= holeH) return true;
+            int lo = Mathf.Min(pf, fogEyeFloor), hi = Mathf.Max(pf, fogEyeFloor);
+            for (int b = lo + 1; b <= hi && b < 4; b++) if (holeOpen[(z * holeW + x) * 4 + (b - 1)] == 0) return false;
+            return true;
+        }
+
+        /// <summary>試験用（fog hits）：今の線がいちばんよく当たっている物。</summary>
+        public string FogHitReport(int top)
+        {
+            var f = RomanceTarget;
+            if (f == null) return "篤がいない";
+            EnsureSightColliders();
+            var count = new Dictionary<string, int>();
+            Vector3 eye = f.transform.position + Vector3.up * FogEyeH;
+            float range = FogSightIndoor;
+            for (int i = 0; i < FogRays; i += 2)
+            {
+                float a = (i + 0.5f) / FogRays * Mathf.PI * 2f;
+                var dir = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
+                int n = Physics.RaycastNonAlloc(eye, dir, fogRayBuf, range, 1 << SightLayer, QueryTriggerInteraction.Ignore);
+                if (n == 0) continue;
+                System.Array.Sort(fogRayBuf, 0, n, RayHitComparer.Instance);
+                float passUntil = -1f;
+                for (int k = 0; k < n; k++)
+                {
+                    var hh = fogRayBuf[k];
+                    if (hh.collider.gameObject.name == "FogWindow") { passUntil = hh.distance + FogWindowPass; continue; }
+                    if (hh.distance <= passUntil) continue;
+                    var t = hh.collider.transform.parent;
+                    string key = t != null ? (t.parent != null ? t.parent.name + "/" : "") + t.name + (hh.collider is MeshCollider ? "(形)" : "") : "?";
+                    int c; count.TryGetValue(key, out c); count[key] = c + 1;
+                    break;
+                }
+            }
+            var list = new List<KeyValuePair<string, int>>(count);
+            list.Sort((p, q) => q.Value.CompareTo(p.Value));
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < list.Count && i < top; i++) sb.Append(list[i].Key).Append("×").Append(list[i].Value).Append("　");
+            return sb.ToString();
         }
 
         // ================= 区画どうしの出入口 =================
