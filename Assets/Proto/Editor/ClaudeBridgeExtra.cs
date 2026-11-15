@@ -78,6 +78,7 @@ namespace LifeSimProto.EditorTools
                 case "navpng":
                 case "goto":
                 case "wall":
+                case "fog":
                 case "dpick":
                 case "dstat":
                 case "cup":
@@ -96,6 +97,7 @@ namespace LifeSimProto.EditorTools
                 case "skirtlegshots":
                 case "skirtleg":
                 case "skirtlegbench":
+                case "uniformsitshots":
                     break;
                 default:
                     return false;
@@ -264,6 +266,22 @@ namespace LifeSimProto.EditorTools
                         // 試験用：wall all|low|auto（壁の見せ方。campos のあとに使う。2026-11-08 家具のチャット）
                         w.wallMode = a.Length > 1 && a[1] == "all" ? WallMode.All : a.Length > 1 && a[1] == "auto" ? WallMode.Auto : WallMode.Low;
                         log.AppendLine("wall: " + w.wallMode);
+                        break;
+                    }
+                    case "fog":
+                    {
+                        // 試験用：fog on／off／hide／shadow／night／day／auto／status（視界の制限。LoungeWorld.Fog.cs。2026-11-15 本体チャット）
+                        string m = a.Length > 1 ? a[1] : "status";
+                        if (m == "on") LoungeWorld.FogEnabled = true;
+                        else if (m == "off") LoungeWorld.FogEnabled = false;
+                        else if (m == "hide") LoungeWorld.FogShadowMode = false;
+                        else if (m == "shadow") LoungeWorld.FogShadowMode = true;
+                        else if (m == "night") LoungeWorld.FogNightOverride = 1;
+                        else if (m == "day") LoungeWorld.FogNightOverride = -1;
+                        else if (m == "auto") LoungeWorld.FogNightOverride = 0;
+                        int hid = 0, all = 0;
+                        foreach (var c in w.characters) if (c != null && c.Present) { all++; if (c.FogHidden) hid++; }
+                        log.AppendLine("fog: " + (LoungeWorld.FogEnabled ? "入" : "切") + "・" + (LoungeWorld.FogShadowMode ? "影" : "隠す") + "・" + w.FogStatus + "・見えない子 " + hid + "/" + all + "・出入口 " + w.FogDoorCount);
                         break;
                     }
                     case "goto":
@@ -517,6 +535,15 @@ namespace LifeSimProto.EditorTools
                         LifeSimProto.SkirtLegShots.Tag = a.Length > 2 ? a[2] : "now";
                         new GameObject("SkirtLegShots").AddComponent<LifeSimProto.SkirtLegShots>();
                         log.AppendLine("skirtlegshots: started " + LifeSimProto.SkirtLegShots.Letters + " " + LifeSimProto.SkirtLegShots.Tag);
+                        break;
+                    }
+                    case "uniformsitshots":
+                    {
+                        // 座ったときに服が椅子の座面・床を突き抜けていないか（2026-11-13 共通制服）：uniformsitshots [記号,記号…] [Tag] → 仮モデル\\Unity確認\\制服座り_（Tag）\\
+                        LifeSimProto.UniformSitShots.Letters = a.Length > 1 ? a[1] : "I,Q,R";
+                        LifeSimProto.UniformSitShots.Tag = a.Length > 2 ? a[2] : "now";
+                        new GameObject("UniformSitShots").AddComponent<LifeSimProto.UniformSitShots>();
+                        log.AppendLine("uniformsitshots: started " + LifeSimProto.UniformSitShots.Letters + " " + LifeSimProto.UniformSitShots.Tag);
                         break;
                     }
                     case "skirtlegbench":

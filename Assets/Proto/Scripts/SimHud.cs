@@ -41,7 +41,7 @@ namespace LifeSimProto
         // 操作の説明：右上の歯車を押したときだけ、歯車の下に出す（famuru 決定 2026-10-24）
         bool helpOpen;
         Rect GearRect { get { return new Rect(VW - 12 - 46, 68, 46, 36); } }
-        Rect HelpPopup { get { return new Rect(VW - 12 - 480, GearRect.yMax + 4, 480, 310); } }
+        Rect HelpPopup { get { return new Rect(VW - 12 - 480, GearRect.yMax + 4, 480, 350); } }   // 下に視界の制限のボタン（2026-11-15）
         // 見る階のボタン（1階・2階・3階・屋上）：歯車の左に並べる（2026-10-25 寮を3階建てにした）
         static readonly string[] FloorButtonNames = { "1階", "2階", "3階", "屋上" };
         Rect FloorButtonsRect { get { return new Rect(GearRect.x - 8 - FloorButtonNames.Length * 62, GearRect.y, FloorButtonNames.Length * 62, GearRect.height); } }
@@ -384,7 +384,7 @@ namespace LifeSimProto
             list.Sort((a, b) => (b.transform.position - cam).sqrMagnitude.CompareTo((a.transform.position - cam).sqrMagnitude));
             foreach (var c in list)
             {
-                if (!c.Present || !world.FloorVisible(c.transform.position.y)) continue;
+                if (!c.Present || !world.FloorVisible(c.transform.position.y) || !world.FogShows(c)) continue;   // 視界の制限で見えない子は名札・吹き出しも出さない
                 Vector2 g;
                 if (!ToGui(c.transform.position + Vector3.up * c.HeadHeight, s, out g)) continue;
 
@@ -782,6 +782,10 @@ namespace LifeSimProto
             };
             float y = r.y + 40;
             foreach (var l in lines) { GUI.Label(new Rect(r.x + 14, y, r.width - 28, 24), l, small); y += 25; }
+            // 視界の制限（フォグ。LoungeWorld.Fog.cs。2026-11-15 famuru：最初は切っておく）
+            y += 6;
+            if (GUI.Button(new Rect(r.x + 14, y, 220, 30), LoungeWorld.FogEnabled ? "視界の制限：あり" : "視界の制限：なし", LoungeWorld.FogEnabled ? buttonOn : smallButton)) LoungeWorld.FogEnabled = !LoungeWorld.FogEnabled;
+            if (GUI.Button(new Rect(r.x + 244, y, 220, 30), LoungeWorld.FogShadowMode ? "見えない子：影だけ" : "見えない子：隠す", smallButton)) LoungeWorld.FogShadowMode = !LoungeWorld.FogShadowMode;
         }
 
         void DrawShop()

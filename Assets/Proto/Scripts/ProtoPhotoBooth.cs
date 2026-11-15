@@ -339,6 +339,96 @@ namespace LifeSimProto
         }
     }
 
+    /// <summary>
+    /// 確認用（2026-11-11 取り込みのチャット）：ひじ・ひざの曲がり方。歩く・座る（いす）・正座・手を振る・話すを 3.2 秒ずつ流し、
+    /// 0.1 秒ごとに左右のひじ（外から）・左右のひざ（外から）・ひざ（前から）・全身（前・横）を撮る。ひじ・ひざの曲がる角度を 関節.csv に書く。
+    /// 保存先：仮モデル\Unity確認\関節_（記号）\。命令 jointshots（記号）。1コマは 1/30 秒に決め打ち（撮影が重いと揺れが止まるため）。
+    /// </summary>
+    public class JointShots : MonoBehaviour
+    {
+        public static string Letter = "L";
+        const int PhotoLayer = 31;
+
+        IEnumerator Start()
+        {
+            string dir = Path.Combine(ProtoPhotoBooth.OutDir, "関節_" + Letter);
+            Directory.CreateDirectory(dir);
+            var cam = new GameObject("JointCam").AddComponent<Camera>();
+            cam.enabled = false; cam.fieldOfView = 30f; cam.nearClipPlane = 0.02f;
+            cam.cullingMask = 1 << PhotoLayer; cam.clearFlags = CameraClearFlags.SolidColor; cam.backgroundColor = new Color(0.3f, 0.32f, 0.36f);
+            var rt = new RenderTexture(420, 420, 24); cam.targetTexture = rt;
+            var lamp = new GameObject("JointLamp").AddComponent<Light>(); lamp.type = LightType.Point; lamp.range = 10f; lamp.intensity = 1.2f;
+            float keepCapture = Time.captureDeltaTime;
+            Time.captureDeltaTime = 1f / 30f;
+            var csv = new StringBuilder("動き,こま,秒,右ひじ(度),左ひじ(度),右ひざ(度),左ひざ(度)\n");
+            string[] modes = { "歩く", "座る", "正座", "手を振る", "話す" };
+            int mi = 0;
+            foreach (var mode in modes)
+            {
+                var go = new GameObject("Joint_" + mode);
+                go.transform.position = new Vector3(60f + mi * 4f, 0f, 200f);
+                var pb = ProtoBody.Create(go, CharLook.Get(Letter, Letter == "F", Color.gray), Letter);
+                if (pb == null) { Destroy(go); continue; }
+                pb.testMode = true; pb.testLetter = Letter; pb.testPose = BodyPose.Stand; pb.testOutfit = "Uniform"; pb.testFace = "";
+                foreach (var r in go.GetComponentsInChildren<Renderer>(true)) r.gameObject.layer = PhotoLayer;
+                if (mode == "歩く") pb.testSpeed = 1.4f;
+                else if (mode == "座る") pb.testPose = BodyPose.Sit;
+                else if (mode == "正座") pb.testPose = BodyPose.SitFloor;
+                else if (mode == "話す") pb.testTalk = true;
+                for (int w = 0; w < 30; w++) yield return null;   // 座る・正座の形に落ち着くまで（1秒）
+                if (mode == "手を振る") pb.Gesture("Wave", 9999f);
+                float t = 0f, next = 0f; int frame = 0;
+                while (t < 3.2f)
+                {
+                    t += Time.deltaTime;
+                    if (t >= next)
+                    {
+                        next += 0.1f;
+                        var tr = go.transform;
+                        float re = Bend(pb, "RightArm", "RightForeArm", "RightHand"), le = Bend(pb, "LeftArm", "LeftForeArm", "LeftHand");
+                        float rk = Bend(pb, "RightUpLeg", "RightLeg", "RightFoot"), lk = Bend(pb, "LeftUpLeg", "LeftLeg", "LeftFoot");
+                        csv.Append(mode + "," + frame + "," + t.ToString("0.00") + "," + re.ToString("0") + "," + le.ToString("0") + "," + rk.ToString("0") + "," + lk.ToString("0") + "\n");
+                        string f = frame.ToString("000");
+                        foreach (var side in new[] { "右", "左" })
+                        {
+                            string s = side == "右" ? "Right" : "Left";
+                            Vector3 outv = side == "右" ? tr.right : -tr.right;
+                            Transform el = pb.Bone(s + "ForeArm"), kn = pb.Bone(s + "Leg");
+                            if (el != null) SwayShots.Shot(cam, rt, lamp, el.position + outv * 0.6f + tr.forward * 0.25f + Vector3.up * 0.05f, el.position, Path.Combine(dir, mode + "_" + side + "ひじ_" + f + ".png"));
+                            if (kn != null) SwayShots.Shot(cam, rt, lamp, kn.position + outv * 0.75f + tr.forward * 0.2f + Vector3.up * 0.1f, kn.position, Path.Combine(dir, mode + "_" + side + "ひざ_" + f + ".png"));
+                        }
+                        Transform rkn = pb.Bone("RightLeg"), lkn = pb.Bone("LeftLeg");
+                        if (rkn != null && lkn != null)
+                        {
+                            Vector3 mid = (rkn.position + lkn.position) * 0.5f;
+                            SwayShots.Shot(cam, rt, lamp, mid + tr.forward * 1.0f + Vector3.up * 0.15f, mid, Path.Combine(dir, mode + "_ひざ前_" + f + ".png"));
+                        }
+                        Vector3 c = tr.position + Vector3.up * 0.9f;
+                        SwayShots.Shot(cam, rt, lamp, c + tr.forward * 3.0f + Vector3.up * 0.3f, c, Path.Combine(dir, mode + "_全身前_" + f + ".png"));
+                        SwayShots.Shot(cam, rt, lamp, c + tr.right * 3.0f + Vector3.up * 0.3f, c, Path.Combine(dir, mode + "_全身横_" + f + ".png"));
+                        frame++;
+                    }
+                    yield return null;
+                }
+                Destroy(go);
+                mi++;
+            }
+            Time.captureDeltaTime = keepCapture;
+            File.WriteAllText(Path.Combine(dir, "関節.csv"), csv.ToString(), Encoding.UTF8);
+            File.WriteAllText(Path.Combine(dir, "済み.txt"), System.DateTime.Now.ToString());
+            Destroy(cam.gameObject); Destroy(lamp.gameObject); rt.Release();
+            Destroy(gameObject);
+        }
+
+        // 骨 a→b と b→c のあいだの曲がりの角度（0＝まっすぐ）
+        static float Bend(ProtoBody pb, string a, string b, string c)
+        {
+            Transform A = pb.Bone(a), Bt = pb.Bone(b), C = pb.Bone(c);
+            if (A == null || Bt == null || C == null) return -1f;
+            return Vector3.Angle(Bt.position - A.position, C.position - Bt.position);
+        }
+    }
+
     public class SwayShots : MonoBehaviour
     {
         public static string Tag = "now";

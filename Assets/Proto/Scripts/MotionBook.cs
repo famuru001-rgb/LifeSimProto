@@ -104,7 +104,7 @@ namespace LifeSimProto
         /// <summary>立って話すときの身ぶり（会話ごとに1つ）。</summary>
         public static readonly string[] TalkPool = { "Talk", "Talk2", "Talk3", "Talk4", "HY_Talk1_a", "HY_Talk1_b", "HY_Talk2_a", "HY_Talk2_b", "M_Talking", "M_Talking_1", "M_Talking_2", "M_Talking_3", "M_TalkingAtWatercooler", "M_TellingASecret" };
         /// <summary>相手の話を聞いているとき（立って）。</summary>
-        public static readonly string[] ListenPool = { "HY_Listen_a", "HY_Listen_b" };
+        public static readonly string[] ListenPool = { "HY_Nod_a", "HY_Nod_b", "R_RegularLight", "R_HeadTilts" };   // 聞く動き（2026-11-14 モーション：HY_Listen_a・b は座った形だったので外した）
         /// <summary>座って話すとき。</summary>
         public static readonly string[] SitTalkPool = { "SitTalk", "M_SittingTalking" };
         /// <summary>気分が沈んでいるときの立ち方（キャラごとに1つ）。</summary>

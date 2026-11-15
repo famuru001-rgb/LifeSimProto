@@ -775,7 +775,7 @@ namespace LifeSimProto
                 Vector2 c = p - bis * Tune("Cliff2_corner_back", 1.6f) * sc;
                 Put("Cliff2_Corner", c.x, H(c.x, c.y) + Tune("Cliff2_dy", 0.1f), c.y, YawFacing(bis), new Vector3(sc, Tune("Cliff2_ys", 0.6f), sc));
             }
-            bool top = Tune("Cliff2_top", 1f) > 0.5f;
+            bool top = Tune("Cliff2_top", 0f) > 0.5f; // 崖の上の苔の板（Cliff2_Top）は、浜辺のはしや森の岸で緑の板が出っぱって見えるのでやめた（famuru 2026-11-13）
             for (int i = 0; i < N; i++)
             {
                 Vector2 a = Island[i], b = Island[(i + 1) % N];
@@ -1580,6 +1580,27 @@ namespace LifeSimProto
             Vector3 v = Quaternion.Euler(0f, yaw, 0f) * new Vector3(lx, 0f, lz);
             return PlanDir(v.x, v.z).normalized;
         }
+        /// <summary>ゲームの点が小屋（更衣小屋・浜の休憩小屋）の中か。</summary>
+        /// <summary>プールの更衣小屋の中か（2026-11-14。プールのあとのシャワー）。</summary>
+        public static bool InPoolHut(Vector3 w)
+        {
+            if (!PoolBeachOn) return false;
+            Vector2 a = HutLocal(false, w); return Mathf.Abs(a.x) < 1.75f && Mathf.Abs(a.y) < 1.75f;
+        }
+        public static bool InHut(Vector3 w)
+        {
+            if (!PoolBeachOn) return false;
+            Vector2 a = HutLocal(false, w); if (Mathf.Abs(a.x) < 1.75f && Mathf.Abs(a.y) < 1.75f) return true;
+            Vector2 b = HutLocal(true, w); return Mathf.Abs(b.x) < 1.8f && b.y > -2.05f && b.y < 0.55f;
+        }
+        /// <summary>着がえる所（ゲームの点）。浜辺のそばなら浜の休憩小屋、ほかは更衣小屋（手前の部屋）。2026-11-13</summary>
+        public static Vector3 ChangingSpot(Vector3 near)
+        {
+            float al, ac;
+            bool beach = OnShore(near, out al, out ac) && near.y < 0.5f;
+            return beach ? HutW(true, -0.3f, -0.75f) : HutW(false, 0.9f, 0.9f);
+        }
+
         /// <summary>配置図の点が小屋の床の上か（まわり m をふくむ）。</summary>
         static bool PlanInHut(Vector2 p, float m)
         {
@@ -1831,7 +1852,12 @@ namespace LifeSimProto
                     {
                         float h1 = Hash01(e * 7 + k, 13), h2 = Hash01(k, e * 5 + 3);
                         Vector2 q = a + d * (0.5f + k * 2.3f) + inw * (1.5f - k * 0.4f + (h1 - 0.5f) * 1.5f);
-                        if (cliffs2) Put(k % 2 == 0 ? "Rock_Shore_A" : "Rock_Shore_B", q.x, WaterY + 0.9f + h2 * 0.8f, q.y, h1 * 360f, Vector3.one * (1.3f + h1 * 0.5f)); // 依頼26 の岸の岩
+                        if (cliffs2)
+                        {
+                            // 依頼26 の岸の岩。苔の平らな上の面が緑の板に見えるので、小さめにして横へ倒す（famuru「上が平らで緑の板のような」2026-11-13）
+                            var rk = Put(k % 2 == 0 ? "Rock_Shore_A" : "Rock_Shore_B", q.x, WaterY + 0.6f + h2 * 0.5f, q.y, h1 * 360f, Vector3.one * (0.8f + h1 * 0.35f));
+                            if (rk != null) Tilt(rk, 40f + h2 * 20f, (h1 - 0.5f) * 40f);
+                        }
                         else Put("Rock_Large", q.x, WaterY - 1.2f + h2 * 0.6f, q.y, h1 * 360f, new Vector3(2.2f + h1 * 1.2f, 2.4f + h2 * 1.4f, 2.0f + h2));
                     }
                 }
@@ -1900,6 +1926,7 @@ namespace LifeSimProto
             if (poolBeach && (NearBeach(p, 3f, 15f + margin) || OnLowBeach(p, 0.15f))) return false; // 浜辺（帯の先の森は除かない。2026-11-08）
             if (poolBeach && DistSeg(p, BeachDoorOut, BeachStairTop) < 1.4f + margin) return false; // 浜辺への小道
             if (poolBeach && PlanInHut(p, margin + 0.3f)) return false; // 小屋の中（床から草が生えないように。2026-11-09）
+            if (v3) foreach (var tw in new[] { new Vector2(46f, 88f), new Vector2(46f, 64f), new Vector2(77f, 88f) }) if ((p - tw).magnitude < 5f + margin) return false; // 寮の丸い塔の中（1階の床から草が出ないように。2026-11-14）
             if (lawns && (p - new Vector2(0, 18)).magnitude < 10f + margin) return false;
             if (lawns && ((p - new Vector2(26, 25)).magnitude < 5f || (p - new Vector2(-26, 25)).magnitude < 5f)) return false;
             if (!Inside(Island, p)) return false;
@@ -2504,11 +2531,14 @@ namespace LifeSimProto
                         if (h1 < Tune("Shore2_skip", 0.7f)) continue;
                         Vector2 q2 = p + n * (Tune("Shore2_out", 1.4f) + h1 * 1.4f) + d * (h2 - 0.5f) * 2f;
                         bool bigA = h3 > 0.4f; float sc2 = 0.7f + h2 * 0.6f;
-                        Put(bigA ? "Rock_Shore_A" : "Rock_Shore_B", q2.x, WaterY + (bigA ? 1.25f : 0.9f) * sc2 * Tune("Shore2_up", 1.1f), q2.y, h2 * 360f, Vector3.one * sc2);
+                        // 苔の平らな上の面が水の上の緑の板に見えないよう、横へ倒す（2026-11-13）
+                        var rk2 = Put(bigA ? "Rock_Shore_A" : "Rock_Shore_B", q2.x, WaterY + (bigA ? 1.25f : 0.9f) * sc2 * Tune("Shore2_up", 1.1f), q2.y, h2 * 360f, Vector3.one * sc2);
+                        if (rk2 != null) Tilt(rk2, 40f + h3 * 20f, (h2 - 0.5f) * 40f);
                         if (h3 > 0.7f)
                         {
                             Vector2 r2 = q2 + d * (2.2f + h1) + n * 0.6f;
-                            Put("Rock_Shore_B", r2.x, WaterY + 0.5f, r2.y, h1 * 360f, Vector3.one * (0.55f + h2 * 0.3f));
+                            var rk3 = Put("Rock_Shore_B", r2.x, WaterY + 0.5f, r2.y, h1 * 360f, Vector3.one * (0.55f + h2 * 0.3f));
+                            if (rk3 != null) Tilt(rk3, 45f + h1 * 15f, (h3 - 0.5f) * 40f);
                         }
                         continue;
                     }
@@ -2728,9 +2758,36 @@ namespace LifeSimProto
         Camera shotCam;
         float nextPoll;
 
+        // 試験用：usecount（2026-11-14 家具のチャット）。前の2つの塔（2・3階）の席・見どころを、使いに来た回数・着いた回数で数える
+        string[] useWords;
+        readonly Dictionary<string, int[]> useCount = new Dictionary<string, int[]>();
+        readonly HashSet<string> useNow = new HashSet<string>(), useSat = new HashSet<string>();
+        double useFrom;
+        static bool UseInTower(Vector3 p) { return p.y > 1f && Mathf.Abs(p.z + 15.5f) < 5f && Mathf.Abs(Mathf.Abs(p.x) - 12f) < 5f; }
+        void UseTick()
+        {
+            var w = LoungeWorld.Instance; if (useWords == null || w == null) return;
+            var seen = new HashSet<string>();
+            System.Action<string, Vector3, SimCharacter> one = (label, pos, oc) =>
+            {
+                bool hit = false; foreach (var wd in useWords) if (label != null && label.Contains(wd)) hit = true;
+                if (!hit || !UseInTower(pos)) return;
+                string k = label + " (" + pos.x.ToString("F0") + "," + pos.y.ToString("F0") + "," + pos.z.ToString("F0") + ")";
+                if (!useCount.ContainsKey(k)) useCount[k] = new int[2];
+                if (oc == null) return;
+                string key = k + "|" + oc.displayName; seen.Add(key);
+                if (useNow.Add(key)) useCount[k][0]++;
+                if (oc.actionText != null && !oc.actionText.Contains("向かっている") && useSat.Add(key)) useCount[k][1]++;
+            };
+            foreach (var st in w.seats) one(st.label, st.position, st.occupant);
+            foreach (var po in w.pois) { Vector3 sp = po.slots != null && po.slots.Length > 0 ? po.slots[0] : po.lookAt; if (po.occupants == null) one(po.label, sp, null); else foreach (var oc in po.occupants) one(po.label, sp, oc); }
+            useNow.IntersectWith(seen); useSat.IntersectWith(seen);
+        }
+
         void Update()
         {
             UpdateMoving();
+            UseTick();
             // 正門の扉：朝6時に開け、夜9時に閉める（3秒かけて動かす）
             if (game && gateL != null && gateR != null && LoungeWorld.Instance != null)
             {
@@ -2784,6 +2841,43 @@ namespace LifeSimProto
                     result.Add("sitat " + c.displayName + " " + label + " " + (best != null ? best.position.ToString("F1") : "なし") + " " + ok);
                     continue;
                 }
+                if (a.Length >= 1 && a[0] == "bathcheck" && LoungeWorld.Instance != null)
+                {
+                    // 試験用（2026-11-15 家具のチャット）：湯船・露天風呂の席と、お風呂・洗い場を使っている人
+                    var w0 = LoungeWorld.Instance; int nb = 0, nu = 0;
+                    foreach (var st in w0.seats) if (st.kind == SeatKind.Bath) { nb++; if (st.occupant != null) { nu++; result.Add("湯 " + st.label + " " + st.position.ToString("F1") + " " + st.occupant.displayName + " " + st.occupant.actionText); } }
+                    foreach (var po in w0.pois) if (po.label != null && po.label.Contains("洗い場")) { int c = 0; if (po.occupants != null) foreach (var oc in po.occupants) if (oc != null) c++; result.Add("洗い場 席" + (po.slots != null ? po.slots.Length : 0) + " 使用 " + c); }
+                    result.Add("bathcheck: 湯の席 " + nb + " 使用中 " + nu);
+                    continue;
+                }
+                if (a.Length >= 1 && a[0] == "usecount" && LoungeWorld.Instance != null)
+                {
+                    // 試験用：usecount start 語… で数え始め、usecount で結果（来た回数／着いた回数）
+                    var w = LoungeWorld.Instance;
+                    if (a.Length >= 3 && a[1] == "start") { useWords = new string[a.Length - 2]; System.Array.Copy(a, 2, useWords, 0, a.Length - 2); useCount.Clear(); useNow.Clear(); useSat.Clear(); useFrom = w.Now; result.Add("usecount: start"); continue; }
+                    foreach (var kv in useCount) result.Add(kv.Key + " 来た " + kv.Value[0] + " 着いた " + kv.Value[1]);
+                    result.Add("usecount: 経過 " + ((w.Now - useFrom) / 60.0).ToString("F1") + " 時間（ゲーム）");
+                    continue;
+                }
+                if (a.Length >= 2 && a[0] == "uses" && LoungeWorld.Instance != null)
+                {
+                    // 試験用：uses 語… … 名前にその語がある席・見どころの数と、いま使っている子（2026-11-14 家具のチャット）
+                    var w = LoungeWorld.Instance; int ns = 0, np = 0;
+                    foreach (var st in w.seats)
+                    {
+                        bool hit = false; for (int i = 1; i < a.Length; i++) if (st.label != null && st.label.Contains(a[i])) hit = true;
+                        if (!hit) continue; ns++;
+                        if (st.occupant != null) result.Add("seat " + st.label + " " + st.position.ToString("F1") + " ← " + st.occupant.displayName + " / " + st.occupant.actionText);
+                    }
+                    foreach (var po in w.pois)
+                    {
+                        bool hit = false; for (int i = 1; i < a.Length; i++) if (po.label != null && po.label.Contains(a[i])) hit = true;
+                        if (!hit) continue; np++;
+                        if (po.occupants != null) foreach (var oc in po.occupants) if (oc != null) result.Add("poi " + po.label + " " + (po.slots != null && po.slots.Length > 0 ? po.slots[0].ToString("F1") : "") + " ← " + oc.displayName + " / " + oc.actionText);
+                    }
+                    result.Add("uses: 席 " + ns + "・見どころ " + np + "・時刻 " + ((int)w.MinuteOfDay / 60) + ":" + ((int)w.MinuteOfDay % 60).ToString("00"));
+                    continue;
+                }
                 if (a.Length >= 2 && a[0] == "who" && LoungeWorld.Instance != null)
                 {
                     // 試験用：who 番号 … その子の位置・していること
@@ -2791,6 +2885,19 @@ namespace LifeSimProto
                     {
                         var c = LoungeWorld.Instance.characters[int.Parse(a[i])];
                         result.Add(i + " " + c.displayName + " " + c.transform.position.ToString("F1") + " " + c.actionText + " / " + c.StateName() + " / " + c.DebugWhere());
+                    }
+                    continue;
+                }
+                if (a.Length >= 4 && a[0] == "near")
+                {
+                    // 試験用：near x z r … ゲームの点 (x, z) から r m 以内に中心がある描く物
+                    var ci = System.Globalization.CultureInfo.InvariantCulture;
+                    Vector3 c0 = new Vector3(float.Parse(a[1], ci), 0f, float.Parse(a[2], ci)); float rr = float.Parse(a[3], ci);
+                    foreach (var r in root.GetComponentsInChildren<Renderer>())
+                    {
+                        var bc = r.bounds.center; if ((new Vector2(bc.x - c0.x, bc.z - c0.z)).magnitude > rr) continue;
+                        var t = r.transform; string path = t.name; while (t.parent != null && t.parent != root) { t = t.parent; path = t.name + "/" + path; }
+                        result.Add(path + " c=" + bc.ToString("F1") + " size=" + r.bounds.size.ToString("F1") + " mat=" + (r.sharedMaterial != null ? r.sharedMaterial.name : "-"));
                     }
                     continue;
                 }

@@ -291,6 +291,132 @@ namespace LifeSimProto
         }
 
         // ================= 部屋ごとの什器 =================
+        // ---- 部室・実習室の家具（依頼35・36・37。家具のチャット 2026-11-14） ----
+        const string ClubF = "SchoolClub/", LabF = "SchoolLab/";
+        /// <summary>部室・実習室の家具を置く（無ければ null）。block＝床をふさぐ大きさ（家具の向きに合わせた幅×奥行。0 ならふさがない）。</summary>
+        GameObject RFurn(string name, float x0, float sy0, int f, float u, float v, float yaw, float bw = 0f, float bd = 0f, float y0 = 0f, Color? fabric = null)
+        {
+            var go = FFurn(name, x0, sy0, f, u, v, y0, yaw);
+            if (go == null) return null;
+            if (fabric.HasValue) TintPrefix(go, "Fabric_Club", fabric.Value);
+            if (bw > 0f)
+            {
+                bool alongV = Mathf.Abs(Mathf.DeltaAngle(yaw, 0f)) < 45f || Mathf.Abs(Mathf.DeltaAngle(yaw, 180f)) < 45f; // 0・180：幅は南北（v）
+                float su = alongV ? bd : bw, sv = alongV ? bw : bd;
+                FBlock(x0, sy0, f, u - su / 2f, v - sv / 2f, u + su / 2f, v + sv / 2f);
+            }
+            return go;
+        }
+        static bool HasRF(string name) { return HasFurn(name); }
+        /// <summary>名前が prefix で始まる材質の色を変える（部の色の布・元素の台の光）。</summary>
+        static readonly Dictionary<string, Material> prefixTint = new Dictionary<string, Material>();
+        static void TintPrefix(GameObject go, string prefix, Color c, bool glow = false)
+        {
+            foreach (var rr in go.GetComponentsInChildren<Renderer>())
+            {
+                var ms = rr.sharedMaterials; bool ch = false;
+                for (int i = 0; i < ms.Length; i++)
+                {
+                    if (ms[i] == null || !ms[i].name.StartsWith(prefix)) continue;
+                    string key = ms[i].name + "|" + ColorUtility.ToHtmlStringRGB(c);
+                    Material m;
+                    if (!prefixTint.TryGetValue(key, out m) || m == null)
+                    {
+                        m = new Material(ms[i]) { name = ms[i].name + "_Tint" };
+                        if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", glow ? Color.Lerp(Color.white, c, 0.6f) : c);
+                        if (glow && m.HasProperty("_EmissionColor")) { m.EnableKeyword("_EMISSION"); m.SetColor("_EmissionColor", c * 1.6f); }
+                        prefixTint[key] = m;
+                    }
+                    ms[i] = m; ch = true;
+                }
+                if (ch) rr.sharedMaterials = ms;
+            }
+        }
+
+        // ---- 部室の主役と旗（依頼38＝部室_v4。家具のチャット 2026-11-15）。部室は北の列：扉は v＝D の壁の真ん中。西の壁（u＝0）に旗 ----
+        void ClubV4(string n, float x0, float sy0, int f, float W, float D)
+        {
+            Color council = new Color(0.62f, 0.18f, 0.18f), broom = new Color(0.25f, 0.45f, 0.3f), sword = new Color(0.2f, 0.26f, 0.45f),
+                  magic = new Color(0.45f, 0.3f, 0.62f), cook = new Color(0.82f, 0.5f, 0.2f), tool = new Color(0.3f, 0.52f, 0.58f);
+            switch (n)
+            {
+                case "生徒会室":
+                    RFurn(ClubF + "Furn_Council_MapTable", x0, sy0, f, 1.9f, 3.5f, 0f, 2.4f, 1.6f, 0f, council);
+                    RFurn(ClubF + "Furn_Banner_Council", x0, sy0, f, 0.04f, D / 2f, 180f, 0f, 0f, 1.3f, council);
+                    return;
+                case "ほうき部の部室":
+                    RFurn(ClubF + "Furn_Broom_CourseModel", x0, sy0, f, 2.4f, 1.9f, 90f, 2.4f, 1.6f, 0f, broom);
+                    RFurn(ClubF + "Furn_Banner_Broom", x0, sy0, f, 0.04f, 1.8f, 180f, 0f, 0f, 1.3f, broom);
+                    return;
+                case "剣術部の部室":
+                {
+                    if (!HasRF(ClubF + "Furn_Sword_ArenaFence")) return;
+                    float cu = W * 0.72f, cv = 4.0f, h = 2.125f;
+                    // 稽古の敷物を低い柵でかこむ（西がわの手前に出入口を1つ）
+                    foreach (float o in new[] { -1f, 1f })
+                    {
+                        RFurn(ClubF + "Furn_Sword_ArenaFence", x0, sy0, f, cu + o, cv - h, 90f, 2.0f, 0.15f, 0f, sword);
+                        RFurn(ClubF + "Furn_Sword_ArenaFence", x0, sy0, f, cu + o, cv + h, 90f, 2.0f, 0.15f, 0f, sword);
+                        RFurn(ClubF + "Furn_Sword_ArenaFence", x0, sy0, f, cu + h, cv + o, 0f, 2.0f, 0.15f, 0f, sword);
+                    }
+                    RFurn(ClubF + "Furn_Sword_ArenaFence", x0, sy0, f, cu - h, cv - 1f, 0f, 2.0f, 0.15f, 0f, sword);
+                    foreach (float ou in new[] { -h, h })
+                        foreach (float ov in new[] { -h, h })
+                            RFurn(ClubF + "Furn_Sword_ArenaPost", x0, sy0, f, cu + ou, cv + ov, 0f, 0.25f, 0.25f, 0f, sword);
+                    RFurn(ClubF + "Furn_Banner_Sword", x0, sy0, f, 0.04f, 1.8f, 180f, 0f, 0f, 1.3f, sword);
+                    return;
+                }
+                case "魔法術部の部室":
+                    RFurn(ClubF + "Furn_MagicClub_FloatingCrystal", x0, sy0, f, W - 2.5f, D - 3.5f, 0f, 1.4f, 1.4f, 0f, magic);
+                    RFurn(ClubF + "Furn_Banner_MagicClub", x0, sy0, f, 0.04f, 1.8f, 180f, 0f, 0f, 1.3f, magic);
+                    return;
+                case "料理部の部室":
+                    RFurn(ClubF + "Furn_Cook_DiningTable", x0, sy0, f, 2.8f, 7.2f, 90f, 2.4f, 2.0f, 0f, cook);
+                    RFurn(ClubF + "Furn_Banner_Cook", x0, sy0, f, 0.04f, 4.0f, 180f, 0f, 0f, 1.3f, cook);
+                    return;
+                case "魔道具研究会の部室":
+                    RFurn(ClubF + "Furn_Tool_BigMachine", x0, sy0, f, W - 2.5f, D - 3.5f, 0f, 2.2f, 1.8f, 0f, tool);
+                    RFurn(ClubF + "Furn_Banner_Tool", x0, sy0, f, 0.04f, 2.0f, 180f, 0f, 0f, 1.3f, tool);
+                    return;
+            }
+        }
+
+        /// <summary>
+        /// 殺風景な部屋に、今ある家具を少しだけ足す（famuru 2026-11-14「小物をごてごてと置くとかえってイメージが悪いので絞って」）。
+        /// 1部屋 1〜2点：机の下のじゅうたん・すみの鉢植え・壁の掲示板。北の列の部屋の扉は南の壁の真ん中、南の列は北の壁の真ん中。
+        /// </summary>
+        void RoomExtras(string n, float x0, float sy0, int f, float W, float D)
+        {
+            switch (n)
+            {
+                case "生徒会室":
+                    FFurn("Furn_LibraryRug", x0, sy0, f, W / 2f, D / 2f - 0.5f, 0.005f, 90f, new Vector3(5.4f / 3.6f, 1f, 4.0f / 2.6f)); // 会議の机といすの下
+                    RFurn("Furn_DecorPlant", x0, sy0, f, 0.6f, 0.6f, 0f, 0.5f, 0.5f);
+                    return;
+                case "ほうき部の部室":
+                    RFurn("Furn_NoticeBoard", x0, sy0, f, W * 0.25f, D - 0.1f, 90f, 0f, 0f, 1.15f);
+                    RFurn("Furn_DecorPlant", x0, sy0, f, W - 0.6f, D - 0.6f, 0f, 0.5f, 0.5f);
+                    return;
+                case "剣術部の部室":
+                    RFurn("Furn_NoticeBoard", x0, sy0, f, W * 0.75f, D - 0.1f, 90f, 0f, 0f, 1.15f);
+                    RFurn("Furn_DecorPlant", x0, sy0, f, 0.6f, D - 0.6f, 0f, 0.5f, 0.5f);
+                    return;
+                case "魔法術部の部室":
+                case "魔道具研究会の部室":
+                    RFurn("Furn_LibraryRug", x0, sy0, f, W / 2f, D / 2f, 90f, 0f, 0f, 0.005f);
+                    RFurn("Furn_DecorPlant", x0, sy0, f, 0.6f, 0.6f, 0f, 0.5f, 0.5f);
+                    return;
+                case "料理部の部室":
+                    RFurn("Furn_NoticeBoard", x0, sy0, f, W * 0.75f, D - 0.1f, 90f, 0f, 0f, 1.15f);
+                    RFurn("Furn_DecorPlant", x0, sy0, f, 0.6f, D - 0.6f, 0f, 0.5f, 0.5f);
+                    return;
+                case "保健室":
+                case "医学実習室":
+                    RFurn("Furn_DecorPlant", x0, sy0, f, W - 0.45f, 0.6f, 0f, 0.5f, 0.5f);
+                    return;
+            }
+        }
+
         void FurnishSchoolRoom(int f, SRoom r, float sy0, float sy1, bool southSide)
         {
             SchoolInteriorMaterials();
@@ -301,6 +427,8 @@ namespace LifeSimProto
             // 扉は廊下の側（北の列は南の壁 v＝D、南の列は北の壁 v＝0）の真ん中。扉の前 2.5m はあけておく
             float vSafe0 = southSide ? 2.6f : 1.3f, vSafe1 = southSide ? D - 1.3f : D - 2.6f;
             string n = r.name;
+            ClubV4(n, x0, sy0, f, W, D);      // 部室の主役と旗（依頼38。2026-11-15）
+            RoomExtras(n, x0, sy0, f, W, D); // 部室・保健室などに、今ある家具を少しだけ（2026-11-14 famuru「小物は絞って」）
 
             if (r.kind == SKind.Hall) { FurnishEntrance(f, x0, sy0, W, D); return; }
 
@@ -353,6 +481,16 @@ namespace LifeSimProto
                     FTable(x0, sy0, f, W / 2f, 5.0f, 2.0f, 1.0f, false, "Furn_ExamTable");
                     if (n == "医学実習室") FTable(x0, sy0, f, W / 2f, 7.0f, 2.0f, 1.0f, false, "Furn_ExamTable");
                     FDesk(x0, sy0, f, W - 1.5f, 5.0f, 0);
+                    // 依頼36：薬のたんす・手洗い台・台車・衝立・体の模型
+                    RFurn(LabF + "Furn_Med_HerbChest", x0, sy0, f, W - 0.25f, 2.2f, 0f, 1.2f, 0.45f);
+                    RFurn(LabF + "Furn_Med_WashBasin", x0, sy0, f, 0.28f, 1.6f, 180f, 0.8f, 0.52f);
+                    RFurn(LabF + "Furn_Med_Cart", x0, sy0, f, W - 0.5f, 6.6f, 0f, 0.7f, 0.45f);
+                    if (n == "医学実習室")
+                    {
+                        RFurn(LabF + "Furn_Med_Screen", x0, sy0, f, 2.45f, D - 1.6f, 0f, 1.6f, 0.4f);
+                        RFurn(LabF + "Furn_Med_AnatomyModel", x0, sy0, f, W - 0.6f, 4.0f, 0f, 0.5f, 0.5f);
+                    }
+                    else RFurn(LabF + "Furn_Med_Screen", x0, sy0, f, W / 2f - 1.45f, 5.0f, 0f, 1.6f, 0.4f);
                     break;
                 }
                 case "宿直室":
@@ -436,12 +574,36 @@ namespace LifeSimProto
                         if (!HasFurn("Furn_BrewTable")) for (int k = 0; k < 3; k++) Cyl("Flask", RU(x0, sy0, u - 0.6f + k * 0.6f, v, FloorY(f) + 0.88f), new Vector3(0.14f, 0.12f, 0.14f), Quaternion.identity, k == 1 ? crystalMat : glassMat);
                     }
                     FShelf(x0, sy0, f, W, D, 2, W / 2f, W - 3f, 2.2f, glassMat, crystalMat, seed);
+                    // 依頼36：机の上の薬草の吊り棚・計量の台・材料のたる
+                    for (int i = 0; i < 4; i++)
+                    {
+                        float u = 3.0f + (i % 2) * (W - 6f), v = vSafe0 + 1.8f + (i / 2) * 4.0f;
+                        RFurn(LabF + "Furn_Brew_HerbRack", x0, sy0, f, u, v, 90f, 0f, 0f, 3.15f);
+                    }
+                    RFurn(LabF + "Furn_Brew_ScaleTable", x0, sy0, f, 0.35f, vSafe0 + 3.8f, 180f, 1.4f, 0.6f);
+                    RFurn(LabF + "Furn_Brew_IngredientBarrels", x0, sy0, f, W - 0.35f, vSafe0 + 3.8f, 0f, 1.2f, 0.6f);
                     break;
                 case "魔法実習室":
                     FCircle(x0, sy0, f, W * 0.3f, D / 2f, 2.2f, new Color(0.4f, 0.55f, 1f));
                     FCircle(x0, sy0, f, W * 0.7f, D / 2f, 2.2f, new Color(0.9f, 0.5f, 1f));
-                    for (int i = 0; i < 3; i++) FDummy(x0, sy0, f, W - 1.0f, 3.0f + i * 3.0f);
+                    for (int i = 0; i < 3; i++) FDummy(x0, sy0, f, W - 1.0f, 2.5f + i * 2.4f);
                     FShelf(x0, sy0, f, W, D, 0, D / 2f, 4f, 2.0f, crystalMat, paperMat, seed);
+                    // 依頼36：結界の柱（魔法陣のまわりに4本ずつ）・見学の長いす・先生の台・防護の衝立・四つの元素の台
+                    foreach (float cu in new[] { W * 0.3f, W * 0.7f })
+                        for (int k = 0; k < 4; k++)
+                            RFurn(LabF + "Furn_MagicLab_WardPillar", x0, sy0, f, cu + ((k & 1) == 0 ? -1.75f : 1.75f), D / 2f + (k < 2 ? -1.75f : 1.75f), 0f, 0.5f, 0.5f);
+                    RFurn(LabF + "Furn_MagicLab_Bleachers", x0, sy0, f, W * 0.3f, 0.75f, -90f, 3.0f, 1.2f);
+                    RFurn(LabF + "Furn_MagicLab_TeacherPodium", x0, sy0, f, W * 0.7f, 0.85f, -90f, 1.2f, 0.8f);
+                    RFurn(LabF + "Furn_MagicLab_Shield", x0, sy0, f, W / 2f, D / 2f, 0f, 1.6f, 0.3f);
+                    {
+                        var ec = new[] { new Color(1f, 0.4f, 0.2f), new Color(0.3f, 0.6f, 1f), new Color(0.5f, 1f, 0.6f), new Color(0.95f, 0.8f, 0.35f) };
+                        var eu = new[] { 1.6f, 3.4f, W - 3.4f, W - 1.6f };
+                        for (int k = 0; k < 4; k++)
+                        {
+                            var es = RFurn(LabF + "Furn_MagicLab_ElementStand", x0, sy0, f, eu[k], D - 0.9f, 90f, 0.6f, 0.6f);
+                            if (es != null) TintPrefix(es, "Glow_", ec[k], true);
+                        }
+                    }
                     break;
                 case "生徒会室":
                     FTable(x0, sy0, f, W / 2f, D / 2f - 0.5f, 4.0f, 1.4f, false, "Furn_CouncilTable");
@@ -451,23 +613,63 @@ namespace LifeSimProto
                         FChair(x0, sy0, f, W / 2f - 1.3f + k * 1.3f, D / 2f + 0.75f, 2);
                     }
                     FShelf(x0, sy0, f, W, D, 2, W / 2f, W - 3f, 2.2f, paperMat, fabricRed, seed);
-                    FBox("Banner", x0, sy0, f, 0.05f, D / 2f, 1.4f, 0.03f, 1.6f, 2.4f, fabricRed);
+                    if (!HasRF(ClubF + "Furn_Banner_Council")) FBox("Banner", x0, sy0, f, 0.05f, D / 2f, 1.4f, 0.03f, 1.6f, 2.4f, fabricRed);
+                    {
+                        // 依頼35：会長の机といす・書類の戸棚・予定の黒板・お茶の台
+                        Color cc = new Color(0.62f, 0.18f, 0.18f);
+                        RFurn(ClubF + "Furn_Council_PresidentDesk", x0, sy0, f, W - 2.0f, 2.3f, 0f, 1.6f, 0.8f);
+                        RFurn(ClubF + "Furn_Council_Chair", x0, sy0, f, W - 1.3f, 2.3f, 0f, 0.65f, 0.65f, 0f, cc);
+                        RFurn(ClubF + "Furn_Council_Cabinet", x0, sy0, f, W - 0.25f, 5.2f, 0f, 1.6f, 0.47f);
+                        RFurn(ClubF + "Furn_Council_ScheduleBoard", x0, sy0, f, 0.06f, 1.8f, 180f, 0f, 0f, 0.9f);
+                        RFurn(ClubF + "Furn_Council_TeaCart", x0, sy0, f, 0.35f, D - 1.6f, 180f, 0.8f, 0.45f);
+                    }
                     break;
                 default:
                     if (n.EndsWith("料理部の部室"))
                     {
                         // 料理部：調理台とかまど・鍋（2026-11-01）
+                        if (HasRF(ClubF + "Furn_Cook_Stove"))
+                        {
+                            // 依頼35：かまど・調理台・鍋の掛け棚・材料の棚
+                            RFurn(ClubF + "Furn_Cook_Island", x0, sy0, f, W / 2f, D / 2f, 90f, 2.4f, 1.0f);
+                            RFurn(ClubF + "Furn_Cook_Stove", x0, sy0, f, W - 0.55f, D / 2f, 0f, 2.4f, 1.0f);
+                            RFurn(ClubF + "Furn_Cook_PotRack", x0, sy0, f, 0.2f, 2.4f, 180f, 1.6f, 0.35f);
+                            RFurn(ClubF + "Furn_Cook_Pantry", x0, sy0, f, 0.25f, 5.6f, 180f, 1.6f, 0.45f);
+                        }
+                        else
+                        {
                         FTable(x0, sy0, f, W / 2f, D / 2f, 3.6f, 1.2f, false, "Furn_CafeteriaTable");
                         FBox("Club_Stove", x0, sy0, f, W - 1.2f, D / 2f, 0f, 1.0f, 0.9f, 2.4f, mortarDark, true);
                         for (int i = 0; i < 3; i++) Cyl("Club_Pot", RU(x0, sy0, W - 1.2f, D / 2f - 0.7f + i * 0.7f, FloorY(f) + 1.0f), new Vector3(0.35f, 0.12f, 0.35f), Quaternion.identity, iron);
+                        }
                         FShelf(x0, sy0, f, W, D, 2, W / 2f, W - 4f, 2.0f, paperMat, woodFloor, seed);
                     }
                     else if (n.EndsWith("の部室"))
                     {
-                        FTable(x0, sy0, f, W / 2f, D / 2f, 3.0f, 1.2f, true, "Furn_CafeteriaTable");
+                        bool swordNew = n.StartsWith("剣術") && HasRF(ClubF + "Furn_Sword_Mat");
+                        FTable(x0, sy0, f, swordNew ? W * 0.3f : W / 2f, D / 2f, 3.0f, 1.2f, true, "Furn_CafeteriaTable");
                         FShelf(x0, sy0, f, W, D, 2, W / 2f, W - 4f, 2.0f, paperMat, woodFloor, seed);
-                        if (n.StartsWith("ほうき"))
+                        if (n.StartsWith("ほうき") && HasRF(ClubF + "Furn_Broom_Rack"))
+                        {
+                            // 依頼35：ほうき掛け・手入れ台・飛ぶ練習の輪・道具の棚（部の色は緑）
+                            Color bc = new Color(0.25f, 0.45f, 0.3f);
+                            RFurn(ClubF + "Furn_Broom_Rack", x0, sy0, f, 0.22f, D / 2f, 180f, 2.4f, 0.4f, 0f, bc);
+                            RFurn(ClubF + "Furn_Broom_Workbench", x0, sy0, f, W - 0.4f, 2.4f, 0f, 1.6f, 0.7f, 0f, bc);
+                            RFurn(ClubF + "Furn_Broom_GearShelf", x0, sy0, f, W - 0.22f, 5.4f, 0f, 1.2f, 0.4f, 0f, bc);
+                            RFurn(ClubF + "Furn_Broom_Hoop", x0, sy0, f, W - 2.6f, 5.2f, 0f, 1.2f, 0.5f, 0f, bc);
+                        }
+                        else if (n.StartsWith("ほうき"))
                             for (int i = 0; i < 5; i++) FBox("Broom", x0, sy0, f, 1.0f + i * 0.5f, D - 2.2f, 0f, 0.05f, 1.5f, 0.05f, woodMid);
+                        else if (swordNew)
+                        {
+                            // 依頼35：稽古の敷物・木剣と防具の棚・防具の台・長いす（部の色は紺）
+                            Color sc = new Color(0.2f, 0.26f, 0.45f);
+                            RFurn(ClubF + "Furn_Sword_Mat", x0, sy0, f, W * 0.72f, 4.0f, 0f, 0f, 0f, 0f, sc);
+                            RFurn(ClubF + "Furn_Sword_Rack", x0, sy0, f, 0.25f, D / 2f, 180f, 2.4f, 0.5f);
+                            RFurn(ClubF + "Furn_Sword_ArmorStand", x0, sy0, f, W - 0.5f, 1.4f, 0f, 0.6f, 0.5f);
+                            RFurn(ClubF + "Furn_Sword_WaterBench", x0, sy0, f, W - 0.3f, 6.6f, 0f, 1.6f, 0.4f);
+                            FDummy(x0, sy0, f, W * 0.72f + 1.2f, 5.2f);
+                        }
                         else if (n.StartsWith("剣術"))
                         {
                             for (int i = 0; i < 4; i++) FBox("WoodSword", x0, sy0, f, 1.0f + i * 0.5f, D - 2.2f, 0.3f, 0.05f, 1.1f, 0.05f, woodDark);
@@ -475,7 +677,22 @@ namespace LifeSimProto
                         }
                         else
                         {
-                            FCircle(x0, sy0, f, W - 2.5f, D - 3.5f, 1.2f, new Color(0.4f, 0.55f, 1f));
+                            if (!HasRF(ClubF + "Furn_MagicClub_FloatingCrystal")) FCircle(x0, sy0, f, W - 2.5f, D - 3.5f, 1.2f, new Color(0.4f, 0.55f, 1f));
+                            if (n.StartsWith("魔法術"))
+                            {
+                                // 依頼35：書見台・呪文の黒板・杖の棚（部の色は紫）
+                                RFurn(ClubF + "Furn_MagicClub_Lectern", x0, sy0, f, W - 2.5f, 2.2f, -90f, 0.6f, 0.5f);
+                                RFurn(ClubF + "Furn_MagicClub_RuneBoard", x0, sy0, f, 0.06f, D / 2f, 180f, 0f, 0f, 0.9f);
+                                RFurn(ClubF + "Furn_MagicClub_WandCase", x0, sy0, f, W - 0.22f, 2.0f, 0f, 1.0f, 0.43f);
+                            }
+                            else
+                            {
+                                // 依頼35：作業台・部品の棚・試作の魔道具
+                                RFurn(ClubF + "Furn_Tool_Workbench", x0, sy0, f, 0.45f, D / 2f, 180f, 2.0f, 0.9f);
+                                RFurn(ClubF + "Furn_Tool_PartsShelf", x0, sy0, f, W - 0.25f, 2.0f, 0f, 1.6f, 0.45f);
+                                if (HasRF(ClubF + "Furn_Tool_BigMachine")) RFurn(ClubF + "Furn_Tool_Prototype", x0, sy0, f, W - 0.9f, 8.0f, 0f, 0.8f, 0.8f);
+                                else RFurn(ClubF + "Furn_Tool_Prototype", x0, sy0, f, W - 2.5f, D - 3.5f, 0f, 0.8f, 0.8f);
+                            }
                             if (FFurn("Furn_CrystalStand", x0, sy0, f, W / 2f, D / 2f, 0f, 0f) == null) Cyl("Crystal", RU(x0, sy0, W / 2f, D / 2f, FloorY(f) + 0.95f), new Vector3(0.3f, 0.2f, 0.3f), Quaternion.identity, crystalMat);
                         }
                     }

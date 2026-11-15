@@ -226,6 +226,7 @@ namespace LifeSimProto
             UpdateLighting();
             UpdateCutaway();
             UpdateFloorView();
+            UpdateFog();   // 視界の制限（LoungeWorld.Fog.cs。2026-11-15）
             UpdatePlaces();
         }
 

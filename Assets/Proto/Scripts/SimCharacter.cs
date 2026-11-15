@@ -1726,9 +1726,9 @@ namespace LifeSimProto
 
         void ApplyVisible()
         {
-            bool v = shownByState && !floorHidden;
+            bool v = shownByState && !floorHidden && !fogHideBody;   // fogHideBody：視界の制限で隠す（SimCharacter.Fog.cs）
             if (renderers != null) foreach (var r in renderers) if (r != null && r.gameObject != ring) r.enabled = v;
-            if (colliders != null) foreach (var c in colliders) if (c != null) c.enabled = v;
+            if (colliders != null) foreach (var c in colliders) if (c != null) c.enabled = v && !fogShadow;
         }
 
         // ================= 行事 =================
@@ -2001,6 +2001,8 @@ namespace LifeSimProto
                 if (clingTarget != null && FollowCling()) return;
             }
             else clingTarget = null;
+
+            if (ShowerAfter()) return; // トレーニング・プールのあとのシャワー（SimCharacter.Shower.cs。2026-11-14 家具のチャット）
 
             // ---- 空き時間：いちばん強い欲求を選ぶ ----
             float noise = 40f * whim;
@@ -2456,7 +2458,7 @@ namespace LifeSimProto
             if (studySubject >= 0 && !(hasAssignment && assignProgress < 100f) && Random.value < 0.7f)
             {
                 int sj = studySubject;
-                Poi pp = FindPoi(x => !x.classOnly && x.subject == sj && x.FreeSlot() >= 0 && !(x.outdoor && world.BadWeatherToday));
+                Poi pp = PickPoi(x => !x.classOnly && x.subject == sj && x.FreeSlot() >= 0 && !(x.outdoor && world.BadWeatherToday)); // 近いほど選ばれやすく（塔のトレーニング部屋も。2026-11-14）
                 if (pp != null) return GoToPoi(pp, Act.Study, Academics.IsPractical(sj) ? SubjectName(sj) + "の自主練習をしている" : pp.label, Random.Range(15f, 25f) * mul);
             }
             string what = hasAssignment && assignProgress < 100f ? SubjectName(assignSubject) + "の課題をしている"
@@ -2469,7 +2471,7 @@ namespace LifeSimProto
 
         bool StartReadingSeat()
         {
-            Seat s = BestSeat(x => (x.area == "談話室" && x.label != "大きなテーブル") || x.area == LoungeWorld.Library || (x.room != null && x.room != room && CanVisitRoom(x.room)));
+            Seat s = BestSeat(x => (x.area == "談話室" && x.label != "大きなテーブル") || x.area == LoungeWorld.Library || (x.area != null && x.area.StartsWith("小さな談話室")) || (x.room != null && x.room != room && CanVisitRoom(x.room)));
             if (s == null) return false;
             return StartSitAt(s, Act.Hobby, s.room != null ? s.label + "で本を読んでいる" : (s.area == LoungeWorld.Library ? "図書室で本を読んでいる" : "本を読んでいる"));
         }
@@ -2502,8 +2504,7 @@ namespace LifeSimProto
                 case HobbyKind.Reading:
                 {
                     Poi shelf = null;
-                    foreach (var p in world.pois)
-                        if (p.label == "本棚の本を眺めている" && p.FreeSlot() >= 0 && (shelf == null || Random.value < 0.5f)) shelf = p;
+                    shelf = PickPoi(p => p.label == "本棚の本を眺めている" && p.FreeSlot() >= 0); // 近いほど選ばれやすく（塔の小さな談話室の本棚も。2026-11-14）
                     if (shelf == null) return StartReadingSeat();
                     bool ok = GoToPoi(shelf, Act.Hobby, "本を選んでいる", 3f);
                     readingPick = ok;
@@ -2511,7 +2512,7 @@ namespace LifeSimProto
                 }
                 case HobbyKind.Magic:
                 {
-                    Poi p = FindPoi(x => x.hobby == (int)HobbyKind.Magic && x.FreeSlot() >= 0);
+                    Poi p = PickPoi(x => (x.hobby == (int)HobbyKind.Magic || x.label == "魔法の的に向かって練習している") && x.FreeSlot() >= 0); // 塔のトレーニング部屋の魔法の的も（2026-11-14）
                     return p != null && GoToPoi(p, Act.Hobby, "魔法の練習をしている", Random.Range(15f, 25f));
                 }
                 case HobbyKind.Tea:
@@ -3867,6 +3868,7 @@ namespace LifeSimProto
         // ================= 移動 =================
         bool GoTo(Vector3 dest, State moveState)
         {
+            if (SwimDetour(dest, moveState)) return true; // プールと浜辺の前後は小屋で着がえる（SimCharacter.Swim.cs。家具のチャット 2026-11-13）
             var p = world.FindPath(transform.position, dest);
             path.Clear();
             if (p == null || p.Count == 0)
@@ -3884,6 +3886,7 @@ namespace LifeSimProto
         {
             if (path.Count == 0)
             {
+                if ((state == State.Walking || state == State.Approaching) && SwimArrive()) return; // 着がえの寄り道（SimCharacter.Swim.cs）
                 if (state == State.Walking) Arrive();
                 return;
             }
@@ -3906,7 +3909,8 @@ namespace LifeSimProto
                     // ほかのキャラをよけて歩く（2026-11-09。SimCharacter.Avoid.cs）
                     Vector3 mv = SteerStep(pos, to / d, step, dt, d);
                     transform.position = pos + mv;
-                    FaceTowards(pos + (Flat(mv).sqrMagnitude > 1e-6f ? Flat(mv) : Flat(to)), dt);
+                    // 進む向きを向く（動いた後の位置から見る。2026-11-14 モーション：前は動く前の位置を足していて向きが変わらなかった）
+                    FaceTowards(transform.position + (Flat(mv).sqrMagnitude > 1e-6f ? Flat(mv) : Flat(to)), dt);
                     // よけて道の点の横を通り過ぎたら、その点は済んだことにする
                     if (path.Count > 1 && Flat(path[0] - transform.position).magnitude < 0.35f) path.RemoveAt(0);
                     step = 0f;
@@ -3930,7 +3934,7 @@ namespace LifeSimProto
             Vector3 p = transform.position;
             float moved = (p - watchPos).magnitude;
             watchPos = p;
-            bool wantsMove = state == State.Walking || state == State.Approaching;
+            bool wantsMove = (state == State.Walking || state == State.Approaching) && !ChangingNow; // 小屋で着がえている間は止まっていてよい
             bool offFloor = !LoungeWorld.OnFloorLevel(p) && state != State.Sleeping && state != State.Bathing && state != State.Private;
             if (offFloor && !wantsMove)
             {
@@ -4334,7 +4338,8 @@ namespace LifeSimProto
                 if (state == State.Bathing) return "Towel";
                 if (state == State.Sleeping && !napping && !dozing) return "Sleep";
                 // プールと浜辺では水着（昼だけ。水着の服がない子はいつもの服のまま。famuru 2026-11-08）
-                if (world != null && CampusPreview.InSwimZone(transform.position) && !LoungeWorld.IsNight(world.MinuteOfDay) && HasSwimOutfit) return "Swim";
+                // 2026-11-13：小屋で着がえてから水着（wearingSwim。SimCharacter.Swim.cs）
+                if (world != null && wearingSwim && !LoungeWorld.IsNight(world.MinuteOfDay) && HasSwimOutfit) return "Swim";
                 if (world != null && world.IsHolidayToday) return "Casual";
                 return "Uniform";
             }

@@ -352,6 +352,10 @@ namespace LifeSimProto
             restRot = new Quaternion[boneList.Length];
             for (int i = 0; i < boneList.Length; i++) restRot[i] = boneList[i].localRotation;
             hipsRest = hips.localPosition;
+            // 見る（UpdateLook）：頭と胸の正面の向き（まだ動きを流す前の基本の姿勢で、体の前＝owner の前）。2026-11-14 モーション
+            lookChest = bones.ContainsKey("Spine2") ? bones["Spine2"] : hips;
+            headFaceLocal = Quaternion.Inverse(bones["Head"].rotation) * owner.forward;
+            chestFaceLocal = Quaternion.Inverse(lookChest.rotation) * owner.forward;
             CaptureAnkle();   // 足首の高さ（足の合わせ。ProtoBody.Ground.cs）
 
             if (real) { SetupOutfits(); ApplyToon(); } else SetupLook();
@@ -1063,18 +1067,24 @@ namespace LifeSimProto
             }
             // 形の補正（Corrective_ で始まるシェイプキー）。例：座ったときのスカート
             skirtSitKeys.Clear();
+            skirtFloorKeys.Clear();
             foreach (var smr in model.GetComponentsInChildren<SkinnedMeshRenderer>(true))
             {
                 var mesh = smr.sharedMesh;
                 if (mesh == null) continue;
                 int idx = mesh.GetBlendShapeIndex("Corrective_Skirt_Sit");
                 if (idx >= 0) skirtSitKeys.Add(new KeyValuePair<SkinnedMeshRenderer, int>(smr, idx));
+                int fdx = mesh.GetBlendShapeIndex("Corrective_Skirt_SitFloor");   // 床に座るとき（2026-11-13 共通制服）
+                if (fdx >= 0) skirtFloorKeys.Add(new KeyValuePair<SkinnedMeshRenderer, int>(smr, fdx));
             }
         }
 
         // ================= 形の補正（座ったときのスカート） =================
         readonly List<KeyValuePair<SkinnedMeshRenderer, int>> skirtSitKeys = new List<KeyValuePair<SkinnedMeshRenderer, int>>();
         float skirtSitNow;
+        // 床に座ったときの服の形（Corrective_Skirt_SitFloor。2026-11-13 共通制服：床に座ると上着からスカートやシャツが突き抜けるのを直す）。キーの無いキャラは今までどおり
+        readonly List<KeyValuePair<SkinnedMeshRenderer, int>> skirtFloorKeys = new List<KeyValuePair<SkinnedMeshRenderer, int>>();
+        float skirtFloorNow;
 
         // ================= 股の形（篤。2026-11-06 famuru：制服のときは Gen_Hide＝100・Gen_Soft＝0） =================
         // 服を着ているあいだ（今のゲームの服はどれも：制服・私服・寝間着・タオル）はズボンから出ないように縮める。
@@ -1100,6 +1110,11 @@ namespace LifeSimProto
         void UpdateCorrectives(float dt, BodyPose pose)
         {
             UpdateGenital();
+            if (skirtFloorKeys.Count > 0)
+            {
+                skirtFloorNow = Mathf.MoveTowards(skirtFloorNow, pose == BodyPose.SitFloor ? 100f : 0f, 400f * Mathf.Min(dt, 0.1f));
+                foreach (var kv in skirtFloorKeys) kv.Key.SetBlendShapeWeight(kv.Value, skirtFloorNow);
+            }
             if (skirtSitKeys.Count == 0) { skirtSitNow = 0f; return; }
             float target = pose == BodyPose.Sit ? 100f : 0f;
             skirtSitNow = Mathf.MoveTowards(skirtSitNow, target, 400f * Mathf.Min(dt, 0.1f));
@@ -1726,6 +1741,19 @@ namespace LifeSimProto
         public static float LookNeckShare = 0.4f;   // 首が受け持つ割合（残りは頭）
         public static float LookSpeed = 5f;          // 追いつく速さ（大きいほど速い）
         float lookW, lookYaw, lookPitch;
+        // 頭の左右の向き（動きで向いている分も入れて）を、胸の正面から LookTotalMax 度までにする（2026-11-14 モーション。famuru「人のほうを向かせるときに70度以上左右を向かないように。角度は目安」）
+        public static float LookTotalMax = 70f;
+        Transform lookChest; Vector3 headFaceLocal, chestFaceLocal;
+        /// <summary>今の頭の左右の向き（胸の正面から。＋＝右）。確認用</summary>
+        public float LookHeadYaw { get; private set; }
+        float HeadYawToChest(Transform hd)
+        {
+            if (lookChest == null || headFaceLocal == Vector3.zero) return 0f;
+            Vector3 up = transform.up;
+            Vector3 f = Vector3.ProjectOnPlane(hd.rotation * headFaceLocal, up), c = Vector3.ProjectOnPlane(lookChest.rotation * chestFaceLocal, up);
+            if (f.sqrMagnitude < 1e-6f || c.sqrMagnitude < 1e-6f) return 0f;
+            return Vector3.SignedAngle(c, f, up);
+        }
         public string LookWhy { get; private set; }
 
         void UpdateLook(float dt, bool allowed)
@@ -1761,6 +1789,9 @@ namespace LifeSimProto
             if (!AnyVisible()) return;                                            // 映っていない子は回さない（動きのまま）
             LookWhy = why;
             float yaw = lookYaw * lookW, pitch = lookPitch * lookW;
+            // 動きで頭がもう横を向いているときは、足す分を減らす（動きの向きと合わせて LookTotalMax 度まで。動きだけで超えているときは、見ている間はそこまで戻す）
+            float animYaw = HeadYawToChest(hd);
+            yaw = Mathf.Lerp(yaw, Mathf.Clamp(yaw, -LookTotalMax - animYaw, LookTotalMax - animYaw), lookW);
             Vector3 up = transform.up;
             Vector3 right = Quaternion.AngleAxis(yaw, up) * transform.right;
             if (nk != null && nk != hd)
@@ -1770,6 +1801,7 @@ namespace LifeSimProto
                 hd.rotation = Quaternion.AngleAxis(-pitch * (1f - s), right) * Quaternion.AngleAxis(yaw * (1f - s), up) * hd.rotation;
             }
             else hd.rotation = Quaternion.AngleAxis(-pitch, right) * Quaternion.AngleAxis(yaw, up) * hd.rotation;
+            LookHeadYaw = HeadYawToChest(hd);
         }
         public Transform Bone(string n) { return B(n); }   // 確認用の写真から骨の位置を見る
 

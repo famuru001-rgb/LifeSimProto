@@ -254,25 +254,45 @@ namespace LifeSimProto.EditorTools
                         CharCheck.Run();
                         log.AppendLine("checkchars: ok");
                         break;
-                    case "sway f": case "sway": case "sway before": case "sway after": case "sway after2": case "sway after3": case "sway after4": case "sway after5":
+                    case "sway l": case "sway f": case "sway": case "sway before": case "sway after": case "sway after2": case "sway after3": case "sway after4": case "sway after5":
                         // 2026-10-26：揺れの連続写真（仮モデル\\Unity確認\\揺れ_（名前）\\）
                         if (EditorApplication.isPlaying)
                         {
-                            LifeSimProto.SwayShots.Tag = cmd.Length > 5 ? cmd.Substring(5) : "now"; LifeSimProto.SwayShots.Letters = cmd == "sway f" ? "F" : "FIKJGB";
+                            LifeSimProto.SwayShots.Tag = cmd.Length > 5 ? cmd.Substring(5) : "now"; LifeSimProto.SwayShots.Letters = cmd == "sway f" ? "F" : cmd == "sway l" ? "L" : "FIKJGB";
                             new GameObject("SwayShots").AddComponent<LifeSimProto.SwayShots>();
                             log.AppendLine("sway: started " + LifeSimProto.SwayShots.Tag);
                         }
                         else log.AppendLine("sway: not playing");
                         break;
-                    case "sitshots": case "sitshots i": case "sitshots i2": case "sitshots f":
+                    case "sitshots": case "sitshots i": case "sitshots i2": case "sitshots f": case "sitshots l":
                         // 2026-10-27：座ったときのスカートの写真（仮モデル\\Unity確認\\座り_（名前）\\）
                         if (EditorApplication.isPlaying)
                         {
-                            LifeSimProto.SitShots.Tag = cmd == "sitshots i2" ? "i2" : cmd == "sitshots f" ? "f" : "i"; LifeSimProto.SitShots.Letters = cmd == "sitshots f" ? "F" : "I";
+                            LifeSimProto.SitShots.Tag = cmd == "sitshots i2" ? "i2" : cmd == "sitshots f" ? "f" : cmd == "sitshots l" ? "l" : "i"; LifeSimProto.SitShots.Letters = cmd == "sitshots f" ? "F" : cmd == "sitshots l" ? "L" : "I";
                             new GameObject("SitShots").AddComponent<LifeSimProto.SitShots>();
                             log.AppendLine("sitshots: started");
                         }
                         else log.AppendLine("sitshots: not playing");
+                        break;
+                    case "closeshots l": case "closeshots h":
+                        // 2026-11-14 取り込み：顔・首・低い前・胸の下・そで口の寄り（仮モデル\\Unity確認\\寄り_（記号）\\。CloseShots.cs）
+                        if (EditorApplication.isPlaying)
+                        {
+                            LifeSimProto.CloseShots.Letter = cmd == "closeshots h" ? "H" : "L";
+                            new GameObject("CloseShots").AddComponent<LifeSimProto.CloseShots>();
+                            log.AppendLine("closeshots: started " + LifeSimProto.CloseShots.Letter);
+                        }
+                        else log.AppendLine("closeshots: not playing");
+                        break;
+                    case "jointshots l":
+                        // 2026-11-11：ひじ・ひざの曲がり（歩く・座る・正座・手を振る・話す。仮モデル\\Unity確認\\関節_L\\）
+                        if (EditorApplication.isPlaying)
+                        {
+                            LifeSimProto.JointShots.Letter = "L";
+                            new GameObject("JointShots").AddComponent<LifeSimProto.JointShots>();
+                            log.AppendLine("jointshots: started");
+                        }
+                        else log.AppendLine("jointshots: not playing");
                         break;
                     case "armshots":
                         // 2026-10-27：喜ぶ・手を振る・話すの脇の写真（仮モデル\\Unity確認\\脇_i\\）
