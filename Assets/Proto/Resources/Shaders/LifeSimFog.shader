@@ -2,6 +2,7 @@
 // 画面いっぱいの三角形を、不透明な物を描いたあと・半透明の物の前に描く。画面の深さから世界の位置を出し、
 // 明るい区画（_FogLit）・円（外）・夜の扇形に入っていなければ、色を抜いて暗くする。
 // 中身は LoungeWorld.Fog.cs が毎コマ入れる。
+// 段B（見通し。2026-11-15）：_FogSightTex＝篤の目の高さから 360度に出した線が、さえぎる物に当たるまでの長さ（1本＝1マス）。それより近い所だけ明るい
 Shader "Hidden/LifeSim/Fog"
 {
     Properties { }
@@ -32,6 +33,9 @@ Shader "Hidden/LifeSim/Fog"
             float4 _FogConeDir;         // 夜：向き x, z, cos(半分の角度), 篤のまわりのいつも見える半径
             float4 _FogLook;            // 残す色の割合, 暗さ, 外のふちのぼかし（m）, 0
             float4 _FogTint;
+            float4 _FogSight;           // 見通し：篤の x, z, 遠さ, 1＝使う
+            float4 _FogSightY;          // 見通し：高さの下, 上, 当たった物の表面の幅, 線の数
+            TEXTURE2D(_FogSightTex); SAMPLER(sampler_FogSightTex);
 
             struct A { float4 positionOS : POSITION; };
             struct V { float4 positionCS : SV_POSITION; };
@@ -66,6 +70,16 @@ Shader "Hidden/LifeSim/Fog"
                 {
                     float d = distance(p.xz, _FogCircle.xy);
                     lit = max(lit, 1.0 - smoothstep(_FogCircle.z - _FogLook.z, _FogCircle.z, d));
+                }
+                if (_FogSight.w > 0.5 && p.y >= _FogSightY.x && p.y <= _FogSightY.y)
+                {
+                    float2 v = p.xz - _FogSight.xy;
+                    float d = length(v);
+                    float u = frac(atan2(v.y, v.x) / (2.0 * PI) + 1.0);
+                    float hit = SAMPLE_TEXTURE2D_LOD(_FogSightTex, sampler_FogSightTex, float2(u, 0.5), 0).r;
+                    float s = (d <= hit + _FogSightY.z) ? 1.0 : 0.0;
+                    s *= 1.0 - smoothstep(_FogSight.z - _FogLook.z, _FogSight.z, d);
+                    lit = max(lit, s);
                 }
                 int m = (int)_FogDarkN;
                 for (int j = 0; j < FOG_MAX; j++) { if (j >= m) break; if (InRect(p, _FogDark[j], _FogDarkY[j]) > 0.5) { lit = 0.0; break; } }

@@ -13,6 +13,13 @@ namespace LifeSimProto
     /// ・見えない所にいるキャラは隠す（FogShadowMode なら黒い影だけ）。吹き出し・名札も出さない
     /// ・最初は切れている（famuru 決定 11/15）。歯車の欄のボタン、または命令 fog on／off で入り切り。再生しなおすと切れる
     /// 見た目は Resources/Shaders/LifeSimFog.shader（画面の深さから場所を出して、灰色にする）。
+    ///
+    /// 段B：見通し（2026-11-15 famuru「bに進んで」。決定：壁と背の高い家具がさえぎる・部屋の区切りは使わず見通しに置きかえる・見えない子は隠す）。
+    /// ・篤の目の高さ（足もと＋FogEyeH）から、まわり 360度に FogRays 本の線を出し、壁や背の高い家具に当たるまでの長さを覚える（毎コマ）
+    /// ・その長さより近い所だけ明るい（建物の中は FogSightIndoor m・外は FogOutdoorRadius m まで）。夜はさらに前の扇形だけ
+    /// ・線が当たる物：寮・学園・家具の見える物すべてに、見えない当たり（BoxCollider、Ignore Raycast の層＝ほかの当たり判定には出ない）を最初に1回つける。
+    ///   目の高さより低い物（机・いす・ベッド）は線が上を通るので、さえぎらない。木（葉の材質）・地面・空・大きなかたまりはつけない
+    /// ・FogSightMode = false で段A（部屋ごと）に戻る（命令 fog rooms／fog sight）
     /// </summary>
     public partial class LoungeWorld
     {
@@ -25,6 +32,11 @@ namespace LifeSimProto
         public static float FogDoorSee = 10f;          // 出入口がこれより近ければ、となりの区画も見える
         public static float FogKeep = 0.22f;           // 見えない所に残す元の色の割合
         public static float FogDarkness = 0.62f;       // 見えない所の明るさ
+        public static bool FogSightMode = true;        // 段B：見通し（false で段A：部屋ごと）
+        public static float FogSightIndoor = 20f;      // 建物の中で見える遠さ（m）
+        public static float FogEyeH = 1.5f;            // 線を出す高さ（篤の足もとから）
+        public const int FogRays = 720;
+        const int SightLayer = 2;                      // Ignore Raycast（クリックなどの当たり判定に出ない）
 
         static readonly HashSet<string> FogOutdoorNames = new HashSet<string>
         {
@@ -40,7 +52,11 @@ namespace LifeSimProto
         const int FogMax = 48;
         readonly List<Vector4> fogLit = new List<Vector4>(), fogLitY = new List<Vector4>(), fogDark = new List<Vector4>(), fogDarkY = new List<Vector4>();
         readonly HashSet<AreaInfo> fogLitAreas = new HashSet<AreaInfo>();
-        Vector4 fogCircle, fogCone, fogConeDir;
+        Vector4 fogCircle, fogCone, fogConeDir, fogSight, fogSightY;
+        readonly float[] fogHits = new float[FogRays];
+        Texture2D fogSightTex;
+        bool fogSightBuilt;
+        public int FogSightColliders;
         Material fogMat; Mesh fogMesh;
         bool fogWasOn;
         public string FogStatus = "";
@@ -80,6 +96,12 @@ namespace LifeSimProto
             float lit = 0f;
             for (int k = 0; k < fogLit.Count; k++) if (InRect4(p, fogLit[k], fogLitY[k])) { lit = 1f; break; }
             if (lit < 1f && fogCircle.w > 0.5f && new Vector2(p.x - fogCircle.x, p.z - fogCircle.y).magnitude <= fogCircle.z) lit = 1f;
+            if (lit < 1f && fogSight.w > 0.5f && p.y >= fogSightY.x && p.y <= fogSightY.y)
+            {
+                Vector2 v = new Vector2(p.x - fogSight.x, p.z - fogSight.y);
+                float d = v.magnitude;
+                if (d <= fogSight.z && d <= SightHitAt(v) + fogSightY.z) lit = 1f;
+            }
             if (lit < 1f) return false;
             for (int k = 0; k < fogDark.Count; k++) if (InRect4(p, fogDark[k], fogDarkY[k])) return false;
             if (fogCone.w > 0.5f)
@@ -111,7 +133,13 @@ namespace LifeSimProto
             var here = AreaAt(fp);
             bool outdoor = IsOutdoorArea(here);
             fogCircle = Vector4.zero;
-            if (!outdoor)
+            fogSight = Vector4.zero;
+            if (FogSightMode)
+            {
+                BuildSight(f, outdoor);
+                FogStatus = (here != null ? here.name : "外") + "（見通し " + fogSight.z + "m）";
+            }
+            else if (!outdoor)
             {
                 fogLitAreas.Add(here);
                 List<FogDoor> ds;
@@ -205,6 +233,9 @@ namespace LifeSimProto
             fogMat.SetVector("_FogCone", fogCone);
             fogMat.SetVector("_FogConeDir", fogConeDir);
             fogMat.SetVector("_FogLook", new Vector4(FogKeep, FogDarkness, 3f, 0f));
+            fogMat.SetVector("_FogSight", fogSight);
+            fogMat.SetVector("_FogSightY", fogSightY);
+            if (fogSightTex != null) fogMat.SetTexture("_FogSightTex", fogSightTex);
             fogMat.SetVector("_FogTint", new Vector4(0.93f, 0.95f, 1.02f, 1f));
             var rp = new RenderParams(fogMat)
             {
@@ -222,6 +253,88 @@ namespace LifeSimProto
         {
             for (int i = 0; i < FogMax; i++) fogTmp[i] = i < list.Count ? list[i] : Vector4.zero;
             fogMat.SetVectorArray(name, fogTmp);
+        }
+
+        // ================= 段B：見通し =================
+
+        /// <summary>篤の目の高さから、まわりに線を出して、さえぎる物までの長さを測る。</summary>
+        void BuildSight(SimCharacter f, bool outdoor)
+        {
+            EnsureSightColliders();
+            Vector3 fp = f.transform.position;
+            float range = outdoor ? FogOutdoorRadius : FogSightIndoor;
+            Vector3 eye = fp + Vector3.up * FogEyeH;
+            int mask = 1 << SightLayer;
+            RaycastHit h;
+            for (int i = 0; i < FogRays; i++)
+            {
+                float a = (i + 0.5f) / FogRays * Mathf.PI * 2f;
+                var dir = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
+                fogHits[i] = Physics.Raycast(eye, dir, out h, range, mask, QueryTriggerInteraction.Ignore) ? h.distance : range;
+            }
+            if (fogSightTex == null)
+            {
+                fogSightTex = new Texture2D(FogRays, 1, TextureFormat.RFloat, false, true) { name = "FogSight", filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Repeat };
+            }
+            fogSightTex.SetPixelData(fogHits, 0);
+            fogSightTex.Apply(false, false);
+            fogSight = new Vector4(fp.x, fp.z, range, 1f);
+            int floor = FloorOf(fp.y);
+            Vector4 yr = FloorRange(floor);
+            if (outdoor) yr = new Vector4(fp.y - 8f, fp.y + 12f, 0f, 0f);
+            fogSightY = new Vector4(yr.x, yr.y, 0.35f, FogRays);   // z：当たった物の表面も明るくする幅
+        }
+
+        float SightHitAt(Vector2 v)
+        {
+            float a = Mathf.Atan2(v.y, v.x);
+            if (a < 0f) a += Mathf.PI * 2f;
+            int i = Mathf.Clamp(Mathf.FloorToInt(a / (Mathf.PI * 2f) * FogRays), 0, FogRays - 1);
+            return fogHits[i];
+        }
+
+        static readonly string[] SightSkipWords = { "Glow", "Flame", "Sky", "Water", "Ground", "Grass", "Leaf", "Foliage", "Mountain", "Cloud", "Sea", "Swash", "Light", "Candle" };
+
+        /// <summary>線が当たる見えない当たりを、寮・学園・家具の物につける（最初に1回。命令 fog rebuild で作り直す）。</summary>
+        void EnsureSightColliders()
+        {
+            if (fogSightBuilt) return;
+            fogSightBuilt = true;
+            int n = 0;
+            foreach (var mr in Object.FindObjectsByType<MeshRenderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+            {
+                if (mr == null || mr.GetComponentInParent<SimCharacter>() != null) continue;
+                var mf = mr.GetComponent<MeshFilter>();
+                if (mf == null || mf.sharedMesh == null) continue;
+                int layer = mr.gameObject.layer;
+                if (layer == 29 || layer == 30 || layer == SightLayer) continue;    // 座面・地面と階段（ProtoBody.Ground）
+                Bounds wb = mr.bounds;
+                if (wb.size.y < 0.3f) continue;
+                if (wb.size.x * wb.size.z > 150f && Mathf.Min(wb.size.x, wb.size.z) > 2f) continue;   // 地面・大きなかたまり
+                bool skip = false;
+                foreach (var w in SightSkipWords) if (mr.name.IndexOf(w, System.StringComparison.OrdinalIgnoreCase) >= 0) { skip = true; break; }
+                if (!skip)
+                    foreach (var m in mr.sharedMaterials)
+                        if (m != null && m.shader != null && (m.shader.name.Contains("Foliage") || m.shader.name.Contains("Water") || m.shader.name.Contains("Sky") || m.renderQueue >= 2900)) { skip = true; break; }
+                if (skip) continue;
+                var go = new GameObject("FogSight");
+                go.layer = SightLayer;
+                go.transform.SetParent(mr.transform, false);
+                var bc = go.AddComponent<BoxCollider>();
+                var b = mf.sharedMesh.bounds;
+                bc.center = b.center;
+                bc.size = new Vector3(Mathf.Max(b.size.x, 0.02f), Mathf.Max(b.size.y, 0.02f), Mathf.Max(b.size.z, 0.02f));
+                n++;
+            }
+            FogSightColliders = n;
+        }
+
+        /// <summary>家具を動かしたあとなど：見えない当たりを作り直す。</summary>
+        public void RebuildFogSight()
+        {
+            foreach (var bc in Object.FindObjectsByType<BoxCollider>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                if (bc != null && bc.gameObject.name == "FogSight" && bc.gameObject.layer == SightLayer) Destroy(bc.gameObject);
+            fogSightBuilt = false;
         }
 
         // ================= 区画どうしの出入口 =================

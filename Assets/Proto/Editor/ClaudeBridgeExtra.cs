@@ -270,7 +270,7 @@ namespace LifeSimProto.EditorTools
                     }
                     case "fog":
                     {
-                        // 試験用：fog on／off／hide／shadow／night／day／auto／status（視界の制限。LoungeWorld.Fog.cs。2026-11-15 本体チャット）
+                        // 試験用：fog on／off／hide／shadow／night／day／auto／sight／rooms／rebuild／status（視界の制限。LoungeWorld.Fog.cs。2026-11-15 本体チャット）
                         string m = a.Length > 1 ? a[1] : "status";
                         if (m == "on") LoungeWorld.FogEnabled = true;
                         else if (m == "off") LoungeWorld.FogEnabled = false;
@@ -279,9 +279,12 @@ namespace LifeSimProto.EditorTools
                         else if (m == "night") LoungeWorld.FogNightOverride = 1;
                         else if (m == "day") LoungeWorld.FogNightOverride = -1;
                         else if (m == "auto") LoungeWorld.FogNightOverride = 0;
+                        else if (m == "sight") LoungeWorld.FogSightMode = true;     // 段B：見通し
+                        else if (m == "rooms") LoungeWorld.FogSightMode = false;    // 段A：部屋ごと
+                        else if (m == "rebuild") w.RebuildFogSight();               // 見えない当たりを作り直す
                         int hid = 0, all = 0;
                         foreach (var c in w.characters) if (c != null && c.Present) { all++; if (c.FogHidden) hid++; }
-                        log.AppendLine("fog: " + (LoungeWorld.FogEnabled ? "入" : "切") + "・" + (LoungeWorld.FogShadowMode ? "影" : "隠す") + "・" + w.FogStatus + "・見えない子 " + hid + "/" + all + "・出入口 " + w.FogDoorCount);
+                        log.AppendLine("fog: " + (LoungeWorld.FogEnabled ? "入" : "切") + "・" + (LoungeWorld.FogShadowMode ? "影" : "隠す") + "・" + w.FogStatus + "・見えない子 " + hid + "/" + all + "・出入口 " + w.FogDoorCount + "・見通しの当たり " + w.FogSightColliders);
                         break;
                     }
                     case "goto":
