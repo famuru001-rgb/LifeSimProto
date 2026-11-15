@@ -203,6 +203,7 @@ namespace LifeSimProto
             bool loaded = SaveSystem.ApplyPending(this);
             if (!loaded) Story.ApplyLoopStart(this);
             RebuildFurniture();
+            RebuildPlaced();   // 篤が置いた家具・道具（Placement.cs。2026-11-15）
             gameObject.AddComponent<EventDirector>();
             gameObject.AddComponent<YearEvents>();
             gameObject.AddComponent<AcademyDirector>();   // 部活・寮杯（2026-11-01）

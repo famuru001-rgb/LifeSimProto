@@ -79,6 +79,7 @@ namespace LifeSimProto.EditorTools
                 case "goto":
                 case "wall":
                 case "fog":
+                case "place":
                 case "dpick":
                 case "dstat":
                 case "cup":
@@ -266,6 +267,41 @@ namespace LifeSimProto.EditorTools
                         // 試験用：wall all|low|auto（壁の見せ方。campos のあとに使う。2026-11-08 家具のチャット）
                         w.wallMode = a.Length > 1 && a[1] == "all" ? WallMode.All : a.Length > 1 && a[1] == "auto" ? WallMode.Auto : WallMode.Low;
                         log.AppendLine("wall: " + w.wallMode);
+                        break;
+                    }
+                    case "place":
+                    {
+                        // 試験用：設置の仕組み（Placement.cs。2026-11-15 本体チャット）
+                        // place list／give 名前 [数]／forget（試験のあと：全部消す）／room（篤の部屋の範囲）／check 名前 dx dz [向き]／try 名前 dx dz [向き]（篤の部屋の真ん中から）／ghost 名前 dx dz [向き]（置く場面の形を出す）／end／clear／reload
+                        var ci2 = System.Globalization.CultureInfo.InvariantCulture;
+                        string m = a.Length > 1 ? a[1] : "list";
+                        var room = w.AreaNamed("篤の部屋");
+                        if (m == "give" && a.Length > 2) { PlaceBook.Give(a[2], a.Length > 3 ? int.Parse(a[3]) : 1); log.AppendLine("place give: " + a[2] + " 所持 " + PlaceBook.Count(a[2])); break; }
+                        if (m == "reload") { PlaceBook.Reload(); log.AppendLine("place reload: 品物 " + PlaceBook.All.Count + "・場所 " + PlaceBook.Spots.Count + "・直す所 " + string.Join("／", PlaceBook.Errors)); break; }
+                        if (m == "room") { log.AppendLine("place room: " + (room == null ? "篤の部屋が無い" : room.rect + " 階 " + room.floor + " 床の高さ " + LoungeWorld.FloorY(room.floor))); break; }
+                        if (m == "clear") { foreach (var p in new List<PlaceBook.PlacedItem>(PlaceBook.Placed)) w.Unplace(p); log.AppendLine("place clear: 全部しまった"); break; }
+                        if (m == "end") { if (SimHud.Instance != null) SimHud.Instance.DebugEndPlace(); log.AppendLine("place end"); break; }
+                        if (m == "forget") { foreach (var p in new List<PlaceBook.PlacedItem>(PlaceBook.Placed)) w.Unplace(p, false); PlaceBook.Owned.Clear(); log.AppendLine("place forget: 持ち物・置いた物を全部消した（試験のあと用）"); break; }
+                        if ((m == "check" || m == "try" || m == "ghost") && a.Length > 4 && room != null)
+                        {
+                            var d = PlaceBook.Get(a[2]);
+                            if (d == null) { log.AppendLine("place: 品物が無い " + a[2]); break; }
+                            var pos = new Vector3(room.rect.center.x + float.Parse(a[3], ci2), LoungeWorld.FloorY(room.floor), room.rect.center.y + float.Parse(a[4], ci2));
+                            int yaw = a.Length > 5 ? int.Parse(a[5]) : 0;
+                            AreaInfo ar;
+                            string why;
+                            if (m == "check") why = w.CheckPlace(d, pos, yaw, out ar);
+                            else if (m == "try") { if (PlaceBook.Count(d.name) <= 0) PlaceBook.Give(d.name); why = w.Place(d.name, pos, yaw); }
+                            else why = SimHud.Instance != null ? SimHud.Instance.DebugGhost(d, pos, yaw) : "画面が無い";
+                            log.AppendLine("place " + m + ": " + d.name + " (" + pos.x.ToString("0.00") + "," + pos.z.ToString("0.00") + ") 向き " + yaw + " → " + (why ?? "置ける"));
+                            break;
+                        }
+                        var sb2 = new StringBuilder("place list: 品物 " + PlaceBook.All.Count + "・持ち物 ");
+                        foreach (var kv in PlaceBook.Owned) if (kv.Value > 0) sb2.Append(kv.Key + "×" + kv.Value + " ");
+                        sb2.Append("・置いた物 ");
+                        foreach (var p in PlaceBook.Placed) sb2.Append(p.name + "@" + p.area + "(" + p.x.ToString("0.0") + "," + p.z.ToString("0.0") + "," + p.yaw + ") ");
+                        if (PlaceBook.Errors.Count > 0) sb2.Append("・直す所 " + string.Join("／", PlaceBook.Errors));
+                        log.AppendLine(sb2.ToString());
                         break;
                     }
                     case "fog":

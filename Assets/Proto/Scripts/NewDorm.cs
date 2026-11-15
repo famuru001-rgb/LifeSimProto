@@ -537,7 +537,7 @@ namespace LifeSimProto
             // 塔の床（1〜3階）
             for (int f = 0; f <= 2; f++)
             {
-                var d = Cyl("TeacherTower_Floor", new Vector3(c.x, FloorY(f) - 0.15f, c.y), new Vector3(TeacherTowerR * 2f, 0.15f, TeacherTowerR * 2f), Quaternion.identity, woodFloor);
+                var d = Cyl("TeacherTower_Floor", new Vector3(c.x, FloorY(f) - 0.09f, c.y), new Vector3(TeacherTowerR * 2f, 0.09f, TeacherTowerR * 2f), Quaternion.identity, woodFloor);
                 slabRenderers.Add(new KeyValuePair<float, Renderer>(Mathf.Max(0.02f, FloorY(f)), d.GetComponent<Renderer>()));
             }
         }
@@ -1249,8 +1249,8 @@ namespace LifeSimProto
                 float hc = TowerChord(dzMin, FR);
                 if (hc < 0.3f) continue;
                 float x0 = cx - hc, x1 = cx + hc, zz0 = z0;
-                if (z1 <= cz + 0.01f) x0 = cx + WallT / 2f;           // 建物の中の4分の1は除く
-                if (Mathf.Abs(z0 - cz) < 0.01f) zz0 = cz + WallT / 2f; // 奥の外壁の外から
+                if (z1 <= cz + 0.01f) x0 = cx;                         // 建物の中の4分の1は除く。外壁の中心線までのばして、壁の下にすき間を残さない（2026-11-15）
+                if (Mathf.Abs(z0 - cz) < 0.01f) zz0 = cz;               // 奥の外壁の中心線から
                 var segs = new List<Vector2> { new Vector2(x0, x1) };
                 Vector2 hole = (z0 >= TBand0 - 0.01f && z0 < TBandMid - 0.01f) ? holeA1 : ((z0 >= TBandMid - 0.01f && z0 < TBand1 - 0.01f) ? holeA2 : new Vector2(1f, 0f));
                 if (hole.x < hole.y)
@@ -1416,7 +1416,7 @@ namespace LifeSimProto
             // 南西の塔の床（先生の塔の床は NTeacherTower）
             for (int f = 0; f <= 2; f++)
             {
-                var d = Cyl("SWTower_Floor", new Vector3(sc.x, FloorY(f) - 0.15f, sc.y), new Vector3(TowerR * 2f, 0.15f, TowerR * 2f), Quaternion.identity, f == 0 ? flagstone : woodFloor);
+                var d = Cyl("SWTower_Floor", new Vector3(sc.x, FloorY(f) - 0.09f, sc.y), new Vector3(TowerR * 2f, 0.09f, TowerR * 2f), Quaternion.identity, f == 0 ? flagstone : woodFloor);
                 slabRenderers.Add(new KeyValuePair<float, Renderer>(Mathf.Max(0.02f, FloorY(f)), d.GetComponent<Renderer>()));
             }
             // 場所（となりの部屋の名前を塔まで）

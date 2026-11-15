@@ -32,6 +32,9 @@ namespace LifeSimProto
         public List<string> hands = new List<string>(), storyFlags = new List<string>(), storyPending = new List<string>();
         public List<StrStr> achievements = new List<StrStr>();
         public List<StrInt> furniture = new List<StrInt>();
+        // 設置の仕組み（Placement.cs。2026-11-15）：持っている置く物・置いた物（周をまたいで残る）
+        public List<StrInt> placeOwned = new List<StrInt>();
+        public List<PlaceBook.PlacedItem> placed = new List<PlaceBook.PlacedItem>();
         // 寮杯・部活・ダンジョン実習（2026-11-01）
         public int[] cupPoints;
         public List<string> cupRecent = new List<string>();
@@ -148,6 +151,8 @@ namespace LifeSimProto
             d.storyPending.AddRange(Story.Pending);
             foreach (var kv in Achievements.Got) d.achievements.Add(new StrStr { key = kv.Key, value = kv.Value });
             foreach (var p in RoomDecor.Placed) d.furniture.Add(new StrInt { key = p.Key, value = (int)p.Value });
+            foreach (var kv in PlaceBook.Owned) if (kv.Value > 0) d.placeOwned.Add(new StrInt { key = kv.Key, value = kv.Value });
+            d.placed.AddRange(PlaceBook.Placed);
             d.cupPoints = (int[])HouseCup.Points.Clone();
             d.cupRecent.AddRange(HouseCup.Recent);
             d.cupWins = HouseCup.Wins;
@@ -185,6 +190,8 @@ namespace LifeSimProto
             Story.ActiveLetter = null; Story.ActiveEp = -1; Story.ActiveFinal = false;
             Achievements.Got.Clear(); if (d.achievements != null) foreach (var kv in d.achievements) Achievements.Got[kv.key] = kv.value;
             RoomDecor.Placed.Clear(); if (d.furniture != null) foreach (var kv in d.furniture) RoomDecor.Placed.Add(new KeyValuePair<string, ItemKind>(kv.key, (ItemKind)kv.value));
+            PlaceBook.Owned.Clear(); if (d.placeOwned != null) foreach (var kv in d.placeOwned) PlaceBook.Owned[kv.key] = kv.value;
+            PlaceBook.Placed.Clear(); if (d.placed != null) PlaceBook.Placed.AddRange(d.placed);
             HouseCup.Reset();
             if (d.cupPoints != null) for (int i = 0; i < HouseCup.Count && i < d.cupPoints.Length; i++) HouseCup.Points[i] = d.cupPoints[i];
             if (d.cupRecent != null) HouseCup.Recent.AddRange(d.cupRecent);

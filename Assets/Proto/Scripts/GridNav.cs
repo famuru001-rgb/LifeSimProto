@@ -92,6 +92,29 @@ namespace LifeSimProto
         /// <summary>x,z の範囲を通れなくする。</summary>
         public void Block(Rect r) { SetRect(r, true); }
 
+        /// <summary>範囲を通れなくして、新しく通れなくしたマスを返す（あとで UnblockCells で戻す。置いた家具：Placement.cs 2026-11-15）。</summary>
+        public System.Collections.Generic.List<int> BlockCellsRecord(Rect r)
+        {
+            var list = new System.Collections.Generic.List<int>();
+            int x0 = Mathf.Max(0, Mathf.FloorToInt((r.xMin - min.x) / cell) - 1), x1 = Mathf.Min(width - 1, Mathf.CeilToInt((r.xMax - min.x) / cell) + 1);
+            int y0 = Mathf.Max(0, Mathf.FloorToInt((r.yMin - min.y) / cell) - 1), y1 = Mathf.Min(height - 1, Mathf.CeilToInt((r.yMax - min.y) / cell) + 1);
+            for (int y = y0; y <= y1; y++)
+                for (int x = x0; x <= x1; x++)
+                {
+                    Vector3 p = ToWorld(x, y);
+                    int i = y * width + x;
+                    if (p.x >= r.xMin && p.x <= r.xMax && p.z >= r.yMin && p.z <= r.yMax && !blocked[i]) { blocked[i] = true; list.Add(i); }
+                }
+            compDirty = true;
+            return list;
+        }
+
+        public void UnblockCells(System.Collections.Generic.List<int> cells)
+        {
+            foreach (var i in cells) if (i >= 0 && i < blocked.Length) blocked[i] = false;
+            compDirty = true;
+        }
+
         public bool InBounds(int x, int y) { return x >= 0 && y >= 0 && x < width && y < height; }
 
         public bool IsFree(int x, int y) { return InBounds(x, y) && !blocked[y * width + x]; }

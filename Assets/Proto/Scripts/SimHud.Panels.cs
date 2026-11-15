@@ -441,6 +441,7 @@ namespace LifeSimProto
                 }
                 if (x > 4) y += 34;
                 if (!any) { GUI.Label(new Rect(4, y, w, 22), "なし（購買部で買える）", tiny); y += 24; }
+                PlaceItemsGui(w, ref y);   // 置く物（SimHud.Place.cs。2026-11-15）
             }
         }
 

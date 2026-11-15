@@ -352,15 +352,15 @@ namespace LifeSimProto
                         // 枠の内側：はば 0.86×倍率、まっすぐな所は高さ 1.92、その上は丸くなって 2.34 で閉じる
                         cs = (g.x + g.y) / 2f;
                         float hw = 0.43f * sxF;
-                        archApex = baseY + 2.34f * syF;
+                        archApex = baseY + 2.32f * syF;
                         g = new Vector4(cs - hw, cs + hw, g.z, archApex);
                     }
                 }
                 if (g.x > cursor) WallPiece(w, a, dir, alongX, cursor, g.x, baseY, topY, thick);
                 if (archApex > 0f)
                 {
-                    float[] ay = { 1.92f, 2.05f, 2.15f, 2.25f, 2.34f };
-                    float[] ah = { 0.42f, 0.39f, 0.31f, 0.18f };
+                    float[] ay = { 1.92f, 2.05f, 2.15f, 2.25f, 2.32f };
+                    float[] ah = { 0.40f, 0.36f, 0.27f, 0.10f };
                     float hw0 = 0.43f * sxF;
                     for (int i = 0; i < 4; i++)
                     {
@@ -502,7 +502,7 @@ namespace LifeSimProto
         void Slab(string name, int floor, Rect r, Material m)
         {
             float y = FloorY(floor);
-            float th = floor == 0 ? 0.1f : 0.3f;   // 2026-11-15 床を厚く（下の階の壁の上と重ならないように）
+            float th = floor == 0 ? 0.1f : 0.18f;   // 2026-11-15 床の厚み（0.2 未満：LevelOf が板の下の面＋0.2 で階を決めるため。0.3 だと上の階の床が下の階に入った）
             var go = Box(name, new Vector3(r.center.x, y - th / 2f, r.center.y), new Vector3(r.width, th, r.height), m);
             slabRenderers.Add(new KeyValuePair<float, Renderer>(Mathf.Max(0.02f, y), go.GetComponent<Renderer>()));
         }

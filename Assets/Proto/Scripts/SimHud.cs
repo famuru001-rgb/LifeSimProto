@@ -107,6 +107,7 @@ namespace LifeSimProto
             if (examOpen && ExamPanel.Contains(v)) return true;
             if (memoryOpen && MemoryPanel.Contains(v)) return true;
             if (Loop.AskChoice && ChoicePanel.Contains(v)) return true;
+            if (OverPlaceUi(v)) return true;   // 設置の欄（SimHud.Place.cs）
             if (saveOpen && SavePanel.Contains(v)) return true;
             if (Story.IsActive) return true; // 物語の場面のあいだは、寮の中をクリックしない
             if (MenuOpen && MenuRect.Contains(v)) return true; // 右クリックの選択肢
@@ -137,6 +138,7 @@ namespace LifeSimProto
                 if (kb != null && (kb.spaceKey.wasPressedThisFrame || kb.enterKey.wasPressedThisFrame)) Story.Next(world);
                 return;
             }
+            if (placing != null) { UpdatePlacing(Mouse.current, kb); return; }   // 家具を置く場面（SimHud.Place.cs）
             if (kb != null)
             {
                 if (kb.spaceKey.wasPressedThisFrame) SetSpeed(world.userSpeed > 0f ? 0f : speedBeforePause);
@@ -180,6 +182,7 @@ namespace LifeSimProto
             float now = Time.unscaledTime;
             if (hit == null)
             {
+                if (TryPickPlaced(ray)) { Select(null); return; }   // 置いた家具（SimHud.Place.cs）
                 // 何もない所を左クリック：選ぶのをやめる（篤の移動は右クリック。famuru 2026-10-25）
                 Select(null);
                 return;
@@ -320,6 +323,7 @@ namespace LifeSimProto
             DrawFloorButtons();
             if (helpOpen) DrawHelp();
             if (shopOpen) DrawShop();
+            DrawPlacing();   // 家具を置く場面・置いた物の欄（SimHud.Place.cs）
             if (examOpen) DrawExam();
             if (memoryOpen) DrawMemory();
             if (Loop.AskChoice) DrawChoice();
@@ -800,9 +804,12 @@ namespace LifeSimProto
             float tx = r.x + 14;
             for (int i = 0; i < ShelfNames.Length; i++)
             {
-                if (GUI.Button(new Rect(tx, r.y + 44, 100, 30), ShelfNames[i], (int)shopShelf == i ? buttonOn : smallButton)) shopShelf = (ItemShelf)i;
+                if (GUI.Button(new Rect(tx, r.y + 44, 100, 30), ShelfNames[i], !shopPlaceTab && (int)shopShelf == i ? buttonOn : smallButton)) { shopShelf = (ItemShelf)i; shopPlaceTab = false; }
                 tx += 104;
             }
+            // 置く家具の棚（篤が自分で置く。SimHud.Place.cs。2026-11-15）
+            if (GUI.Button(new Rect(r.xMax - 196, r.y + 8, 100, 30), "置く家具", shopPlaceTab ? buttonOn : smallButton)) shopPlaceTab = true;
+            if (shopPlaceTab) { DrawShopPlace(r); return; }
             float y = r.y + 86;
             foreach (var d in ItemBook.All)
             {

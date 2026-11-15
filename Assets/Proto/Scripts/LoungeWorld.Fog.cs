@@ -359,6 +359,7 @@ namespace LifeSimProto
                 if (mf == null || mf.sharedMesh == null) continue;
                 int layer = mr.gameObject.layer;
                 if (layer == SightLayer) continue;
+                if (mr.transform.Find("FogSight") != null || mr.transform.Find("FogWindow") != null) continue;   // もう付いている（置いた家具：AddSightColliders）
                 Bounds wb = mr.bounds;
                 // 床の板（階と階のあいだ）：うすくて、上の面がその階の床の高さ
                 if (wb.size.y < 0.7f && wb.size.x * wb.size.z >= 0.25f && layer != 29)
@@ -400,6 +401,26 @@ namespace LifeSimProto
             }
             FogSightColliders = n; FogWindowColliders = nw; FogMeshColliders = nm;
             BuildFloorHoles(slabs);
+        }
+
+        /// <summary>あとから置いた家具（Placement.cs）に、見通しの当たりを付ける（当たりをまだ作っていなければ、作るときに入る）。</summary>
+        public void AddSightColliders(GameObject go)
+        {
+            if (!fogSightBuilt || go == null) return;
+            foreach (var mr in go.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                var mf = mr.GetComponent<MeshFilter>();
+                if (mf == null || mf.sharedMesh == null || mr.bounds.size.y < 0.3f) continue;
+                if (mr.transform.Find("FogSight") != null) continue;
+                var c = new GameObject("FogSight");
+                c.layer = SightLayer;
+                c.transform.SetParent(mr.transform, false);
+                var bc = c.AddComponent<BoxCollider>();
+                var b = mf.sharedMesh.bounds;
+                bc.center = b.center;
+                bc.size = new Vector3(Mathf.Max(b.size.x, 0.02f), Mathf.Max(b.size.y, 0.02f), Mathf.Max(b.size.z, 0.02f));
+                FogSightColliders++;
+            }
         }
 
         /// <summary>家具を動かしたあとなど：見えない当たりを作り直す。</summary>
