@@ -229,7 +229,7 @@ namespace LifeSimProto
                 Deco(r, GUIContent.none, panel);
                 GUI.Label(new Rect(r.x + 14, r.y + 8, r.width - 28, 26), it.name + "（" + it.area + "）", small);
                 var d = PlaceBook.Get(it.name);
-                if (d != null) GUI.Label(new Rect(r.x + 14, r.y + 34, r.width - 28, 22), d.desc, tiny);
+                if (d != null) GUI.Label(new Rect(r.x + 14, r.y + 34, r.width - 28, 34), d.FullDesc, tiny);
                 float bx = r.x + 14;
                 if (GUI.Button(new Rect(bx, r.y + 70, 72, 32), "動かす", smallButton) && d != null)
                 {
@@ -271,7 +271,7 @@ namespace LifeSimProto
             {
                 if (!d.InShop) continue;
                 GUI.Label(new Rect(6, y, 320, 24), d.name + "（" + d.price + "）", small);
-                GUI.Label(new Rect(6, y + 20, 560, 20), d.desc, tiny);
+                GUI.Label(new Rect(6, y + 20, content.width - 240, 20), d.FullDesc, tiny);
                 GUI.Label(new Rect(content.width - 230, y + 2, 100, 24), "所持 " + PlaceBook.Count(d.name), small);
                 GUI.enabled = pc != null && pc.money >= d.price;
                 if (GUI.Button(new Rect(content.width - 110, y + 2, 96, 34), "買う", button))

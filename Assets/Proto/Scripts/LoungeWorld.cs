@@ -228,6 +228,7 @@ namespace LifeSimProto
             UpdateCutaway();
             UpdateFloorView();
             UpdateFog();   // 視界の制限（LoungeWorld.Fog.cs。2026-11-15）
+            UpdatePlaceEffects();   // 置いた家具の効きめ（Placement.Effects.cs。2026-11-15）
             UpdatePlaces();
         }
 
@@ -413,6 +414,7 @@ namespace LifeSimProto
         public void ReportTalk(SimCharacter a, SimCharacter b, TalkResult result, bool koibana = false, string place = null)
         {
             Vector2Int stage = rel.Apply(a.id, b.id, result, simTime);
+            PlaceTalkBonus(a, b, result);   // 家具の部屋で話すと好感度がよく伸びる（Placement.Effects.cs）
             if (koibana && result == TalkResult.Fun) stage = new Vector2Int(stage.x, rel.Add(a.id, b.id, 3f, simTime).y);
             string word = result == TalkResult.Fun ? "楽しく話した ♪" : (result == TalkResult.Normal ? "ふつうに話した" : "少し気まずかった");
             if (koibana) word = result == TalkResult.Fun ? "恋バナで盛り上がった ♪" : "恋バナをした";

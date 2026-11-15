@@ -14,13 +14,29 @@ namespace LifeSimProto
     /// ・置いたら：歩く道をふさぐ（低い敷物はふさがない）・視界の制限の線が当たる・見る階の分け方に入る
     /// 手に入れ方：購買部（SimHud の「置く家具」の棚）。ほかは Give（ダンジョン・行事・作る からあとで呼ぶ。命令 place give）
     /// </summary>
-    public static class PlaceBook
+    public static partial class PlaceBook
     {
         public class Def
         {
             public string name, kind, how, model, sources, desc;
             public int price;
             public bool keepLoop = true;
+            public string effectText = "", likesText = "";
+            public Effect effect = new Effect();
+            public string[] likes = new string[0];
+            public bool Liked(CharProfile p) { if (p == null) return false; foreach (var t in likes) if (p.Likes(t)) return true; return false; }
+            /// <summary>画面に出す説明（効きめつき）。</summary>
+            public string FullDesc
+            {
+                get
+                {
+                    string s = desc;
+                    if (!string.IsNullOrEmpty(effectText)) s += (s.Length > 0 ? "　" : "") + "【" + effectText + "】";
+                    if (!string.IsNullOrEmpty(effect.later)) s += "（使う動きはこれから）";
+                    if (likes.Length > 0) s += "　♪" + string.Join("・", likes);
+                    return s;
+                }
+            }
             public bool InShop { get { return sources.Contains("購買部"); } }
             public bool IsTool { get { return kind == "道具"; } }
         }
@@ -85,6 +101,10 @@ namespace LifeSimProto
                 };
                 int.TryParse(Col(row, 4, "0"), out d.price);
                 d.keepLoop = Col(row, 6, "残す") != "残さない";
+                d.effectText = Col(row, 8, "");
+                d.likesText = Col(row, 9, "");
+                d.likes = d.likesText.Length > 0 ? d.likesText.Split('・', '／', '/') : new string[0];
+                d.effect = ParseEffect(d.name, d.effectText, Errors);
                 if (Resources.Load<GameObject>("Furniture/" + d.model) == null) Errors.Add(d.name + "：形「" + d.model + "」が Resources/Furniture に無い");
                 defs.Add(d);
             }

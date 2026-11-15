@@ -95,13 +95,13 @@ namespace LifeSimProto
                 return;
             }
             if (hs != null) return;
-            vigor = Mathf.Min(VigorMaxNow, vigor + gm * HBook.VigorRegenPerHour / 60f * (1f + desire / 100f));
+            vigor = Mathf.Min(VigorMaxNow, vigor + gm * HBook.VigorRegenPerHour / 60f * (1f + desire / 100f) * placeVigorRegen);   // placeVigorRegen：置いた家具（Placement.Effects.cs）
         }
 
         /// <summary>エッチのスキルの段（0〜10。通算回数で決まる）。</summary>
         public int HLevel { get { return HSkill.Level(letter); } }
         /// <summary>篤の精力の最大値（スキルで増える）。</summary>
-        public float VigorMaxNow { get { return HSkill.VigorMax(HLevel); } }
+        public float VigorMaxNow { get { return HSkill.VigorMax(HLevel) + placeVigorMaxAdd; } }   // placeVigorMaxAdd：月の魔法陣の敷物など（Placement.Effects.cs）
 
         /// <summary>中出しの量（ml。ヒロインだけ。時間で減る）。量に応じて能力すべてが上がる。</summary>
         public float inside;
@@ -906,7 +906,7 @@ namespace LifeSimProto
             void UpdateGauges(float gm)
             {
                 // 篤の精力：性欲が高いほど回復が速い
-                f.vigor = Mathf.Min(f.VigorMaxNow, f.vigor + gm * HBook.VigorRegenPerHour / 60f * (1f + f.desire / 100f));
+                f.vigor = Mathf.Min(f.VigorMaxNow, f.vigor + gm * HBook.VigorRegenPerHour / 60f * (1f + f.desire / 100f) * f.placeVigorRegen);
                 UpdatePleasure(gm);
                 foreach (var p in ps)
                 {

@@ -272,7 +272,7 @@ namespace LifeSimProto.EditorTools
                     case "place":
                     {
                         // 試験用：設置の仕組み（Placement.cs。2026-11-15 本体チャット）
-                        // place list／give 名前 [数]／forget（試験のあと：全部消す）／room（篤の部屋の範囲）／check 名前 dx dz [向き]／try 名前 dx dz [向き]（篤の部屋の真ん中から）／ghost 名前 dx dz [向き]（置く場面の形を出す）／end／clear／reload
+                        // place list／give 名前 [数]／forget（試験のあと：全部消す）／fx（効きめが付いている人）／room（篤の部屋の範囲）／check 名前 dx dz [向き]／try 名前 dx dz [向き]（篤の部屋の真ん中から）／ghost 名前 dx dz [向き]（置く場面の形を出す）／end／clear／reload
                         var ci2 = System.Globalization.CultureInfo.InvariantCulture;
                         string m = a.Length > 1 ? a[1] : "list";
                         var room = w.AreaNamed("篤の部屋");
@@ -281,6 +281,21 @@ namespace LifeSimProto.EditorTools
                         if (m == "room") { log.AppendLine("place room: " + (room == null ? "篤の部屋が無い" : room.rect + " 階 " + room.floor + " 床の高さ " + LoungeWorld.FloorY(room.floor))); break; }
                         if (m == "clear") { foreach (var p in new List<PlaceBook.PlacedItem>(PlaceBook.Placed)) w.Unplace(p); log.AppendLine("place clear: 全部しまった"); break; }
                         if (m == "end") { if (SimHud.Instance != null) SimHud.Instance.DebugEndPlace(); log.AppendLine("place end"); break; }
+                        if (m == "fx")
+                        {
+                            // 置いた家具の効きめが付いている人（Placement.Effects.cs）
+                            var sbx = new StringBuilder("place fx: ");
+                            foreach (var c in w.characters)
+                            {
+                                if (c == null) continue;
+                                var ids = new List<string>();
+                                foreach (var am in c.ItemMods) if (am.mod != null && am.mod.id.StartsWith("place:")) ids.Add(am.mod.id.Substring(6));
+                                if (ids.Count == 0 && c.placeVigorRegen == 1f && c.placeVigorMaxAdd == 0f && c.placeAffinity == 1f) continue;
+                                sbx.Append(c.displayName + "[" + string.Join("・", ids.ToArray()) + (c.placeVigorRegen != 1f ? " 精力の戻り×" + c.placeVigorRegen.ToString("0.00") : "") + (c.placeVigorMaxAdd != 0f ? " 精力の最大＋" + c.placeVigorMaxAdd : "") + (c.placeAffinity != 1f ? " 好感度×" + c.placeAffinity.ToString("0.00") : "") + "] ");
+                            }
+                            log.AppendLine(sbx.ToString());
+                            break;
+                        }
                         if (m == "forget") { foreach (var p in new List<PlaceBook.PlacedItem>(PlaceBook.Placed)) w.Unplace(p, false); PlaceBook.Owned.Clear(); log.AppendLine("place forget: 持ち物・置いた物を全部消した（試験のあと用）"); break; }
                         if ((m == "check" || m == "try" || m == "ghost") && a.Length > 4 && room != null)
                         {
