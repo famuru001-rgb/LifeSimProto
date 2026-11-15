@@ -388,13 +388,15 @@ namespace LifeSimProto
             list.Sort((a, b) => (b.transform.position - cam).sqrMagnitude.CompareTo((a.transform.position - cam).sqrMagnitude));
             foreach (var c in list)
             {
-                if (!c.Present || !world.FloorVisible(c.transform.position.y) || !world.FogShows(c)) continue;   // 視界の制限で見えない子は名札・吹き出しも出さない
+                if (!c.Present || !world.FloorVisible(c.transform.position.y)) continue;
+                bool hearOnly = !world.FogShows(c);   // 視界の制限で見えない子は名札・吹き出しも出さない
+                if (hearOnly && !world.FogHears(c)) continue;   // 盗聴の魔導具のそばなら吹き出しだけ（Placement.Tools.cs）
                 Vector2 g;
                 if (!ToGui(c.transform.position + Vector3.up * c.HeadHeight, s, out g)) continue;
 
                 Rect r;
                 Color old = GUI.color;
-                if ((!ShowNameTags || c.IsMob) && !c.selected) // 寮生以外の学生・先生の名前は、選んだときだけ
+                if (hearOnly || (!ShowNameTags || c.IsMob) && !c.selected) // 寮生以外の学生・先生の名前は、選んだときだけ
                 {
                     // 名前と行動を出さない（選んだキャラだけ出す）。吹き出しの位置だけ決める
                     r = new Rect(g.x, g.y - 24f, 0f, 24f);

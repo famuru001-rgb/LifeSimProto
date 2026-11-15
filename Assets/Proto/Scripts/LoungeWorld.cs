@@ -229,6 +229,7 @@ namespace LifeSimProto
             UpdateFloorView();
             UpdateFog();   // 視界の制限（LoungeWorld.Fog.cs。2026-11-15）
             UpdatePlaceEffects();   // 置いた家具の効きめ（Placement.Effects.cs。2026-11-15）
+            UpdateTools();          // 置いた道具の時間切れ・撤去（Placement.Tools.cs。2026-11-16）
             UpdatePlaces();
         }
 

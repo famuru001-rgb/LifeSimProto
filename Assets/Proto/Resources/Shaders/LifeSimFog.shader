@@ -28,6 +28,11 @@ Shader "Hidden/LifeSim/Fog"
             float4 _FogDark[FOG_MAX];   // 暗い四角（明るい所より先に効く）
             float4 _FogDarkY[FOG_MAX];
             float _FogLitN, _FogDarkN;
+            // 置いた道具で見える所（設置の仕組み 段2。2026-11-16）：丸＝x,z,半径,階／四角＝区画（階は _FogSeenRF.x）。篤の見通し・夜の扇形に関係なく見える
+            float4 _FogSeenC[16];
+            float4 _FogSeenR[16];
+            float4 _FogSeenRF[16];
+            float _FogSeenCN, _FogSeenRN;
             float4 _FogCircle;          // 外：x, z, 半径, 1＝使う
             float4 _FogCone;            // 夜：x, z, 半径, 1＝使う
             float4 _FogConeDir;         // 夜：向き x, z, cos(半分の角度), 篤のまわりのいつも見える半径
@@ -120,6 +125,13 @@ Shader "Hidden/LifeSim/Fog"
                     float inCone = (d <= _FogCone.z && dot(v / max(d, 0.0001), _FogConeDir.xy) >= _FogConeDir.z) ? 1.0 : 0.0;
                     if (d <= _FogConeDir.w) inCone = 1.0;
                     lit *= inCone;
+                }
+                if (lit < 0.999 && (_FogSeenCN > 0.5 || _FogSeenRN > 0.5))
+                {
+                    int pfl = PixFloor(p.y);
+                    int sc = (int)_FogSeenCN, sr = (int)_FogSeenRN;
+                    for (int a = 0; a < 16; a++) { if (a >= sc) break; float4 c4 = _FogSeenC[a]; if ((int)(c4.w + 0.5) == pfl && distance(p.xz, c4.xy) <= c4.z) { lit = 1.0; break; } }
+                    for (int b = 0; b < 16; b++) { if (b >= sr) break; float4 r4 = _FogSeenR[b]; if ((int)(_FogSeenRF[b].x + 0.5) == pfl && p.x >= r4.x && p.x <= r4.z && p.z >= r4.y && p.z <= r4.w) { lit = 1.0; break; } }
                 }
                 if (lit >= 0.999) return half4(0, 0, 0, 1);   // そのまま
 

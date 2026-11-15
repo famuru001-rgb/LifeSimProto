@@ -33,18 +33,23 @@ namespace LifeSimProto
                     string s = desc;
                     if (!string.IsNullOrEmpty(effectText)) s += (s.Length > 0 ? "　" : "") + "【" + effectText + "】";
                     if (!string.IsNullOrEmpty(effect.later)) s += "（使う動きはこれから）";
+                    if (!string.IsNullOrEmpty(toolText)) s += (s.Length > 0 ? "　" : "") + "【" + toolText + "】";
                     if (likes.Length > 0) s += "　♪" + string.Join("・", likes);
                     return s;
                 }
             }
             public bool InShop { get { return sources.Contains("購買部"); } }
             public bool IsTool { get { return kind == "道具"; } }
+            public bool IsCarry { get { return kind == "持つ道具"; } }   // 置かずに篤が使う（段2）
+            public ToolFx tool = new ToolFx();
+            public string toolText = "";
         }
 
         public class Spot
         {
             public string area, when;
             public int furnMax, toolMax;
+            public float findMul = -1f;   // 道具が見つかって撤去されやすさの倍率（-1＝外 0.5・中 1.0）
             public bool Open { get { return when == "いつでも"; } }
         }
 
@@ -55,6 +60,7 @@ namespace LifeSimProto
             public float x, y, z;
             public int yaw;
             public int loop;   // 置いた周
+            public double t;   // 置いた時刻（ゲームの分。道具の続く時間）
         }
 
         public static readonly Dictionary<string, int> Owned = new Dictionary<string, int>();
@@ -105,7 +111,9 @@ namespace LifeSimProto
                 d.likesText = Col(row, 9, "");
                 d.likes = d.likesText.Length > 0 ? d.likesText.Split('・', '／', '/') : new string[0];
                 d.effect = ParseEffect(d.name, d.effectText, Errors);
-                if (Resources.Load<GameObject>("Furniture/" + d.model) == null) Errors.Add(d.name + "：形「" + d.model + "」が Resources/Furniture に無い");
+                d.toolText = Col(row, 10, "");
+                d.tool = ParseTool(d.name, d.toolText, Errors);
+                if (!d.IsCarry && Resources.Load<GameObject>("Furniture/" + d.model) == null) Errors.Add(d.name + "：形「" + d.model + "」が Resources/Furniture に無い");
                 defs.Add(d);
             }
             foreach (var row in ReadTable("設置_場所"))
@@ -114,6 +122,8 @@ namespace LifeSimProto
                 var s = new Spot { area = row[0].Trim(), when = Col(row, 3, "いつでも") };
                 int.TryParse(Col(row, 1, "0"), out s.furnMax);
                 int.TryParse(Col(row, 2, "0"), out s.toolMax);
+                float fm;
+                if (float.TryParse(Col(row, 4, ""), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out fm)) s.findMul = fm;
                 spots.Add(s);
             }
         }
@@ -196,20 +206,31 @@ namespace LifeSimProto
         public string CheckPlace(PlaceBook.Def d, Vector3 pos, int yaw, out AreaInfo area)
         {
             area = AreaAt(pos + Vector3.up * 0.3f);
-            if (area == null) return "ここには置けない";
-            var spot = PlaceBook.SpotOf(area.name);
-            if (spot == null || !spot.Open) return area.name + "には置けない（今は篤の部屋だけ）";
-            int max = d.IsTool ? spot.toolMax : spot.furnMax;
-            if (PlaceBook.CountIn(area.name, d.IsTool) >= max) return area.name + "はもういっぱい（" + (d.IsTool ? "道具" : "家具") + " " + max + "こまで）";
+            if (d.IsCarry) return "持って使う道具（置かない）";
+            var spot = area != null ? PlaceBook.SpotOf(area.name) : null;
+            if (!d.IsTool)
+            {
+                if (area == null) return "ここには置けない（家具は寮の中）";
+                if (spot == null || !spot.Open) return area.name + "には置けない（今は篤の部屋だけ）";
+            }
+            // 道具はどこでも置ける（famuru 2026-11-16）。表に上限があって「いつでも」の場所だけ数を数える
+            if (spot != null && spot.Open)
+            {
+                int max = d.IsTool ? spot.toolMax : spot.furnMax;
+                if (PlaceBook.CountIn(area.name, d.IsTool) >= max) return area.name + "はもういっぱい（" + (d.IsTool ? "道具" : "家具") + " " + max + "こまで）";
+            }
             Rect local; float h;
             if (!PlaceFootprint(d.model, out local, out h)) return "形が無い（" + d.model + "）";
             Rect fp = TurnedFootprint(local, yaw, pos);
-            Rect ar = area.rect;
-            if (fp.xMin < ar.xMin - 0.05f || fp.xMax > ar.xMax + 0.05f || fp.yMin < ar.yMin - 0.05f || fp.yMax > ar.yMax + 0.05f) return "部屋からはみ出る";
+            if (area != null && !IsOutdoorArea(area))
+            {
+                Rect ar = area.rect;
+                if (fp.xMin < ar.xMin - 0.05f || fp.xMax > ar.xMax + 0.05f || fp.yMin < ar.yMin - 0.05f || fp.yMax > ar.yMax + 0.05f) return "部屋からはみ出る";
+            }
             // 出入口の前はあける
             EnsureFogDoors();
             List<FogDoor> ds;
-            if (fogDoorsOf.TryGetValue(area, out ds))
+            if (area != null && fogDoorsOf.TryGetValue(area, out ds))
                 foreach (var dd in ds)
                 {
                     float dx = Mathf.Max(0f, Mathf.Max(fp.xMin - dd.p.x, dd.p.x - fp.xMax));
@@ -220,7 +241,8 @@ namespace LifeSimProto
             if (h > 0.12f)
             {
                 EnsureSightColliders();
-                Vector3 c = new Vector3(fp.center.x, FloorY(area.floor) + Mathf.Min(h, 2.2f) * 0.5f + 0.05f, fp.center.y);
+                float baseY = area != null ? FloorY(area.floor) : pos.y;
+                Vector3 c = new Vector3(fp.center.x, baseY + Mathf.Min(h, 2.2f) * 0.5f + 0.05f, fp.center.y);
                 Vector3 half = new Vector3(Mathf.Max(0.02f, fp.width * 0.5f - 0.04f), Mathf.Max(0.02f, Mathf.Min(h, 2.2f) * 0.5f - 0.05f), Mathf.Max(0.02f, fp.height * 0.5f - 0.04f));
                 foreach (var col in Physics.OverlapBox(c, half, Quaternion.identity, 1 << SightLayer, QueryTriggerInteraction.Ignore))
                 {
@@ -243,10 +265,10 @@ namespace LifeSimProto
             string why = CheckPlace(d, pos, yaw, out area);
             if (why != null) return why;
             PlaceBook.Take(name);
-            var p = new PlaceBook.PlacedItem { name = name, area = area.name, x = pos.x, y = FloorY(area.floor), z = pos.z, yaw = ((yaw % 360) + 360) % 360, loop = Loop.Count };
+            var p = new PlaceBook.PlacedItem { name = name, area = area != null ? area.name : null, x = pos.x, y = area != null && !IsOutdoorArea(area) ? FloorY(area.floor) : pos.y, z = pos.z, yaw = ((yaw % 360) + 360) % 360, loop = Loop.Count, t = Now };
             PlaceBook.Placed.Add(p);
             SpawnPlaced(p);
-            Log("「" + name + "」を" + area.name + "に置いた");
+            Log("「" + name + "」を" + (area != null ? area.name : "外") + "に置いた");
             return null;
         }
 

@@ -227,8 +227,10 @@ namespace LifeSimProto
                 var it = pickedPlaced.item;
                 Rect r = PlacedPanel;
                 Deco(r, GUIContent.none, panel);
-                GUI.Label(new Rect(r.x + 14, r.y + 8, r.width - 28, 26), it.name + "（" + it.area + "）", small);
                 var d = PlaceBook.Get(it.name);
+                string left = "";
+                if (d != null && d.tool.hours > 0f) left = "・あと " + Mathf.Max(0, Mathf.CeilToInt((float)((it.t + d.tool.hours * 60.0 - world.Now) / 60.0))) + "時間";
+                GUI.Label(new Rect(r.x + 14, r.y + 8, r.width - 28, 26), it.name + "（" + (it.area ?? "外") + left + "）", small);
                 if (d != null) GUI.Label(new Rect(r.x + 14, r.y + 34, r.width - 28, 34), d.FullDesc, tiny);
                 float bx = r.x + 14;
                 if (GUI.Button(new Rect(bx, r.y + 70, 72, 32), "動かす", smallButton) && d != null)
@@ -270,7 +272,7 @@ namespace LifeSimProto
             foreach (var d in PlaceBook.All)
             {
                 if (!d.InShop) continue;
-                GUI.Label(new Rect(6, y, 320, 24), d.name + "（" + d.price + "）", small);
+                GUI.Label(new Rect(6, y, 360, 24), (d.IsTool ? "［置く道具］" : d.IsCarry ? "［持つ道具］" : "") + d.name + "（" + d.price + "）", small);
                 GUI.Label(new Rect(6, y + 20, content.width - 240, 20), d.FullDesc, tiny);
                 GUI.Label(new Rect(content.width - 230, y + 2, 100, 24), "所持 " + PlaceBook.Count(d.name), small);
                 GUI.enabled = pc != null && pc.money >= d.price;
@@ -290,7 +292,7 @@ namespace LifeSimProto
         void PlaceItemsGui(float w, ref float y)
         {
             y += 6;
-            GUI.Label(new Rect(4, y, w, 22), "置く物（家具・道具。置いた物 " + PlaceBook.Placed.Count + "こ）", small); y += 24;
+            GUI.Label(new Rect(4, y, w, 22), "置く物（家具・道具。置いた物 " + PlaceBook.Placed.Count + "こ）" + (PlaceBook.PotionUntil > world.Now ? "　透視薬が効いている" : ""), small); y += 24;
             float x = 4;
             bool any = false;
             foreach (var d in PlaceBook.All)
@@ -298,7 +300,13 @@ namespace LifeSimProto
                 int n = PlaceBook.Count(d.name);
                 if (n <= 0) continue;
                 any = true;
-                if (GUI.Button(new Rect(x, y, 170, 30), d.name + "×" + n + " 置く", smallButton)) BeginPlace(d);
+                if (d.IsCarry)
+                {
+                    bool on = PlaceBook.LanternOn == d.name;
+                    string lbl = d.tool.coneDeg > 0f ? (on ? " 消す" : " ともす") : " 飲む";
+                    if (GUI.Button(new Rect(x, y, 170, 30), d.name + "×" + n + lbl, on ? buttonOn : smallButton)) world.UseCarry(d);
+                }
+                else if (GUI.Button(new Rect(x, y, 170, 30), d.name + "×" + n + " 置く", smallButton)) BeginPlace(d);
                 x += 178;
                 if (x > w - 170) { x = 4; y += 34; }
             }

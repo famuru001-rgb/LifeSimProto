@@ -29,6 +29,7 @@ namespace LifeSimProto
         public float hp, maxHp;
         public int silver, chests, monsters, floorsCleared;
         public readonly List<ItemKind> items = new List<ItemKind>();
+        public readonly List<string> placeItems = new List<string>();   // 宝箱から出た家具・道具（設置の仕組み。2026-11-16）
         public readonly List<string> log = new List<string>();
         public Phase phase;
         public double until, started;
@@ -597,6 +598,13 @@ namespace LifeSimProto
                 var d = ItemBook.Get(k);
                 got += "・" + (d != null ? d.name : k.ToString());
             }
+            // 家具・道具（設置_品物.csv の手に入れ方に「ダンジョン」とある物。2026-11-16 famuru：視界の道具は購買部とダンジョンの宝箱）
+            if (Random.value < 0.15f * mul)
+            {
+                var pool = new List<PlaceBook.Def>();
+                foreach (var pd in PlaceBook.All) if (pd.sources.Contains("ダンジョン")) pool.Add(pd);
+                if (pool.Count > 0) { var pd = pool[Random.Range(0, pool.Count)]; r.placeItems.Add(pd.name); got += "・" + pd.name; }
+            }
             r.Log("宝箱から " + got + " を見つけた");
         }
 
@@ -632,6 +640,7 @@ namespace LifeSimProto
                 {
                     if (r.silver > 0) world.player.Earn(r.silver, "ダンジョン実習の戦利品");
                     foreach (var k in r.items) { world.player.Refund(k); var d = ItemBook.Get(k); world.Log("ダンジョン実習で「" + (d != null ? d.name : k.ToString()) + "」を手に入れた"); }
+                    foreach (var pn in r.placeItems) { PlaceBook.Give(pn); world.Log("ダンジョン実習で「" + pn + "」を手に入れた（持ち物の「置く物」）"); }
                 }
                 // 一緒に探索した寮生どうし・篤と仲良くなる
                 foreach (var a in r.members) foreach (var b in r.members)

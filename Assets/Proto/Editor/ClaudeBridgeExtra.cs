@@ -281,6 +281,18 @@ namespace LifeSimProto.EditorTools
                         if (m == "room") { log.AppendLine("place room: " + (room == null ? "篤の部屋が無い" : room.rect + " 階 " + room.floor + " 床の高さ " + LoungeWorld.FloorY(room.floor))); break; }
                         if (m == "clear") { foreach (var p in new List<PlaceBook.PlacedItem>(PlaceBook.Placed)) w.Unplace(p); log.AppendLine("place clear: 全部しまった"); break; }
                         if (m == "end") { if (SimHud.Instance != null) SimHud.Instance.DebugEndPlace(); log.AppendLine("place end"); break; }
+                        if (m == "tick" && a.Length > 2) { w.DebugToolTick(float.Parse(a[2], ci2)); log.AppendLine("place tick: " + a[2] + "分・見つかった " + w.ToolFoundCount + "・時間切れ " + w.ToolExpiredCount + "・置いた物 " + PlaceBook.Placed.Count); break; }
+                        if (m == "use" && a.Length > 2) { var ud = PlaceBook.Get(a[2]); if (ud != null && PlaceBook.Count(ud.name) <= 0) PlaceBook.Give(ud.name); w.UseCarry(ud); log.AppendLine("place use: " + a[2] + "・ランタン " + (PlaceBook.LanternOn ?? "なし") + "・透視薬 " + (PlaceBook.PotionUntil > w.Now ? "効いている" : "なし")); break; }
+                        if (m == "at" && a.Length > 4)
+                        {
+                            // 試験用：place at 名前 x z [y]（世界の位置に置く。道具を外や学園に）
+                            var ad = PlaceBook.Get(a[2]);
+                            if (ad == null) { log.AppendLine("place at: 品物が無い"); break; }
+                            if (PlaceBook.Count(ad.name) <= 0) PlaceBook.Give(ad.name);
+                            var ap = new Vector3(float.Parse(a[3], ci2), a.Length > 5 ? float.Parse(a[5], ci2) : 0f, float.Parse(a[4], ci2));
+                            log.AppendLine("place at: " + ad.name + " → " + (w.Place(ad.name, ap, 0) ?? "置いた"));
+                            break;
+                        }
                         if (m == "fx")
                         {
                             // 置いた家具の効きめが付いている人（Placement.Effects.cs）

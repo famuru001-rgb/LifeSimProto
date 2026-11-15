@@ -108,7 +108,7 @@ namespace LifeSimProto
             foreach (var p in PlaceBook.Placed)
             {
                 var d = PlaceBook.Get(p.name);
-                if (d == null || !d.effect.Any) continue;
+                if (d == null || !d.effect.Any || p.area == null) continue;
                 List<PlaceBook.Def> l;
                 if (!areaItems.TryGetValue(p.area, out l)) areaItems[p.area] = l = new List<PlaceBook.Def>();
                 if (!l.Contains(d)) l.Add(d);   // 同じ家具を2つ置いても効きめは1つ分

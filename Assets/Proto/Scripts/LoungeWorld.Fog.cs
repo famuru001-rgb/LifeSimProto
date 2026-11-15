@@ -76,7 +76,7 @@ namespace LifeSimProto
             DrawFog();
             Vector3 up = Vector3.up * 0.9f;
             foreach (var c in characters)
-                if (c != null) c.SetFogHidden(c != f && !FogSees(c.transform.position + up), FogShadowMode);
+                if (c != null) c.SetFogHidden(c != f && !FogSees(c.transform.position + up), FogShadowMode || ToolGhostAt(c.transform.position));   // 透視の香・透視薬は影（Placement.Tools.cs）
         }
 
         public bool FogNight
@@ -93,6 +93,24 @@ namespace LifeSimProto
         public bool FogSees(Vector3 p)
         {
             if (!fogWasOn) return true;
+            return FogSeesBase(p) || SeenByTool(p);
+        }
+
+        /// <summary>置いた道具（置きランタン・使い魔の見張り台）で見えるか（Placement.Tools.cs）。</summary>
+        bool SeenByTool(Vector3 p)
+        {
+            int pfl = PixFloor(p.y);
+            foreach (var c in fogSeenC) if ((int)(c.w + 0.5f) == pfl && new Vector2(p.x - c.x, p.z - c.y).magnitude <= c.z) return true;
+            for (int i = 0; i < fogSeenR.Count; i++) if ((int)(fogSeenRF[i] + 0.5f) == pfl && InRect4(p, fogSeenR[i], new Vector4(-1000f, 1000f, 0, 0))) return true;
+            return false;
+        }
+
+        const int FogSeenMax = 16;
+        readonly List<Vector4> fogSeenC = new List<Vector4>(), fogSeenR = new List<Vector4>();
+        readonly List<float> fogSeenRF = new List<float>();
+
+        bool FogSeesBase(Vector3 p)
+        {
             float lit = 0f;
             for (int k = 0; k < fogLit.Count; k++) if (InRect4(p, fogLit[k], fogLitY[k])) { lit = 1f; break; }
             if (lit < 1f && fogCircle.w > 0.5f && new Vector2(p.x - fogCircle.x, p.z - fogCircle.y).magnitude <= fogCircle.z) lit = 1f;
@@ -203,11 +221,14 @@ namespace LifeSimProto
                 var tp = f.TalkPartner;
                 if (f.state == SimCharacter.State.Talking && tp != null) { Vector3 v = tp.transform.position - fp; v.y = 0f; if (v.sqrMagnitude > 0.01f) dir = v; }
                 dir.y = 0f; dir = dir.sqrMagnitude > 1e-4f ? dir.normalized : Vector3.forward;
-                fogCone = new Vector4(fp.x, fp.z, FogNightRadius, 1f);
-                fogConeDir = new Vector4(dir.x, dir.z, Mathf.Cos(FogNightHalfAngle * Mathf.Deg2Rad), FogNear);
+                float coneHalf, coneDist;
+                NightCone(out coneHalf, out coneDist);   // 持つランタン（Placement.Tools.cs）
+                fogCone = new Vector4(fp.x, fp.z, coneDist, 1f);
+                fogConeDir = new Vector4(dir.x, dir.z, Mathf.Cos(coneHalf * Mathf.Deg2Rad), FogNear);
                 FogStatus += "・夜";
             }
             else fogCone = Vector4.zero;
+            CollectToolSeen(fogSeenC, fogSeenR, fogSeenRF);   // 置いた道具で見える所
         }
 
         void DrawFog()
@@ -232,6 +253,12 @@ namespace LifeSimProto
             fogMat.SetVector("_FogCircle", fogCircle);
             fogMat.SetVector("_FogCone", fogCone);
             fogMat.SetVector("_FogConeDir", fogConeDir);
+            SetArray("_FogSeenC", fogSeenC, FogSeenMax);
+            SetArray("_FogSeenR", fogSeenR, FogSeenMax);
+            var rf = new List<Vector4>(); foreach (var x in fogSeenRF) rf.Add(new Vector4(x, 0, 0, 0));
+            SetArray("_FogSeenRF", rf, FogSeenMax);
+            fogMat.SetFloat("_FogSeenCN", fogSeenC.Count);
+            fogMat.SetFloat("_FogSeenRN", fogSeenR.Count);
             fogMat.SetVector("_FogLook", new Vector4(FogKeep, FogDarkness, 3f, 0f));
             fogMat.SetVector("_FogSight", fogSight);
             fogMat.SetVector("_FogSightY", fogSightY);
@@ -256,6 +283,13 @@ namespace LifeSimProto
         }
 
         readonly Vector4[] fogTmp = new Vector4[FogMax];
+        readonly Vector4[] fogTmp16 = new Vector4[16];
+        void SetArray(string name, List<Vector4> list, int size)
+        {
+            for (int i = 0; i < 16; i++) fogTmp16[i] = i < list.Count && i < size ? list[i] : Vector4.zero;
+            fogMat.SetVectorArray(name, fogTmp16);
+        }
+
         void SetArray(string name, List<Vector4> list)
         {
             for (int i = 0; i < FogMax; i++) fogTmp[i] = i < list.Count ? list[i] : Vector4.zero;
