@@ -519,7 +519,7 @@ namespace LifeSimProto
             {
                 at.key = a.Substring(0, colon).Trim();
                 at.text = a.Substring(colon + 1).Trim();
-                if (System.Array.IndexOf(new[] { "状態", "好き", "嫌い", "趣味", "記号", "種族", "しるし", "型", "周期" }, at.key) < 0) { LifeBook.Errors.Add(where + "：「" + a + "」の「" + at.key + ":」が分からない"); return null; }
+                if (System.Array.IndexOf(new[] { "状態", "好き", "嫌い", "趣味", "記号", "種族", "しるし", "型", "周期", "悩み" }, at.key) < 0) { LifeBook.Errors.Add(where + "：「" + a + "」の「" + at.key + ":」が分からない"); return null; }
                 StatusLine dl; int ds;
                 if (at.key == "状態" && !LifeStatus.Find(at.text, out dl, out ds)) { LifeBook.Errors.Add(where + "：状態「" + at.text + "」がない"); return null; }
                 return at;
@@ -533,7 +533,8 @@ namespace LifeSimProto
                 at.text = a.Substring(k + op.Length).Trim();
                 if (at.key == "気持ち") { int i = System.Array.IndexOf(LoveNames, at.text); if (i < 0) { LifeBook.Errors.Add(where + "：気持ちは「なし・気になる・好き・恋人」"); return null; } at.value = i; return at; }
                 if (at.key == "関係") { int i = System.Array.IndexOf(RelNames, at.text); if (i < 0) { LifeBook.Errors.Add(where + "：関係は「知り合い・友達・親友」"); return null; } at.value = i; return at; }
-                bool known = System.Array.IndexOf(Needs, at.key) >= 0 || System.Array.IndexOf(Persona, at.key) >= 0 || System.Array.IndexOf(Abilities.Names, at.key) >= 0 || at.key == "仲";
+                bool known = System.Array.IndexOf(Needs, at.key) >= 0 || System.Array.IndexOf(Persona, at.key) >= 0 || System.Array.IndexOf(Abilities.Names, at.key) >= 0 || at.key == "仲"
+                    || at.key == "信頼" || at.key == "警戒" || at.key == "関心" || at.key == "段";   // 信頼と悩みの段（Bond.cs。2026-11-16）
                 if (!known) { LifeBook.Errors.Add(where + "：「" + at.key + "」が分からない"); return null; }
                 if (!float.TryParse(at.text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out at.value)) { LifeBook.Errors.Add(where + "：「" + a + "」の数字"); return null; }
                 return at;
@@ -596,6 +597,12 @@ namespace LifeSimProto
                 case "気持ち": return !c.IsTarget && Cmp(c.LoveStage, at.op, at.value);
                 case "関係": return o != null && Cmp(w.rel.Stage(c.id, o.id), at.op, at.value);
                 case "仲": return o != null && Cmp(w.rel.Get(c.id, o.id), at.op, at.value);
+                // 信頼と悩みの段（Bond.cs。2026-11-16）：篤に対する数字。「悩み:名前」はその悩みを持っている（「悩み:あり」なら何か持っている）
+                case "信頼": return !c.IsTarget && Cmp(w.bond.trust[c.id], at.op, at.value);
+                case "警戒": return !c.IsTarget && Cmp(w.bond.wary[c.id], at.op, at.value);
+                case "関心": return !c.IsTarget && Cmp(w.bond.interest[c.id], at.op, at.value);
+                case "段": return !c.IsTarget && Cmp(w.bond.stage[c.id], at.op, at.value);
+                case "悩み": { if (c.IsTarget) return false; var wn = w.bond.worry[c.id]; return at.text == "あり" ? !string.IsNullOrEmpty(wn) : wn == at.text; }
             }
             int k = System.Array.IndexOf(Needs, at.key);
             if (k >= 0) return Cmp(c.LifeNeed(k), at.op, at.value);

@@ -20,6 +20,13 @@ namespace LifeSimProto
         public float[] love;
         public bool[] lover;
         public double[] loveCooldown;
+        // 信頼と悩みの段（Bond.cs。2026-11-16）
+        public float[] bTrust, bWary, bInterest;
+        public int[] bStage, bWorryProg;
+        public string[] bWorry;
+        public double[] bWorryUntil;
+        public bool[] bWorryKnown, bPromise;
+        public bool bInit;
         // ループで残る物
         public float[] fSkills, fAbilities;
         public int subjectVersion;   // 科目の並びの版（Academics.Version）。違う版のセーブの学力・魔法は使わない
@@ -138,6 +145,12 @@ namespace LifeSimProto
             d.love = (float[])w.romance.love.Clone();
             d.lover = (bool[])w.romance.lover.Clone();
             d.loveCooldown = (double[])w.romance.cooldownUntil.Clone();
+            var bb = w.bond;
+            d.bTrust = (float[])bb.trust.Clone(); d.bWary = (float[])bb.wary.Clone(); d.bInterest = (float[])bb.interest.Clone();
+            d.bStage = (int[])bb.stage.Clone(); d.bWorryProg = (int[])bb.worryProg.Clone();
+            d.bWorry = new string[bb.worry.Length]; for (int k = 0; k < bb.worry.Length; k++) d.bWorry[k] = bb.worry[k] ?? "";
+            d.bWorryUntil = (double[])bb.worryUntil.Clone(); d.bWorryKnown = (bool[])bb.worryKnown.Clone(); d.bPromise = (bool[])bb.promise.Clone();
+            d.bInit = bb.initialized;
             d.zukan.AddRange(Loop.Zukan);
             d.openedPlaces.AddRange(Loop.OpenedPlaces);
             d.nightTogether.AddRange(Loop.NightTogether);
@@ -237,6 +250,23 @@ namespace LifeSimProto
                 if (d.love != null && i < d.love.Length) w.romance.love[i] = d.love[i];
                 if (d.lover != null && i < d.lover.Length) w.romance.lover[i] = d.lover[i];
                 if (d.loveCooldown != null && i < d.loveCooldown.Length) w.romance.cooldownUntil[i] = d.loveCooldown[i];
+            }
+            if (d.bInit && d.bTrust != null)
+            {
+                var bb = w.bond;
+                for (int i = 0; i < bb.trust.Length; i++)
+                {
+                    if (i < d.bTrust.Length) bb.trust[i] = d.bTrust[i];
+                    if (d.bWary != null && i < d.bWary.Length) bb.wary[i] = d.bWary[i];
+                    if (d.bInterest != null && i < d.bInterest.Length) bb.interest[i] = d.bInterest[i];
+                    if (d.bStage != null && i < d.bStage.Length) bb.stage[i] = d.bStage[i];
+                    if (d.bWorryProg != null && i < d.bWorryProg.Length) bb.worryProg[i] = d.bWorryProg[i];
+                    if (d.bWorry != null && i < d.bWorry.Length) bb.worry[i] = string.IsNullOrEmpty(d.bWorry[i]) ? null : d.bWorry[i];
+                    if (d.bWorryUntil != null && i < d.bWorryUntil.Length) bb.worryUntil[i] = d.bWorryUntil[i];
+                    if (d.bWorryKnown != null && i < d.bWorryKnown.Length) bb.worryKnown[i] = d.bWorryKnown[i];
+                    if (d.bPromise != null && i < d.bPromise.Length) bb.promise[i] = d.bPromise[i];
+                }
+                bb.initialized = true;
             }
             if (d.subjectVersion == Academics.Version) Academics.LoadExam(w, d.exam, d.examDay, d.examDormRanking); // 試験の結果（2026-11-01）
             return true;

@@ -131,6 +131,8 @@ namespace LifeSimProto
                     Unplace(p, false);
                     ToolFoundCount++;
                     Log("⚠ " + finder.displayName + "が「" + p.name + "」を見つけて持っていった（" + (p.area ?? "外") + "）");
+                    // 見つけた子が篤をあやしむ（famuru 決定 11/16：信頼を作ってから）：ヒロインなら信頼−10・警戒＋10
+                    if (!finder.IsMob) { bond.AddTrust(finder.id, -10f); bond.AddWary(finder.id, 10f); Log(finder.displayName + "は篤をあやしんでいる（信頼が下がった）"); }
                 }
             }
             if (PlaceBook.PotionUntil > 0 && (now >= PlaceBook.PotionUntil || now < PlaceBook.PotionUntil - PlaceBook.PotionHoursMax * 60.0))

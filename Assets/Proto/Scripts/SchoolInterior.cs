@@ -351,7 +351,7 @@ namespace LifeSimProto
                 case "剣術部の部室":
                 {
                     if (!HasRF(ClubF + "Furn_Sword_ArenaFence")) return;
-                    float cu = W * 0.72f, cv = 4.0f, h = 2.125f;
+                    float cu = W * 0.42f, cv = 4.0f, h = 2.125f; // 2026-11-16 東がわに小部屋を作ったので、柵の囲いは西寄りへ
                     // 稽古の敷物を低い柵でかこむ（西がわの手前に出入口を1つ）
                     foreach (float o in new[] { -1f, 1f })
                     {
@@ -367,7 +367,7 @@ namespace LifeSimProto
                     return;
                 }
                 case "魔法術部の部室":
-                    RFurn(ClubF + "Furn_MagicClub_FloatingCrystal", x0, sy0, f, W - 2.5f, D - 3.5f, 0f, 1.4f, 1.4f, 0f, magic);
+                    RFurn(ClubF + "Furn_MagicClub_FloatingCrystal", x0, sy0, f, 2.8f, 6.0f, 0f, 1.4f, 1.4f, 0f, magic);
                     RFurn(ClubF + "Furn_Banner_MagicClub", x0, sy0, f, 0.04f, 1.8f, 180f, 0f, 0f, 1.3f, magic);
                     return;
                 case "料理部の部室":
@@ -375,10 +375,61 @@ namespace LifeSimProto
                     RFurn(ClubF + "Furn_Banner_Cook", x0, sy0, f, 0.04f, 4.0f, 180f, 0f, 0f, 1.3f, cook);
                     return;
                 case "魔道具研究会の部室":
-                    RFurn(ClubF + "Furn_Tool_BigMachine", x0, sy0, f, W - 2.5f, D - 3.5f, 0f, 2.2f, 1.8f, 0f, tool);
+                    RFurn(ClubF + "Furn_Tool_BigMachine", x0, sy0, f, 3.0f, 6.0f, 0f, 2.2f, 1.8f, 0f, tool);
                     RFurn(ClubF + "Furn_Banner_Tool", x0, sy0, f, 0.04f, 2.0f, 180f, 0f, 0f, 1.3f, tool);
                     return;
             }
+        }
+
+        /// <summary>
+        /// 部室の中の小部屋（famuru 2026-11-16「部屋を区切って部屋の中に部屋を作る」。部屋割りは 連携\共有\設置ルール の隣の記録）。
+        /// 部室は北の列：扉は v＝D の壁の真ん中。東がわ（u＝W−3.4〜W）を壁で区切り、v＝pb でさらに2つの小部屋に分ける。
+        /// 小部屋の扉は区切りの壁（u＝W−3.4）に1つずつ（枠は壁の穴を枠の内側の形に合わせる＝DormBuilder.Wall）。
+        /// </summary>
+        void ClubRooms(string n, float x0, float sy0, int f, float W, float D)
+        {
+            string a, b; float pb = 4.5f, d1 = 3.3f, d2 = 6.9f; bool crate2 = true;
+            switch (n)
+            {
+                case "生徒会室": a = "会長室"; b = "書類室"; break;
+                case "ほうき部の部室": a = "手入れ室"; b = "休憩室"; break;
+                case "剣術部の部室": a = "防具室"; b = "休憩室"; break;
+                case "魔法術部の部室": a = "書見室"; b = "倉庫"; break;
+                case "料理部の部室": a = "調理室"; b = "食料庫"; pb = 6.8f; d1 = 2.0f; d2 = 7.9f; break;
+                case "魔道具研究会の部室": a = "部品室"; b = "倉庫"; crate2 = false; break;
+                default: return;
+            }
+            float pu = W - 3.4f;
+            Vector3 p0 = RU(x0, sy0, pu, 0f, 0f), p1 = RU(x0, sy0, pu, D, 0f), q0 = RU(x0, sy0, pu, pb, 0f), q1 = RU(x0, sy0, W, pb, 0f);
+            WallF(f, new Vector2(p0.x, p0.z), new Vector2(p1.x, p1.z), DoorGap(f, d1 / SK), DoorGap(f, d2 / SK));
+            WallF(f, new Vector2(q0.x, q0.z), new Vector2(q1.x, q1.z));
+            const float e = 0.2f;
+            FBlock(x0, sy0, f, pu - e, 0f, pu + e, d1 - 0.6f);
+            FBlock(x0, sy0, f, pu - e, d1 + 0.6f, pu + e, d2 - 0.6f);
+            FBlock(x0, sy0, f, pu - e, d2 + 0.6f, pu + e, D);
+            FBlock(x0, sy0, f, pu, pb - e, W, pb + e);
+            // 下の小部屋（扉から遠い所）に木箱
+            RFurn("Furn_Crate", x0, sy0, f, 11.0f, D - 0.6f, 15f, 0.9f, 0.9f);
+            if (crate2) RFurn("Furn_Crate", x0, sy0, f, 10.0f, D - 0.6f, -10f, 0.9f, 0.9f);
+            Label(RU(x0, sy0, pu + 1.7f, pb / 2f, FloorY(f) + 2.2f), a);
+            // 依頼39の小部屋用の家具（2026-11-16）
+            switch (n)
+            {
+                case "生徒会室":
+                    RFurn(ClubF + "Furn_Council_PaperBoxes", x0, sy0, f, 9.9f, 5.4f, 0f, 0.9f, 0.6f);
+                    RFurn(ClubF + "Furn_Council_FileCabinet", x0, sy0, f, W - 0.25f, 7.0f, 0f, 1.2f, 0.5f);
+                    break;
+                case "ほうき部の部室":
+                    RFurn(ClubF + "Furn_Broom_DryingRack", x0, sy0, f, W - 0.3f, 1.4f, 0f, 1.6f, 0.5f);
+                    break;
+                case "魔法術部の部室":
+                    RFurn(ClubF + "Furn_Magic_ScrollRack", x0, sy0, f, W - 0.25f, 2.0f, 0f, 1.4f, 0.4f);
+                    break;
+                case "魔道具研究会の部室":
+                    RFurn(ClubF + "Furn_Tool_PartsDrawers", x0, sy0, f, W - 0.3f, 2.0f, 0f, 1.4f, 0.5f);
+                    break;
+            }
+            Label(RU(x0, sy0, pu + 1.7f, (pb + D) / 2f, FloorY(f) + 2.2f), b);
         }
 
         /// <summary>
@@ -398,7 +449,7 @@ namespace LifeSimProto
                     RFurn("Furn_DecorPlant", x0, sy0, f, W - 0.6f, D - 0.6f, 0f, 0.5f, 0.5f);
                     return;
                 case "剣術部の部室":
-                    RFurn("Furn_NoticeBoard", x0, sy0, f, W * 0.75f, D - 0.1f, 90f, 0f, 0f, 1.15f);
+                    RFurn("Furn_NoticeBoard", x0, sy0, f, W * 0.64f, D - 0.1f, 90f, 0f, 0f, 1.15f);
                     RFurn("Furn_DecorPlant", x0, sy0, f, 0.6f, D - 0.6f, 0f, 0.5f, 0.5f);
                     return;
                 case "魔法術部の部室":
@@ -407,7 +458,7 @@ namespace LifeSimProto
                     RFurn("Furn_DecorPlant", x0, sy0, f, 0.6f, 0.6f, 0f, 0.5f, 0.5f);
                     return;
                 case "料理部の部室":
-                    RFurn("Furn_NoticeBoard", x0, sy0, f, W * 0.75f, D - 0.1f, 90f, 0f, 0f, 1.15f);
+                    RFurn("Furn_NoticeBoard", x0, sy0, f, W * 0.64f, D - 0.1f, 90f, 0f, 0f, 1.15f);
                     RFurn("Furn_DecorPlant", x0, sy0, f, 0.6f, D - 0.6f, 0f, 0.5f, 0.5f);
                     return;
                 case "保健室":
@@ -428,6 +479,7 @@ namespace LifeSimProto
             float vSafe0 = southSide ? 2.6f : 1.3f, vSafe1 = southSide ? D - 1.3f : D - 2.6f;
             string n = r.name;
             ClubV4(n, x0, sy0, f, W, D);      // 部室の主役と旗（依頼38。2026-11-15）
+            ClubRooms(n, x0, sy0, f, W, D);   // 部室の東がわに小部屋2つ（famuru 2026-11-16「部屋の中に部屋を作る」）
             RoomExtras(n, x0, sy0, f, W, D); // 部室・保健室などに、今ある家具を少しだけ（2026-11-14 famuru「小物は絞って」）
 
             if (r.kind == SKind.Hall) { FurnishEntrance(f, x0, sy0, W, D); return; }
@@ -612,13 +664,13 @@ namespace LifeSimProto
                         FChair(x0, sy0, f, W / 2f - 1.3f + k * 1.3f, D / 2f - 1.75f, 3);
                         FChair(x0, sy0, f, W / 2f - 1.3f + k * 1.3f, D / 2f + 0.75f, 2);
                     }
-                    FShelf(x0, sy0, f, W, D, 2, W / 2f, W - 3f, 2.2f, paperMat, fabricRed, seed);
+                    FShelf(x0, sy0, f, W, D, 2, 4.6f, 6.2f, 2.2f, paperMat, fabricRed, seed); // 東の小部屋の分だけ短く
                     if (!HasRF(ClubF + "Furn_Banner_Council")) FBox("Banner", x0, sy0, f, 0.05f, D / 2f, 1.4f, 0.03f, 1.6f, 2.4f, fabricRed);
                     {
                         // 依頼35：会長の机といす・書類の戸棚・予定の黒板・お茶の台
                         Color cc = new Color(0.62f, 0.18f, 0.18f);
-                        RFurn(ClubF + "Furn_Council_PresidentDesk", x0, sy0, f, W - 2.0f, 2.3f, 0f, 1.6f, 0.8f);
-                        RFurn(ClubF + "Furn_Council_Chair", x0, sy0, f, W - 1.3f, 2.3f, 0f, 0.65f, 0.65f, 0f, cc);
+                        RFurn(ClubF + "Furn_Council_PresidentDesk", x0, sy0, f, W - 2.0f, 2.3f, 0f, 1.8f, 0.9f);
+                        RFurn(ClubF + (HasRF(ClubF + "Furn_Council_PresidentChair") ? "Furn_Council_PresidentChair" : "Furn_Council_Chair"), x0, sy0, f, W - 1.2f, 2.3f, 0f, 0.7f, 0.7f, 0f, cc);
                         RFurn(ClubF + "Furn_Council_Cabinet", x0, sy0, f, W - 0.25f, 5.2f, 0f, 1.6f, 0.47f);
                         RFurn(ClubF + "Furn_Council_ScheduleBoard", x0, sy0, f, 0.06f, 1.8f, 180f, 0f, 0f, 0.9f);
                         RFurn(ClubF + "Furn_Council_TeaCart", x0, sy0, f, 0.35f, D - 1.6f, 180f, 0.8f, 0.45f);
@@ -642,13 +694,13 @@ namespace LifeSimProto
                         FBox("Club_Stove", x0, sy0, f, W - 1.2f, D / 2f, 0f, 1.0f, 0.9f, 2.4f, mortarDark, true);
                         for (int i = 0; i < 3; i++) Cyl("Club_Pot", RU(x0, sy0, W - 1.2f, D / 2f - 0.7f + i * 0.7f, FloorY(f) + 1.0f), new Vector3(0.35f, 0.12f, 0.35f), Quaternion.identity, iron);
                         }
-                        FShelf(x0, sy0, f, W, D, 2, W / 2f, W - 4f, 2.0f, paperMat, woodFloor, seed);
+                        FShelf(x0, sy0, f, W, D, 2, 4.6f, 6.2f, 2.0f, paperMat, woodFloor, seed);
                     }
                     else if (n.EndsWith("の部室"))
                     {
                         bool swordNew = n.StartsWith("剣術") && HasRF(ClubF + "Furn_Sword_Mat");
-                        FTable(x0, sy0, f, swordNew ? W * 0.3f : W / 2f, D / 2f, 3.0f, 1.2f, true, "Furn_CafeteriaTable");
-                        FShelf(x0, sy0, f, W, D, 2, W / 2f, W - 4f, 2.0f, paperMat, woodFloor, seed);
+                        if (!swordNew) FTable(x0, sy0, f, W / 2f, D / 2f, 3.0f, 1.2f, true, "Furn_CafeteriaTable");
+                        FShelf(x0, sy0, f, W, D, 2, 4.6f, 6.2f, 2.0f, paperMat, woodFloor, seed);
                         if (n.StartsWith("ほうき") && HasRF(ClubF + "Furn_Broom_Rack"))
                         {
                             // 依頼35：ほうき掛け・手入れ台・飛ぶ練習の輪・道具の棚（部の色は緑）
@@ -664,11 +716,11 @@ namespace LifeSimProto
                         {
                             // 依頼35：稽古の敷物・木剣と防具の棚・防具の台・長いす（部の色は紺）
                             Color sc = new Color(0.2f, 0.26f, 0.45f);
-                            RFurn(ClubF + "Furn_Sword_Mat", x0, sy0, f, W * 0.72f, 4.0f, 0f, 0f, 0f, 0f, sc);
+                            RFurn(ClubF + "Furn_Sword_Mat", x0, sy0, f, W * 0.42f, 4.0f, 0f, 0f, 0f, 0f, sc);
                             RFurn(ClubF + "Furn_Sword_Rack", x0, sy0, f, 0.25f, D / 2f, 180f, 2.4f, 0.5f);
-                            RFurn(ClubF + "Furn_Sword_ArmorStand", x0, sy0, f, W - 0.5f, 1.4f, 0f, 0.6f, 0.5f);
+                            RFurn(ClubF + "Furn_Sword_ArmorStand", x0, sy0, f, W - 0.5f, 1.4f, 0f, 0.7f, 0.6f);
                             RFurn(ClubF + "Furn_Sword_WaterBench", x0, sy0, f, W - 0.3f, 6.6f, 0f, 1.6f, 0.4f);
-                            FDummy(x0, sy0, f, W * 0.72f + 1.2f, 5.2f);
+                            FDummy(x0, sy0, f, W * 0.42f + 1.2f, 5.2f);
                         }
                         else if (n.StartsWith("剣術"))
                         {

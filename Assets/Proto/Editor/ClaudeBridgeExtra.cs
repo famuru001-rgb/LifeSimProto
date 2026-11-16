@@ -80,6 +80,8 @@ namespace LifeSimProto.EditorTools
                 case "wall":
                 case "fog":
                 case "place":
+                case "trust":
+                case "worry":
                 case "dpick":
                 case "dstat":
                 case "cup":
@@ -267,6 +269,36 @@ namespace LifeSimProto.EditorTools
                         // 試験用：wall all|low|auto（壁の見せ方。campos のあとに使う。2026-11-08 家具のチャット）
                         w.wallMode = a.Length > 1 && a[1] == "all" ? WallMode.All : a.Length > 1 && a[1] == "auto" ? WallMode.Auto : WallMode.Low;
                         log.AppendLine("wall: " + w.wallMode);
+                        break;
+                    }
+                    case "trust":
+                    case "worry":
+                    {
+                        // 試験用：信頼と悩みの段（Bond.cs。2026-11-16 本体チャット）
+                        // trust 記号（数字・段・悩み）／trust set 記号 信頼|警戒|関心|段 値／worry give 記号 [悩み]／worry ask 記号／worry act 記号（悩みのためにする。そばでなくても）／worry list／worry reload
+                        var bb = w.bond;
+                        string m = a.Length > 1 ? a[1] : "list";
+                        if (a[0] == "worry" && m == "reload") { WorryBook.Reload(); log.AppendLine("worry reload: 悩み " + WorryBook.All.Count + "・直す所 " + string.Join("／", WorryBook.Errors)); break; }
+                        if (a[0] == "worry" && m == "list")
+                        {
+                            var sbw = new StringBuilder("worry list: ");
+                            foreach (var c in w.characters) if (c != null && !c.IsTarget && !c.IsMob && !string.IsNullOrEmpty(bb.worry[c.id])) sbw.Append(c.letter + ":" + bb.worry[c.id] + (bb.worryKnown[c.id] ? "（知っている " + bb.worryProg[c.id] + "）" : "") + " ");
+                            log.AppendLine(sbw.ToString());
+                            break;
+                        }
+                        string letter = a[0] == "trust" && m != "set" ? m : (a.Length > 2 ? a[2] : "");
+                        var g = w.characters.Find(x => x != null && x.letter == letter.ToUpperInvariant());
+                        if (g == null) { log.AppendLine(a[0] + ": 記号が無い"); break; }
+                        int gi = g.id;
+                        if (a[0] == "trust" && m == "set" && a.Length > 4)
+                        {
+                            float v = float.Parse(a[4], System.Globalization.CultureInfo.InvariantCulture);
+                            if (a[3] == "信頼") bb.trust[gi] = v; else if (a[3] == "警戒") bb.wary[gi] = v; else if (a[3] == "関心") bb.interest[gi] = v; else if (a[3] == "段") bb.stage[gi] = (int)v;
+                        }
+                        else if (a[0] == "worry" && m == "give") log.AppendLine("worry give: " + bb.TryGiveWorry(w, g, a.Length > 3 ? a[3] : null));
+                        else if (a[0] == "worry" && m == "ask") bb.Ask(w, g);
+                        else if (a[0] == "worry" && m == "act") { var wd = bb.WorryOf(gi); string why = bb.CanAct(w, g, w.RomanceTarget); bb.ForceAct(w, g); log.AppendLine("worry act: " + (wd != null ? wd.action : "悩みが無い") + "（ふつうなら：" + (why ?? "できる") + "）"); }
+                        log.AppendLine(a[0] + ": " + g.displayName + " 段" + bb.stage[gi] + "（" + BondBook.StageNames[Mathf.Clamp(bb.stage[gi], 0, 3)] + "）信頼 " + bb.trust[gi].ToString("0") + "・警戒 " + bb.wary[gi].ToString("0") + "・関心 " + bb.interest[gi].ToString("0") + "・気持ち " + g.LoveStage + "・悩み " + (bb.worry[gi] ?? "なし") + (bb.worryKnown[gi] ? "（知っている " + bb.worryProg[gi] + "）" : "") + (bb.promise[gi] ? "・約束あり" : ""));
                         break;
                     }
                     case "place":

@@ -289,6 +289,7 @@ namespace LifeSimProto
                 int st = world.romance.Stage(c.id);
                 GUI.Label(new Rect(4, y, w, 24), "篤への気持ち：" + (st == 3 ? "♥ " : "") + Romance.StageName(st) + "（" + Mathf.RoundToInt(world.romance.love[c.id]) + "）" + (c.IsLover ? "　恋人" : ""), small); y += 24;
                 if (f != null) { GUI.Label(new Rect(4, y, w, 22), "篤との仲：" + Relationships.StageName(world.rel.Stage(c.id, f.id)) + "（好感度 " + Mathf.RoundToInt(world.rel.Get(c.id, f.id)) + "）", small); y += 26; }
+                if (!c.IsMob) BondGui(c, w, ref y);   // 信頼と悩みの段（SimHud.Bond.cs。2026-11-16）
             }
             if (c.profile != null)
             {

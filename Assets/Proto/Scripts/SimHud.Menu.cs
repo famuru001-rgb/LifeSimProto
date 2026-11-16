@@ -241,6 +241,7 @@ namespace LifeSimProto
                 items.Add(new MenuItem { label = g.displayName + "を抱きしめる" + (nearG ? "" : "（そばへ行ってから）"), enabled = nearG && !g.Touching, act = () => { g.AskTouch(f, true); CloseMenu(); } });
                 items.Add(new MenuItem { label = g.displayName + "をエッチに誘う ▶" + (g.state == SimCharacter.State.Sleeping && !g.IsSick ? (g.LifeHasFlag(SimCharacter.PretendFlag) ? "（寝たふりで待っている）" : "（起こして聞く）") : (g.state == SimCharacter.State.Bathing ? "（お風呂で）" : "")), enabled = !g.IsSick, act = OpenInvite });
                 AddDungeonPickItem(items, g);
+                AddWorryItems(items, g);   // 悩みを聞く・悩みのためにすること（SimHud.Bond.cs。2026-11-16）
             }
             if (c.IsTarget && girl == null && DungeonDirector.Instance != null && DungeonDirector.Instance.FRun == null)
             {
