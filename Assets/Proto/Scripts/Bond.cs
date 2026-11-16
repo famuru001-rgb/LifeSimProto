@@ -67,7 +67,62 @@ namespace LifeSimProto
         }
 
         public void AddTrust(int i, float d) { trust[i] = Mathf.Clamp(trust[i] + d, 0, 100); }
-        public void AddWary(int i, float d) { wary[i] = Mathf.Clamp(wary[i] + d, 0, 100); }
+        public void AddWary(int i, float d)
+        {
+            if (d < 0f) d *= WaryDownMul(i);   // グループの順番：閉じている子は警戒が下がりにくい（GroupBook）
+            wary[i] = Mathf.Clamp(wary[i] + d, 0, 100);
+        }
+
+        // ---- ヒロインのグループと順番（2026-11-16 famuru：表で決める。警戒の下がりやすさ・悩みを相談するか・接触のしやすさ） ----
+
+        /// <summary>この子はまだ「閉じている」か（同じグループで順番が前の子が、みんな「開く段」になっていない）。blocker＝まだの子。</summary>
+        public bool Locked(LoungeWorld w, int i, out SimCharacter blocker)
+        {
+            blocker = null;
+            var c = w.characters.Find(x => x != null && x.id == i);
+            var m = c != null ? GroupBook.MemberOf(c.letter) : null;
+            if (m == null) return false;
+            foreach (var o in GroupBook.All)
+            {
+                if (o.group != m.group || o.order >= m.order) continue;
+                var oc = w.characters.Find(x => x != null && x.letter == o.letter);
+                if (oc == null) continue;
+                if (stage[oc.id] < m.openStage) { blocker = oc; return true; }
+            }
+            return false;
+        }
+
+        LoungeWorld lockWorld;
+        float WaryDownMul(int i)
+        {
+            if (lockWorld == null) return 1f;
+            var c = lockWorld.characters.Find(x => x != null && x.id == i);
+            var m = c != null ? GroupBook.MemberOf(c.letter) : null;
+            if (m == null) return 1f;
+            SimCharacter b;
+            return Locked(lockWorld, i, out b) ? m.waryMulLocked : 1f;
+        }
+
+        /// <summary>篤から話しかける・触れる・誘うのを受けるか（閉じている子は受けにくい。警戒が高いほど受けにくい）。</summary>
+        public bool AcceptContact(LoungeWorld w, SimCharacter c)
+        {
+            if (c == null || c.IsTarget || c.IsMob) return true;
+            var m = GroupBook.MemberOf(c.letter);
+            SimCharacter b;
+            if (m == null || !Locked(w, c.id, out b)) return true;
+            float p = m.contactLocked * (1f - wary[c.id] / 150f);
+            return Random.value < p;
+        }
+
+        /// <summary>画面・命令用：グループと順番の説明。</summary>
+        public string GroupText(LoungeWorld w, SimCharacter c)
+        {
+            var m = GroupBook.MemberOf(c.letter);
+            if (m == null) return "グループ：なし";
+            SimCharacter b;
+            bool lk = Locked(w, c.id, out b);
+            return "グループ：" + m.group + "（" + m.order + "番目・" + (lk ? "閉じている：先に" + b.displayName + "が段" + m.openStage + "「" + StageNames[Mathf.Clamp(m.openStage, 0, 3)] + "」になると開く" : "開いている") + "）";
+        }
         public void AddInterest(int i, float d) { interest[i] = Mathf.Clamp(interest[i] + d, 0, 100); }
 
         public WorryBook.Def WorryOf(int i) { return string.IsNullOrEmpty(worry[i]) ? null : WorryBook.Get(worry[i]); }
@@ -75,6 +130,7 @@ namespace LifeSimProto
         /// <summary>毎コマ（LoungeWorld.Update）：日がかわったら関心を少し下げる・1時間ごとに悩みが生まれる／期限・段の進みを見る。</summary>
         public void Update(LoungeWorld w)
         {
+            lockWorld = w;
             if (!initialized) InitValues(w);
             if (w.Day != lastDay)
             {
@@ -149,6 +205,15 @@ namespace LifeSimProto
             lastAskDay[i] = w.Day;
             if (wd == null) { c.ShowBubble("ううん、今は特にないかな", 2.2f); AddInterest(i, 1); AddTrust(i, 1); return; }
             if (worryKnown[i]) { c.ShowBubble(wd.askLine, 3f); return; }
+            // グループの順番：閉じている子は悩みを相談しない
+            SimCharacter blk;
+            if (Locked(w, i, out blk))
+            {
+                c.ShowBubble("……ううん、大丈夫", 2.2f);
+                AddInterest(i, 1);
+                w.Log(c.displayName + "は何か悩んでいるようだが、まだ話してくれない（先に" + blk.displayName + "と仲良くなると、心を開きそう）");
+                return;
+            }
             if (trust[i] < WorryBook.AskTrust && wary[i] >= 30f)
             {
                 c.ShowBubble("……なんでもないよ", 2.2f);
@@ -299,6 +364,51 @@ namespace LifeSimProto
             }
         }
 
+        static string C(string[] r, int i, string def) { return i < r.Length && !string.IsNullOrEmpty(r[i].Trim()) ? r[i].Trim() : def; }
+    }
+
+    /// <summary>ヒロインのグループと順番（Resources/Text/ヒロインのグループ.csv。famuru が決める。2026-11-16）。</summary>
+    public static class GroupBook
+    {
+        public class Member
+        {
+            public string group, letter, memo;
+            public int order = 1, openStage = 1;
+            public float waryMulLocked = 0.3f, contactLocked = 0.5f;
+        }
+
+        static List<Member> list;
+        public static readonly List<string> Errors = new List<string>();
+        public static List<Member> All { get { if (list == null) Load(); return list; } }
+        public static Member MemberOf(string letter) { foreach (var m in All) if (m.letter == letter) return m; return null; }
+        public static void Reload() { list = null; }
+
+        static void Load()
+        {
+            list = new List<Member>();
+            Errors.Clear();
+            byte[] bytes = null;
+#if UNITY_EDITOR
+            string path = Path.Combine(Application.dataPath, "Proto/Resources/Text/ヒロインのグループ.csv");
+            if (File.Exists(path)) { try { bytes = File.ReadAllBytes(path); } catch (System.Exception e) { Errors.Add("ヒロインのグループ.csv：読めない（" + e.Message + "）"); } }
+#endif
+            if (bytes == null) { var ta = Resources.Load<TextAsset>("Text/ヒロインのグループ"); if (ta != null) bytes = ta.bytes; }
+            if (bytes == null) return;
+            int st = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF ? 3 : 0;
+            var ci = System.Globalization.CultureInfo.InvariantCulture;
+            foreach (var r in LifeBook.ParseCsv(new UTF8Encoding(false).GetString(bytes, st, bytes.Length - st)))
+            {
+                if (r.Length < 3 || string.IsNullOrEmpty(r[0]) || r[0] == "グループ" || r[0].StartsWith("#")) continue;
+                var m = new Member { group = r[0].Trim(), letter = C(r, 2, "").ToUpperInvariant(), memo = C(r, 3, "") };
+                int.TryParse(C(r, 1, "1"), out m.order);
+                int.TryParse(C(r, 4, "1"), out m.openStage);
+                float.TryParse(C(r, 5, "0.3"), System.Globalization.NumberStyles.Float, ci, out m.waryMulLocked);
+                float.TryParse(C(r, 6, "0.5"), System.Globalization.NumberStyles.Float, ci, out m.contactLocked);
+                if (MemberOfIn(list, m.letter) != null) Errors.Add(m.letter + " が2つのグループにいる");
+                list.Add(m);
+            }
+        }
+        static Member MemberOfIn(List<Member> l, string letter) { foreach (var m in l) if (m.letter == letter) return m; return null; }
         static string C(string[] r, int i, string def) { return i < r.Length && !string.IsNullOrEmpty(r[i].Trim()) ? r[i].Trim() : def; }
     }
 

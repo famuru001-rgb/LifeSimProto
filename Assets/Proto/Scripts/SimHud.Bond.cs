@@ -16,6 +16,13 @@ namespace LifeSimProto
             int i = c.id;
             int st = Mathf.Clamp(bb.stage[i], 0, 3);
             GUI.Label(new Rect(4, y, w, 22), "段：" + st + "「" + BondBook.StageNames[st] + "」" + (bb.promise[i] ? "　二人きりでお礼をする約束がある" : ""), small); y += 24;
+            {
+                // グループの行は長いので折り返す（2026-11-16）
+                var gs = new GUIStyle(tiny) { wordWrap = true };
+                var gc = new GUIContent(bb.GroupText(world, c));
+                float gh = Mathf.Max(20f, gs.CalcHeight(gc, w - 8));
+                GUI.Label(new Rect(4, y, w - 8, gh), gc, gs); y += gh + 2;
+            }
             BondBar("信頼", bb.trust[i], BondBook.TrustWord(bb.trust[i]), new Color(0.35f, 0.6f, 0.9f), w, ref y);
             BondBar("警戒", bb.wary[i], BondBook.WaryWord(bb.wary[i]), new Color(0.85f, 0.45f, 0.35f), w, ref y);
             BondBar("関心", bb.interest[i], BondBook.InterestWord(bb.interest[i]), new Color(0.85f, 0.7f, 0.3f), w, ref y);
@@ -43,6 +50,18 @@ namespace LifeSimProto
             GUI.color = old;
             GUI.Label(new Rect(224, y, w - 224, 20), word + "（" + Mathf.RoundToInt(v) + "）", tiny);
             y += 20;
+        }
+
+        /// <summary>篤から話しかける・触れる・誘うとき：グループの順番で閉じている子は断ることがある（Bond.cs）。</summary>
+        bool ContactOk(SimCharacter g)
+        {
+            if (world.bond.AcceptContact(world, g)) return true;
+            g.ShowBubble("ごめん、今はちょっと……", 2.2f);
+            SimCharacter b;
+            world.bond.Locked(world, g.id, out b);
+            world.Log(g.displayName + "には、まだ距離を置かれている" + (b != null ? "（先に" + b.displayName + "と仲良くなると近づきやすい）" : ""));
+            CloseMenu();
+            return false;
         }
 
         void AddWorryItems(List<MenuItem> items, SimCharacter g)

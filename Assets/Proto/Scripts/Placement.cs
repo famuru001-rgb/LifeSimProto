@@ -61,6 +61,7 @@ namespace LifeSimProto
             public int yaw;
             public int loop;   // 置いた周
             public double t;   // 置いた時刻（ゲームの分。道具の続く時間）
+            public List<string> witnesses = new List<string>();   // 置くところを見ていた子の記号（2026-11-16：見つけたらあやしむ）
         }
 
         public static readonly Dictionary<string, int> Owned = new Dictionary<string, int>();
@@ -266,6 +267,13 @@ namespace LifeSimProto
             if (why != null) return why;
             PlaceBook.Take(name);
             var p = new PlaceBook.PlacedItem { name = name, area = area != null ? area.name : null, x = pos.x, y = area != null && !IsOutdoorArea(area) ? FloorY(area.floor) : pos.y, z = pos.z, yaw = ((yaw % 360) + 360) % 360, loop = Loop.Count, t = Now };
+            // 置くところを見ていた子（まわり 8m・同じ階・起きている）
+            foreach (var c in characters)
+                if (c != null && !c.IsTarget && c.Present && c.state != SimCharacter.State.Sleeping)
+                {
+                    Vector3 v = c.transform.position - pos;
+                    if (Mathf.Abs(v.y) < 2f && v.x * v.x + v.z * v.z < 8f * 8f) p.witnesses.Add(c.letter);
+                }
             PlaceBook.Placed.Add(p);
             SpawnPlaced(p);
             Log("「" + name + "」を" + (area != null ? area.name : "外") + "に置いた");

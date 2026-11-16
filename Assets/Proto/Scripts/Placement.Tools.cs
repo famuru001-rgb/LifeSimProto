@@ -78,6 +78,7 @@ namespace LifeSimProto
             toolTimer -= Time.unscaledDeltaTime;
             if (toolTimer > 0f) return;
             toolTimer = 0.5f;
+            TrackFVisits();
             double now = Now;
             if (toolLastNow < 0 || now < toolLastNow) { toolLastNow = now; return; }
             float dtMin = Mathf.Min(60f, (float)(now - toolLastNow));   // 時間を飛ばしても1回に1時間分まで
@@ -131,8 +132,7 @@ namespace LifeSimProto
                     Unplace(p, false);
                     ToolFoundCount++;
                     Log("⚠ " + finder.displayName + "が「" + p.name + "」を見つけて持っていった（" + (p.area ?? "外") + "）");
-                    // 見つけた子が篤をあやしむ（famuru 決定 11/16：信頼を作ってから）：ヒロインなら信頼−10・警戒＋10
-                    if (!finder.IsMob) { bond.AddTrust(finder.id, -10f); bond.AddWary(finder.id, 10f); Log(finder.displayName + "は篤をあやしんでいる（信頼が下がった）"); }
+                    Suspect(finder, p);
                 }
             }
             if (PlaceBook.PotionUntil > 0 && (now >= PlaceBook.PotionUntil || now < PlaceBook.PotionUntil - PlaceBook.PotionHoursMax * 60.0))
@@ -140,6 +140,75 @@ namespace LifeSimProto
                 PlaceBook.PotionUntil = -1;
                 Log("透視薬の効きめが切れた");
             }
+        }
+
+        // ---- 見つけた子が篤をあやしむ（2026-11-16 famuru：置いてすぐ・篤の出入りを見ていた・置くところを見られた・その子の部屋だと重い） ----
+        public static float SuspectFreshHours = 6f;     // 置いてからこの時間までは「置いてすぐ」
+        public static float SuspectVisitHours = 2f;     // 置いた時刻の前後この時間に、篤がそこにいるのを見ていたら
+
+        class Visit { public string area; public double t0, t1; public readonly HashSet<string> seen = new HashSet<string>(); }
+        readonly List<Visit> fVisits = new List<Visit>();
+        Visit fVisitNow;
+
+        /// <summary>篤がどこにいて、だれに見られていたかを覚える（UpdateTools から 0.5 秒ごと）。2日より前は捨てる。</summary>
+        void TrackFVisits()
+        {
+            var f = RomanceTarget;
+            if (f == null) return;
+            var a = AreaAt(f.transform.position + Vector3.up * 0.3f);
+            string an = a != null ? a.name : null;
+            double now = Now;
+            if (fVisitNow == null || fVisitNow.area != an || now < fVisitNow.t0)
+            {
+                if (fVisitNow != null) fVisitNow.t1 = now;
+                fVisitNow = an != null ? new Visit { area = an, t0 = now, t1 = now } : null;
+                if (fVisitNow != null) fVisits.Add(fVisitNow);
+                fVisits.RemoveAll(v => now - v.t1 > 2880.0 || v.t0 > now);
+            }
+            if (fVisitNow == null) return;
+            fVisitNow.t1 = now;
+            Vector3 fp = f.transform.position;
+            foreach (var c in characters)
+            {
+                if (c == null || c == f || !c.Present || c.state == SimCharacter.State.Sleeping) continue;
+                Vector3 v = c.transform.position - fp;
+                if (Mathf.Abs(v.y) > 2f || v.x * v.x + v.z * v.z > 12f * 12f) continue;
+                if (FogSightOK(c.transform.position, fp)) fVisitNow.seen.Add(c.letter);
+            }
+        }
+
+        /// <summary>c から篤が見えるか（見通しの当たりがあれば線で調べる。無ければ近ければ見える）。</summary>
+        bool FogSightOK(Vector3 from, Vector3 to)
+        {
+            if (!fogSightBuilt) return true;
+            Vector3 a = from + Vector3.up * FogEyeH, b = to + Vector3.up * 1.2f;
+            return !Physics.Linecast(a, b, 1 << SightLayer, QueryTriggerInteraction.Ignore);
+        }
+
+        /// <summary>道具が見つかったとき：見つけた子が篤をあやしむか決めて、信頼・警戒を動かす。</summary>
+        void Suspect(SimCharacter finder, PlaceBook.PlacedItem p)
+        {
+            if (finder == null || finder.IsMob || finder.IsTarget) return;
+            double hours = (Now - p.t) / 60.0;
+            float chance = 0f; string why = null;
+            if (p.witnesses != null && p.witnesses.Contains(finder.letter)) { chance = 1f; why = "置くところを見ていた"; }
+            else
+            {
+                foreach (var v in fVisits)
+                    if (v.area == p.area && v.seen.Contains(finder.letter) && v.t1 >= p.t - SuspectVisitHours * 60.0 && v.t0 <= p.t + SuspectVisitHours * 60.0)
+                    { chance = 0.85f; why = "篤がそこに出入りするのを見ていた"; break; }
+                if (chance < 0.6f && hours < SuspectFreshHours)
+                {
+                    float c2 = 0.6f * (1f - (float)hours / SuspectFreshHours);
+                    if (c2 > chance) { chance = c2; why = "置いてすぐに見つかった"; }
+                }
+            }
+            if (chance <= 0f || Random.value >= chance) { Log(finder.displayName + "は、だれが置いたのか分からないようだ"); return; }
+            bool own = finder.room != null && finder.room.AreaName == p.area;
+            float k = own ? 2f : 1f;   // 自分の部屋で見つけたら重い
+            bond.AddTrust(finder.id, -10f * k);
+            bond.AddWary(finder.id, 10f * k);
+            Log(finder.displayName + "は篤をあやしんでいる（" + why + (own ? "・自分の部屋だった" : "") + "。信頼−" + (10f * k) + "・警戒＋" + (10f * k) + "）");
         }
 
         /// <summary>場所の見つかりやすさ（設置_場所.csv。表に無い所は、外 0.5・建物の中 1.0）。</summary>

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using UnityEditor;
@@ -278,6 +278,7 @@ namespace LifeSimProto.EditorTools
                         // trust 記号（数字・段・悩み）／trust set 記号 信頼|警戒|関心|段 値／worry give 記号 [悩み]／worry ask 記号／worry act 記号（悩みのためにする。そばでなくても）／worry list／worry reload
                         var bb = w.bond;
                         string m = a.Length > 1 ? a[1] : "list";
+                        if (a[0] == "trust" && m == "groups") { GroupBook.Reload(); var sbg = new StringBuilder("trust groups: " + GroupBook.All.Count + "人・直す所 " + string.Join("／", GroupBook.Errors) + "・"); foreach (var c in w.characters) if (c != null && !c.IsTarget && !c.IsMob && GroupBook.MemberOf(c.letter) != null) { SimCharacter bl; if (bb.Locked(w, c.id, out bl)) sbg.Append(c.letter + "閉 "); else sbg.Append(c.letter + "開 "); } log.AppendLine(sbg.ToString()); break; }
                         if (a[0] == "worry" && m == "reload") { WorryBook.Reload(); log.AppendLine("worry reload: 悩み " + WorryBook.All.Count + "・直す所 " + string.Join("／", WorryBook.Errors)); break; }
                         if (a[0] == "worry" && m == "list")
                         {
@@ -298,7 +299,7 @@ namespace LifeSimProto.EditorTools
                         else if (a[0] == "worry" && m == "give") log.AppendLine("worry give: " + bb.TryGiveWorry(w, g, a.Length > 3 ? a[3] : null));
                         else if (a[0] == "worry" && m == "ask") bb.Ask(w, g);
                         else if (a[0] == "worry" && m == "act") { var wd = bb.WorryOf(gi); string why = bb.CanAct(w, g, w.RomanceTarget); bb.ForceAct(w, g); log.AppendLine("worry act: " + (wd != null ? wd.action : "悩みが無い") + "（ふつうなら：" + (why ?? "できる") + "）"); }
-                        log.AppendLine(a[0] + ": " + g.displayName + " 段" + bb.stage[gi] + "（" + BondBook.StageNames[Mathf.Clamp(bb.stage[gi], 0, 3)] + "）信頼 " + bb.trust[gi].ToString("0") + "・警戒 " + bb.wary[gi].ToString("0") + "・関心 " + bb.interest[gi].ToString("0") + "・気持ち " + g.LoveStage + "・悩み " + (bb.worry[gi] ?? "なし") + (bb.worryKnown[gi] ? "（知っている " + bb.worryProg[gi] + "）" : "") + (bb.promise[gi] ? "・約束あり" : ""));
+                        log.AppendLine(a[0] + ": " + g.displayName + " 段" + bb.stage[gi] + "（" + BondBook.StageNames[Mathf.Clamp(bb.stage[gi], 0, 3)] + "）信頼 " + bb.trust[gi].ToString("0") + "・警戒 " + bb.wary[gi].ToString("0") + "・関心 " + bb.interest[gi].ToString("0") + "・気持ち " + g.LoveStage + "・悩み " + (bb.worry[gi] ?? "なし") + (bb.worryKnown[gi] ? "（知っている " + bb.worryProg[gi] + "）" : "") + (bb.promise[gi] ? "・約束あり" : "") + "・" + bb.GroupText(w, g));
                         break;
                     }
                     case "place":
@@ -315,6 +316,17 @@ namespace LifeSimProto.EditorTools
                         if (m == "end") { if (SimHud.Instance != null) SimHud.Instance.DebugEndPlace(); log.AppendLine("place end"); break; }
                         if (m == "tick" && a.Length > 2) { w.DebugToolTick(float.Parse(a[2], ci2)); log.AppendLine("place tick: " + a[2] + "分・見つかった " + w.ToolFoundCount + "・時間切れ " + w.ToolExpiredCount + "・置いた物 " + PlaceBook.Placed.Count); break; }
                         if (m == "use" && a.Length > 2) { var ud = PlaceBook.Get(a[2]); if (ud != null && PlaceBook.Count(ud.name) <= 0) PlaceBook.Give(ud.name); w.UseCarry(ud); log.AppendLine("place use: " + a[2] + "・ランタン " + (PlaceBook.LanternOn ?? "なし") + "・透視薬 " + (PlaceBook.PotionUntil > w.Now ? "効いている" : "なし")); break; }
+                        if (m == "near" && a.Length > 3)
+                        {
+                            // 試験用：place near 記号 名前（その子の足もとに置く。あやしむ条件の確かめ）
+                            SimCharacter nc = null; foreach (var c in w.characters) if (c != null && c.letter == a[2].ToUpperInvariant()) nc = c;
+                            var nd = PlaceBook.Get(a[3]);
+                            if (nc == null || nd == null) { log.AppendLine("place near: 子か品物が無い"); break; }
+                            if (PlaceBook.Count(nd.name) <= 0) PlaceBook.Give(nd.name);
+                            var np = nc.transform.position + nc.transform.forward * 0.6f;
+                            log.AppendLine("place near: " + nc.displayName + "（" + w.AreaName(np) + "）← " + nd.name + " → " + (w.Place(nd.name, np, 0) ?? "置いた"));
+                            break;
+                        }
                         if (m == "at" && a.Length > 4)
                         {
                             // 試験用：place at 名前 x z [y]（世界の位置に置く。道具を外や学園に）
