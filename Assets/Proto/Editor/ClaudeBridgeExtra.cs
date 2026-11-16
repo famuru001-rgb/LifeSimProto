@@ -78,6 +78,7 @@ namespace LifeSimProto.EditorTools
                 case "navpng":
                 case "goto":
                 case "wall":
+                case "armdown":
                 case "fog":
                 case "place":
                 case "trust":
@@ -373,6 +374,36 @@ namespace LifeSimProto.EditorTools
                         foreach (var p in PlaceBook.Placed) sb2.Append(p.name + "@" + p.area + "(" + p.x.ToString("0.0") + "," + p.z.ToString("0.0") + "," + p.yaw + ") ");
                         if (PlaceBook.Errors.Count > 0) sb2.Append("・直す所 " + string.Join("／", PlaceBook.Errors));
                         log.AppendLine(sb2.ToString());
+                        break;
+                    }
+                    case "armdown":
+                    {
+                        // 2026-11-17 本体 AA02：腕を下ろす補正（Corrective_Arm_Down）。armdown list／on／off／skip 名前／unskip／shots 記号
+                        string m = a.Length > 1 ? a[1] : "list";
+                        if (m == "on") ProtoBody.HeroArmDown = true;
+                        else if (m == "off") ProtoBody.HeroArmDown = false;
+                        else if (m == "skip" && a.Length > 2) { string sk = a[2]; int ci = sk.IndexOf(':'); if (ci > 0) sk = sk.Substring(0, ci).ToUpperInvariant() + sk.Substring(ci); ProtoBody.ArmDownSkip.Add(sk); }
+                        else if (m == "unskip") ProtoBody.ArmDownSkip.Clear();
+                        else if (m == "shots" && a.Length > 2)
+                        {
+                            if (ArmDownShots.Busy) { log.AppendLine("armdown shots: まだ撮っている"); break; }
+                            ArmDownShots.Letter = a[2].ToUpperInvariant();
+                            new GameObject("ArmDownShots").AddComponent<ArmDownShots>();
+                            log.AppendLine("armdown shots: started " + ArmDownShots.Letter);
+                            break;
+                        }
+                        var sba = new StringBuilder("armdown: ヒロイン " + (ProtoBody.HeroArmDown ? "動かす" : "動かさない") + "・除く " + string.Join("／", new List<string>(ProtoBody.ArmDownSkip).ToArray()) + "・");
+                        foreach (var c in w.characters)
+                        {
+                            if (c == null) continue;
+                            var pb = c.GetComponent<ProtoBody>();
+                            if (pb == null) continue;
+                            string t = pb.ArmDownText();
+                            if (t == "なし") continue;
+                            if (c.IsMob && m != "all") continue;
+                            sba.Append(c.letter + "[" + t + "] ");
+                        }
+                        log.AppendLine(sba.ToString());
                         break;
                     }
                     case "fog":

@@ -18,6 +18,11 @@ namespace LifeSimProto
     {
         public static bool MobNewModel = true;
         public const float MobHeadTopCm = 162.9f;   // モブ_v2 の頭のてっぺん（髪なし、T ポーズ）
+        public static bool HeroArmDown = true;      // false：ヒロイン（モブ以外）の腕を下ろす補正を 0 のままにする（前と同じ。確かめ用。2026-11-17 AA02）
+        /// <summary>腕を下ろす補正を動かさないメッシュ（「メッシュ名」か「記号:メッシュ名」）。見た目が悪くなる服があれば足す（2026-11-17 AA02）。</summary>
+        // L（オルテンシア）の上着は、補正を入れると歩くときにわきの下でシャツが上着を突き抜けて白く見えたので除く（2026-11-17 AA02 の写真で確かめた）
+        public static readonly HashSet<string> ArmDownSkip = new HashSet<string> { "L:Outfit_Uniform_Jacket" };
+        bool mobModel;   // ApplyMobLook を通った体（新しい3Dのモブ）
         public static float ArmDownFull = 65f;      // この角度まで腕を下ろすと補正が全部（T ポーズから）
 
         static GameObject mobPrefab;
@@ -78,6 +83,7 @@ namespace LifeSimProto
         /// <summary>Setup のあとに呼ぶ：体・髪・制服を、その子の胸と髪だけにする。</summary>
         void ApplyMobLook(CharProfile p)
         {
+            mobModel = true;
             int bust = MobBustOf(p.letter);
             string hair = MobHairOf(p);
             MobBust = bust; MobHair = hair;
@@ -103,7 +109,7 @@ namespace LifeSimProto
                 if (r.sharedMesh != null)
                 {
                     int k = r.sharedMesh.GetBlendShapeIndex("Corrective_Arm_Down");
-                    if (k >= 0) armDownKeys.Add(new KeyValuePair<SkinnedMeshRenderer, int>(r, k));
+                    if (k >= 0 && !armDownKeys.Exists(x => x.Key == r)) armDownKeys.Add(new KeyValuePair<SkinnedMeshRenderer, int>(r, k));   // SetupFace で集めた物は二重にしない（2026-11-17 AA02）
                 }
             }
             curOutfit = null;   // 次に ShowOutfit したとき、残した物だけで出し直す
@@ -130,7 +136,39 @@ namespace LifeSimProto
             if (armDownKeys.Count == 0) return;
             float a = ArmDownDeg("Left"), b = ArmDownDeg("Right");
             float w = Mathf.Clamp01((a + b) * 0.5f / ArmDownFull) * 100f;
+            string skipL = null;
+            foreach (var kv in armDownKeys)
+            {
+                if (kv.Key == null || !kv.Key.gameObject.activeInHierarchy) continue;
+                float ww = w;
+                if (!mobModel)
+                {
+                    if (!HeroArmDown) ww = 0f;
+                    else if (ArmDownSkip.Count > 0)
+                    {
+                        if (skipL == null) skipL = (testMode ? testLetter : (sim != null ? sim.Letter : "")) ?? "";
+                        string mn = kv.Key.gameObject.name;
+                        if (ArmDownSkip.Contains(mn) || ArmDownSkip.Contains(skipL + ":" + mn)) ww = 0f;
+                    }
+                }
+                kv.Key.SetBlendShapeWeight(kv.Value, ww);
+            }
+        }
+
+        /// <summary>確認用（2026-11-17 AA02）：今の腕の下がり方で補正をすぐ付ける（on）か 0 にする（off）。写真を同じ瞬間で比べるため。</summary>
+        public void ArmDownForce(bool on)
+        {
+            float w = on ? Mathf.Clamp01((ArmDownDeg("Left") + ArmDownDeg("Right")) * 0.5f / ArmDownFull) * 100f : 0f;
             foreach (var kv in armDownKeys) if (kv.Key != null && kv.Key.gameObject.activeInHierarchy) kv.Key.SetBlendShapeWeight(kv.Value, w);
+        }
+
+        /// <summary>腕を下ろす補正のキーを持つメッシュと今の強さ（確認用。2026-11-17 AA02）。</summary>
+        public string ArmDownText()
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var kv in armDownKeys)
+                if (kv.Key != null) sb.Append(kv.Key.gameObject.name + "=" + kv.Key.GetBlendShapeWeight(kv.Value).ToString("0") + (kv.Key.gameObject.activeInHierarchy ? "" : "(しまっている)") + " ");
+            return sb.Length == 0 ? "なし" : sb.ToString();
         }
 
         float ArmDownDeg(string side)

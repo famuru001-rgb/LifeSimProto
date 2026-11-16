@@ -854,7 +854,7 @@ namespace LifeSimProto
             string face = testMode ? testFace : sim.FaceNow;
             UpdateFace(dt, eyesClosed, speaking, face);
             UpdateCorrectives(dt, pose);
-            UpdateArmDown();   // モブの上着：腕を下ろす補正（ProtoBody.Mob.cs）
+            UpdateArmDown();   // 上着などの「腕を下ろす」補正（モブとヒロイン。ProtoBody.Mob.cs。ヒロインは 2026-11-17 AA02 から）
             if (clip != null && pose == BodyPose.Stand && !hOn) StraightenFeet();
             if (FastWatch) FastWatchStep(dt);
             if (TraceWho == sim && sim != null && Time.time < TraceUntil && hips != null && TraceLog.Length < 2000000)
@@ -1013,6 +1013,8 @@ namespace LifeSimProto
 
         /// <summary>その服（Outfit_（名前）_…）があるか。</summary>
         public bool HasOutfit(string name) { return outfits.ContainsKey(name); }
+        /// <summary>服の名前の一覧（Outfit_（名前）_…）。確認用（2026-11-17 AA02）。</summary>
+        public List<string> OutfitNames() { return new List<string>(outfits.Keys); }
 
         void ShowOutfit(string name)
         {
@@ -1076,6 +1078,16 @@ namespace LifeSimProto
                 if (idx >= 0) skirtSitKeys.Add(new KeyValuePair<SkinnedMeshRenderer, int>(smr, idx));
                 int fdx = mesh.GetBlendShapeIndex("Corrective_Skirt_SitFloor");   // 床に座るとき（2026-11-13 共通制服）
                 if (fdx >= 0) skirtFloorKeys.Add(new KeyValuePair<SkinnedMeshRenderer, int>(smr, fdx));
+            }
+            // 腕を下ろす補正（Corrective_Arm_Down）：ヒロインの服でも動かす（2026-11-17 本体 AA02。famuru 決定 11/16 22:55）。
+            // 動かし方はモブと同じ UpdateArmDown（ProtoBody.Mob.cs）。モブは ApplyMobLook でも集めるが、同じメッシュは二重に入れない
+            armDownKeys.Clear();
+            foreach (var smr in model.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                var mesh = smr.sharedMesh;
+                if (mesh == null) continue;
+                int adx = mesh.GetBlendShapeIndex("Corrective_Arm_Down");
+                if (adx >= 0) armDownKeys.Add(new KeyValuePair<SkinnedMeshRenderer, int>(smr, adx));
             }
         }
 

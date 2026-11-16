@@ -29,6 +29,16 @@ namespace LifeSimProto.EditorTools
             try
             {
                 if (!EditorApplication.isPlaying) throw new Exception("not playing");
+                if (a.Length > 0 && a[0] == "outfit")   // 2026-11-16：服ごとの全身（outfit （記号） （保存先））
+                {
+                    string[] r = a.Length > 1 ? a[1].Split(new[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries) : new string[0];
+                    LifeSimProto.OutfitShots.Letter = r.Length > 0 ? r[0].ToUpperInvariant() : "H";
+                    LifeSimProto.OutfitShots.SubDir = r.Length > 1 ? r[1] : "服_" + LifeSimProto.OutfitShots.Letter;
+                    new GameObject("OutfitShots").AddComponent<LifeSimProto.OutfitShots>();
+                    result.AppendLine("outfit: started " + LifeSimProto.OutfitShots.Letter + " " + LifeSimProto.OutfitShots.SubDir);
+                    File.WriteAllText(Path.Combine(Logs, "posedump_result.txt"), result.ToString(), new UTF8Encoding(false));
+                    return;
+                }
                 LifeSimProto.PoseDumpShots.Letter = a.Length > 0 ? a[0].ToUpperInvariant() : "H";
                 LifeSimProto.PoseDumpShots.SubDir = a.Length > 1 ? a[1] : "姿勢_" + LifeSimProto.PoseDumpShots.Letter;
                 new GameObject("PoseDumpShots").AddComponent<LifeSimProto.PoseDumpShots>();

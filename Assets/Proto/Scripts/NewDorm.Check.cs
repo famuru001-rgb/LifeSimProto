@@ -43,6 +43,51 @@ namespace LifeSimProto
             return false;
         }
 
+        /// <summary>部屋ごとの家具の数と、床のうち家具で埋まっている割合（2026-11-16 家具のチャット。試験命令 densitycheck。足りない部屋を探す）。</summary>
+        public List<string> CheckDensity()
+        {
+            var res = new List<string>();
+            if (root == null) { res.Add("densitycheck: root なし"); return res; }
+            var fl = new List<KeyValuePair<string, Bounds>>();
+            foreach (Transform t in root)
+            {
+                if (!t.name.StartsWith("Furn_") || t.name.Contains("DoorFrame")) continue;
+                var rs = t.GetComponentsInChildren<Renderer>(true);
+                if (rs.Length == 0) continue;
+                Bounds b = rs[0].bounds;
+                for (int i = 1; i < rs.Length; i++) b.Encapsulate(rs[i].bounds);
+                fl.Add(new KeyValuePair<string, Bounds>(t.name, b));
+            }
+            var rows = new List<KeyValuePair<float, string>>();
+            foreach (var a in areaList)
+            {
+                float area = a.rect.width * a.rect.height;
+                if (area < 8f) continue;
+                float y0 = FloorY(a.floor), y1 = y0 + FloorH;
+                int cnt = 0; float foot = 0f;
+                for (int mir = 0; mir < 2; mir++)
+                {
+                    int c2 = 0; float f2 = 0f;
+                    foreach (var kv in fl)
+                    {
+                        var b = kv.Value; var c = root.InverseTransformPoint(b.center);
+                        float cx = mir == 0 ? c.x : -c.x;   // 寮は x が左右反転（作ったあとに鏡うつし）
+                        if (c.y < y0 - 0.3f || c.y > y1) continue;
+                        if (cx < a.rect.xMin || cx > a.rect.xMax || c.z < a.rect.yMin || c.z > a.rect.yMax) continue;
+                        c2++; f2 += b.size.x * b.size.z;
+                    }
+                    if (c2 > cnt) { cnt = c2; foot = f2; }
+                }
+                float ratio = foot / area;
+                rows.Add(new KeyValuePair<float, string>(ratio, a.name + "｜" + (a.floor + 1) + "階｜" + area.ToString("F0") + "㎡｜家具" + cnt + "｜埋まり" + (ratio * 100f).ToString("F0") + "%"));
+            }
+            rows.Sort((x, y) => x.Key.CompareTo(y.Key));
+            res.Add("densitycheck: 部屋 " + rows.Count);
+            foreach (var r in rows) res.Add(r.Value);
+            try { File.WriteAllLines(Path.Combine(Application.dataPath, "../Logs/density_report.txt"), res.ToArray(), new UTF8Encoding(true)); } catch { }
+            return res;
+        }
+
         public List<string> CheckOverlaps()
         {
             var res = new List<string>();

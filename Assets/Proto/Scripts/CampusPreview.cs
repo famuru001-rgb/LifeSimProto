@@ -2847,6 +2847,12 @@ namespace LifeSimProto
                     foreach (var ln in LoungeWorld.Instance.CheckOverlaps()) result.Add(ln);
                     continue;
                 }
+                if (a.Length >= 1 && a[0] == "densitycheck" && LoungeWorld.Instance != null)
+                {
+                    // 試験用（2026-11-16 家具のチャット）：部屋ごとの家具の数・埋まり具合
+                    foreach (var ln in LoungeWorld.Instance.CheckDensity()) result.Add(ln);
+                    continue;
+                }
                 if (a.Length >= 1 && a[0] == "bathcheck" && LoungeWorld.Instance != null)
                 {
                     // 試験用（2026-11-15 家具のチャット）：湯船・露天風呂の席と、お風呂・洗い場を使っている人
