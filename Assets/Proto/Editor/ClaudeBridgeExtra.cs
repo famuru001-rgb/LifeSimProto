@@ -78,6 +78,8 @@ namespace LifeSimProto.EditorTools
                 case "navpng":
                 case "goto":
                 case "wall":
+                case "knee":
+                case "kneeshots":
                 case "armdown":
                 case "fog":
                 case "place":
@@ -374,6 +376,42 @@ namespace LifeSimProto.EditorTools
                         foreach (var p in PlaceBook.Placed) sb2.Append(p.name + "@" + p.area + "(" + p.x.ToString("0.0") + "," + p.z.ToString("0.0") + "," + p.yaw + ") ");
                         if (PlaceBook.Errors.Count > 0) sb2.Append("・直す所 " + string.Join("／", PlaceBook.Errors));
                         log.AppendLine(sb2.ToString());
+                        break;
+                    }
+                    case "knee":
+                    {
+                        // 2026-11-22 本体 S08：ひざの形のキー（ProtoBody.Knee.cs）。knee on／off／list／test 記号 ファイル（表を置かずに試す。次に作る体から）／untest
+                        string m = a.Length > 1 ? a[1] : "list";
+                        if (m == "on") ProtoBody.KneeOn = true;
+                        else if (m == "off") ProtoBody.KneeOn = false;
+                        else if (m == "test" && a.Length > 3)
+                        {
+                            string path = string.Join(" ", a, 3, a.Length - 3);
+                            if (!File.Exists(path)) { log.AppendLine("knee test: ファイルが無い " + path); break; }
+                            ProtoBody.KneeJsonOverride[a[2].ToUpperInvariant()] = File.ReadAllText(path, Encoding.UTF8);
+                            log.AppendLine("knee test: " + a[2].ToUpperInvariant() + " に " + Path.GetFileName(path) + " を使う（次に作る体から）");
+                            break;
+                        }
+                        else if (m == "untest") { ProtoBody.KneeJsonOverride.Clear(); }
+                        var sbk = new StringBuilder("knee: " + (ProtoBody.KneeOn ? "動かす" : "止めている") + "・");
+                        foreach (var c in w.characters)
+                        {
+                            if (c == null) continue;
+                            var pb = c.GetComponent<ProtoBody>();
+                            if (pb == null || pb.KneeKeyCount == 0) continue;
+                            sbk.Append(c.letter + "[" + pb.KneeText() + "] ");
+                        }
+                        log.AppendLine(sbk.ToString());
+                        break;
+                    }
+                    case "kneeshots":
+                    {
+                        // 2026-11-22 本体 S08：kneeshots 記号[,記号…] [Tag]（KneeShots.cs。仮モデル\Unity確認\ひざ_（Tag）\）
+                        if (KneeShots.Busy) { log.AppendLine("kneeshots: まだ撮っている"); break; }
+                        KneeShots.Letters = a.Length > 1 ? a[1].ToUpperInvariant() : "I,Q,R";
+                        KneeShots.Tag = a.Length > 2 ? a[2] : "S08";
+                        new GameObject("KneeShots").AddComponent<KneeShots>();
+                        log.AppendLine("kneeshots: started " + KneeShots.Letters + " " + KneeShots.Tag);
                         break;
                     }
                     case "armdown":

@@ -2847,6 +2847,25 @@ namespace LifeSimProto
                     foreach (var ln in LoungeWorld.Instance.CheckOverlaps()) result.Add(ln);
                     continue;
                 }
+                if (a.Length >= 2 && a[0] == "furnline")
+                {
+                    // 試験用（2026-11-17 家具のチャット）：Resources/Furniture/<フォルダ> の形を 空の上（x 40・高さ 25）に板を浮かせて並べる（取り込んだ家具の見た目の確かめ）。furnline clear で消す
+                    var old = GameObject.Find("FurnLine"); if (old != null) Destroy(old);
+                    if (a[1] == "clear") { result.Add("furnline: clear"); continue; }
+                    var all = Resources.LoadAll<GameObject>("Furniture/" + a[1]);
+                    var rootL = new GameObject("FurnLine");
+                    var gnd = GameObject.CreatePrimitive(PrimitiveType.Plane); gnd.transform.SetParent(rootL.transform, false);
+                    gnd.transform.position = new Vector3(52f, 24.99f, 40f); gnd.transform.localScale = new Vector3(4f, 1f, 4f);
+                    int i = 0;
+                    foreach (var pf in all)
+                    {
+                        var g = Instantiate(pf, rootL.transform);
+                        g.transform.position = new Vector3(40f + (i % 7) * 4f, 25f, 30f + (i / 7) * 4f);
+                        i++;
+                    }
+                    result.Add("furnline: " + a[1] + " " + i + "点");
+                    continue;
+                }
                 if (a.Length >= 1 && a[0] == "densitycheck" && LoungeWorld.Instance != null)
                 {
                     // 試験用（2026-11-16 家具のチャット）：部屋ごとの家具の数・埋まり具合

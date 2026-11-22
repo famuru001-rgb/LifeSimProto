@@ -298,6 +298,7 @@ namespace LifeSimProto
                 return null;
             }
             if (mobProf != null) pb.ApplyMobLook(mobProf);
+            else if (isReal) pb.SetupKnee(letter);   // ひざの角度表 Char（記号）_knee があれば読む（2026-11-22 S08）
             return pb;
         }
 
@@ -856,6 +857,7 @@ namespace LifeSimProto
             UpdateCorrectives(dt, pose);
             UpdateArmDown();   // 上着などの「腕を下ろす」補正（モブとヒロイン。ProtoBody.Mob.cs。ヒロインは 2026-11-17 AA02 から）
             if (clip != null && pose == BodyPose.Stand && !hOn) StraightenFeet();
+            UpdateKnee();   // ひざの形のキー（角度表。ProtoBody.Knee.cs。2026-11-22 S08）：動きと足の合わせのあと、揺れの前
             if (FastWatch) FastWatchStep(dt);
             if (TraceWho == sim && sim != null && Time.time < TraceUntil && hips != null && TraceLog.Length < 2000000)
             {
