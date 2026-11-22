@@ -393,7 +393,14 @@ namespace LifeSimProto.EditorTools
                             break;
                         }
                         else if (m == "untest") { ProtoBody.KneeJsonOverride.Clear(); }
-                        var sbk = new StringBuilder("knee: " + (ProtoBody.KneeOn ? "動かす" : "止めている") + "・");
+                        else if (m == "guard" && a.Length > 2) ProtoBody.KneeTwistGuard = a[2] != "off";   // S08 追記1：ねじれで弱める on／off
+                        else if (m == "twist" && a.Length > 5)
+                        {
+                            var ci = System.Globalization.CultureInfo.InvariantCulture;
+                            ProtoBody.KneeTwistFull = float.Parse(a[2], ci); ProtoBody.KneeTwistZero = float.Parse(a[3], ci);
+                            ProtoBody.KneeAxisFull = float.Parse(a[4], ci); ProtoBody.KneeAxisZero = float.Parse(a[5], ci);
+                        }
+                        var sbk = new StringBuilder("knee: " + (ProtoBody.KneeOn ? "動かす" : "止めている") + "・ねじれで弱める " + (ProtoBody.KneeTwistGuard ? "on" : "off") + "（ねじれ " + ProtoBody.KneeTwistFull + "→" + ProtoBody.KneeTwistZero + "°・軸 " + ProtoBody.KneeAxisFull + "→" + ProtoBody.KneeAxisZero + "°）・");
                         foreach (var c in w.characters)
                         {
                             if (c == null) continue;

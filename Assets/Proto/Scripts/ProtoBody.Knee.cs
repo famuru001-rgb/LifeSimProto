@@ -14,6 +14,9 @@ namespace LifeSimProto
     ///   キーごとに knots を直線でつないだ強さ → weightMin〜weightMax → ×100 を入れる。表のキーは 0 も含めて全部、足し算で重ねる
     /// ・前のコマと同じ値なら入れない（軽くするため）。骨の長さが 0 の側は全部 0
     /// ・確かめ：命令 knee on／off（止めると全部 0）・knee list・kneeshots（KneeShots.cs）
+    /// ・安全策（2026-11-23 S08 追記1。famuru 決定 11-22 案A）：すねの骨がひざでねじれている・曲がる軸がずれているとき（床座りの動き）は、
+    ///   ひざのキーを弱める。休みの姿勢からの「太ももの骨の中で見たすねの骨の回り」を、すねの向きのまわりの「ねじれ」と「振り」に分け、
+    ///   係数 ＝（ねじれ KneeTwistFull° まで 1 → KneeTwistZero° で 0）×（軸のずれ KneeAxisFull° まで 1 → KneeAxisZero° で 0。曲がり 20° 未満は見ない）
     /// </summary>
     public partial class ProtoBody
     {
@@ -21,6 +24,9 @@ namespace LifeSimProto
         public static bool KneeOn = true;
         /// <summary>確かめ用：記号 → 角度表の文字（ファイルを置かずに試す。knee test 記号 ファイル）</summary>
         public static readonly Dictionary<string, string> KneeJsonOverride = new Dictionary<string, string>();
+        /// <summary>ねじれ・軸のずれで弱める（S08 追記1）。数字は目安（度）</summary>
+        public static bool KneeTwistGuard = true;
+        public static float KneeTwistFull = 20f, KneeTwistZero = 40f, KneeAxisFull = 20f, KneeAxisZero = 40f, KneeAxisMinBend = 20f;   // 依頼の目安は 10→25・15→30。ゲームの立つ・歩く・椅子でねじれ 18°・軸のずれ 15° まで出たので広げた（正座はねじれ約 90°）
 
         class KneeKey
         {
@@ -49,6 +55,10 @@ namespace LifeSimProto
         List<KneeKey> kneeKeys;
         Transform[] kneeBonesL, kneeBonesR;
         bool kneeWasOn = true;
+        Quaternion kneeRestL = Quaternion.identity, kneeRestR = Quaternion.identity;   // 休みの姿勢の「太ももの中のすねの向き」
+        Vector3 kneeShinAxisL = Vector3.down, kneeShinAxisR = Vector3.down;              // 休みの姿勢のすねの骨の向き（太ももの骨の座標）
+        public float KneeTwistL, KneeTwistR, KneeAxisDevL, KneeAxisDevR, KneeFacL = 1f, KneeFacR = 1f;
+        public Vector3 KneeSwingAxisL, KneeSwingAxisR;
         public float KneeAngleL { get; private set; }
         public float KneeAngleR { get; private set; }
         public int KneeKeyCount { get { return kneeKeys == null ? 0 : kneeKeys.Count; } }
@@ -75,6 +85,8 @@ namespace LifeSimProto
             if (keys == null) { KneeInfo = "角度表に keys が無い"; return; }
             kneeBonesL = KneeBones(o, "leftBones", "Left");
             kneeBonesR = KneeBones(o, "rightBones", "Right");
+            KneeRest(kneeBonesL, out kneeRestL, out kneeShinAxisL);
+            KneeRest(kneeBonesR, out kneeRestR, out kneeShinAxisR);
             var smrs = model.GetComponentsInChildren<SkinnedMeshRenderer>(true);
             var list = new List<KneeKey>();
             int missing = 0;
@@ -139,6 +151,40 @@ namespace LifeSimProto
             return t;
         }
 
+        static void KneeRest(Transform[] b, out Quaternion rest, out Vector3 shinAxis)
+        {
+            rest = Quaternion.identity; shinAxis = Vector3.down;
+            if (b == null || b[0] == null || b[1] == null || b[2] == null) return;
+            rest = Quaternion.Inverse(b[0].rotation) * b[1].rotation;
+            Vector3 d = Quaternion.Inverse(b[0].rotation) * (b[2].position - b[1].position);
+            if (d.sqrMagnitude > 1e-10f) shinAxis = d.normalized;
+        }
+
+        /// <summary>すねの骨の回り（休みの姿勢から、太ももの骨の中で）を、ねじれ（すねの向きのまわり）と振りに分ける。</summary>
+        static void KneeTwist(Transform[] b, Quaternion rest, Vector3 ax, out float twist, out float axisDev, out Vector3 swingAxis)
+        {
+            twist = 0f; axisDev = 0f; swingAxis = Vector3.zero;
+            if (b == null || b[0] == null || b[1] == null) return;
+            Quaternion d = Quaternion.Inverse(b[0].rotation) * b[1].rotation * Quaternion.Inverse(rest);
+            Vector3 v = new Vector3(d.x, d.y, d.z);
+            Vector3 p = Vector3.Dot(v, ax) * ax;
+            var tw = new Quaternion(p.x, p.y, p.z, d.w);
+            float n = Mathf.Sqrt(tw.x * tw.x + tw.y * tw.y + tw.z * tw.z + tw.w * tw.w);
+            if (n < 1e-6f) { twist = 180f; tw = Quaternion.identity; }
+            else
+            {
+                tw = new Quaternion(tw.x / n, tw.y / n, tw.z / n, tw.w / n);
+                twist = 2f * Mathf.Acos(Mathf.Clamp01(Mathf.Abs(tw.w))) * Mathf.Rad2Deg;
+            }
+            Quaternion sw = d * Quaternion.Inverse(tw);
+            float a; sw.ToAngleAxis(out a, out swingAxis);
+            if (float.IsNaN(swingAxis.x) || float.IsInfinity(swingAxis.x)) swingAxis = Vector3.right;
+            // ひざの横の軸（休みの姿勢の太ももの骨の座標でほぼ (1,0,0)）とのなす角。左右で向きが逆でもよいので絶対値
+            axisDev = Mathf.Acos(Mathf.Clamp01(Mathf.Abs(swingAxis.normalized.x))) * Mathf.Rad2Deg;
+        }
+
+        static float Ramp(float v, float full, float zero) { return v <= full ? 1f : v >= zero ? 0f : 1f - (v - full) / (zero - full); }
+
         static float KneeAngle(Transform[] b)
         {
             if (b == null || b[0] == null || b[1] == null || b[2] == null) return -1f;
@@ -159,11 +205,22 @@ namespace LifeSimProto
             kneeWasOn = true;
             float aL = KneeAngle(kneeBonesL), aR = KneeAngle(kneeBonesR);
             KneeAngleL = aL; KneeAngleR = aR;
+            KneeFacL = KneeFac(kneeBonesL, kneeRestL, kneeShinAxisL, aL, out KneeTwistL, out KneeAxisDevL, out KneeSwingAxisL);
+            KneeFacR = KneeFac(kneeBonesR, kneeRestR, kneeShinAxisR, aR, out KneeTwistR, out KneeAxisDevR, out KneeSwingAxisR);
             foreach (var k in kneeKeys)
             {
                 float a = k.side == 0 ? aL : aR;
-                Put(k, a < 0f ? 0f : k.Eval(a));
+                Put(k, a < 0f ? 0f : k.Eval(a) * (k.side == 0 ? KneeFacL : KneeFacR));
             }
+        }
+
+        static float KneeFac(Transform[] b, Quaternion rest, Vector3 ax, float bend, out float twist, out float axisDev, out Vector3 swingAxis)
+        {
+            KneeTwist(b, rest, ax, out twist, out axisDev, out swingAxis);
+            if (!KneeTwistGuard) return 1f;
+            float f = Ramp(twist, KneeTwistFull, KneeTwistZero);
+            if (bend >= KneeAxisMinBend) f *= Ramp(axisDev, KneeAxisFull, KneeAxisZero);
+            return f;
         }
 
         static void Put(KneeKey k, float v)
@@ -183,6 +240,9 @@ namespace LifeSimProto
             }
             var sb = new StringBuilder();
             sb.Append("角度 左 " + KneeAngleL.ToString("0.0") + "°・右 " + KneeAngleR.ToString("0.0") + "°（" + (KneeOn ? "動かす" : "止めている") + "）・");
+            sb.Append("ねじれ 左 " + KneeTwistL.ToString("0.0") + "°・右 " + KneeTwistR.ToString("0.0") + "°・軸のずれ 左 " + KneeAxisDevL.ToString("0.0") + "°・右 " + KneeAxisDevR.ToString("0.0")
+                + "°・係数 左 " + KneeFacL.ToString("0.00") + "・右 " + KneeFacR.ToString("0.00") + (KneeTwistGuard ? "" : "（弱めない）")
+                + "・振りの軸 左 " + KneeSwingAxisL.ToString("F2") + "・右 " + KneeSwingAxisR.ToString("F2") + "・");
             int nz = 0;
             foreach (var k in kneeKeys)
                 if (k.last > 0.05f) { sb.Append(k.name + "=" + k.last.ToString("0.0") + " "); nz++; }
