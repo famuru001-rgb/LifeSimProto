@@ -19,6 +19,9 @@ namespace LifeSimProto.EditorTools
         public override uint GetVersion() { return 13; }
 
         static bool IsModel(string p) { p = p.Replace('\\', '/'); return p.StartsWith(ModelDir) || p.StartsWith(CharDir); }
+        /// <summary>最初の1コマが基準の姿勢（Tの形）の動き。そのコマは流さない（2026-11-23 モーション）</summary>
+        static readonly System.Collections.Generic.HashSet<string> RefFirstFrame = new System.Collections.Generic.HashSet<string>
+        { "SitFloor", "SitFloor_Down", "SitFloor_Up", "SitFloor_Yoko", "SitFloor_Yoko_Down", "SitFloor_Yoko_Up" };
         static bool IsMotion(string p) { return p.Replace('\\', '/').StartsWith(MotionDir); }
 
         void OnPreprocessModel()
@@ -123,6 +126,9 @@ namespace LifeSimProto.EditorTools
                     c.lockRootPositionXZ = true;
                     c.loopTime = !file.Contains("_Finish_");
                 }
+                // 最初の1コマに基準の姿勢（リアの Tの形）を入れて書き出した動き（2026-11-23 モーション）：Unity は最初のコマの姿勢を人型の基準にするので、
+                // 座った形から始まる動きは、ひざ・足首のねじれを読みまちがえた（正座で すね ±90°）。基準のコマは流さない（1コマ目から使う）
+                if (RefFirstFrame.Contains(file)) c.firstFrame = c.firstFrame + 1f;
             }
             mi.clipAnimations = clips;
         }

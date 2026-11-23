@@ -890,6 +890,8 @@ namespace LifeSimProto
         // 2026-10-28 肌の質感：肌の材質だけ、影をやわらかく赤みのある色にし、境目の赤み・ふちの光・ほんのりツヤを足す。
         // false にすると、肌も服と同じ表示に戻る。
         public static bool SkinLookEnabled = true;
+        // 2026-11-23 本体 S08 追記2：肌の影の境目のぼかし。0.16 だと、取り込んだ体の面の向きのわずかな乱れで、ひざ頭・太ももに影のぎざぎざの島（まだら）が出た。命令 toonshadow skin X で変えられる
+        public static float SkinShadeSoftness = 0.45f;
         static readonly string[] skinWords = { "Skin", "Face", "Body", "Hands", "Thigh" };
         static readonly string[] notSkinWords = { "Detail", "Eyes", "Mouth", "Uniform", "Hair", "Underwear", "Bra", "Shorts", "Shoes", "Expression" };
 
@@ -903,7 +905,7 @@ namespace LifeSimProto
         static void SetSkinLook(Material t)
         {
             t.SetColor("_ShadeColor", new Color(0.90f, 0.72f, 0.72f, 1f)); // 影を赤みのある明るめの色に
-            t.SetFloat("_ShadeSoftness", 0.16f);                           // 影の境目をふんわり
+            t.SetFloat("_ShadeSoftness", SkinShadeSoftness);               // 影の境目をふんわり（2026-11-23 S08 追記2：0.16→0.45。ひざ・太ももの影のまだら対策）
             t.SetFloat("_ScatterStrength", 0.32f);
             t.SetFloat("_ScatterWidth", 0.38f);
             t.SetFloat("_RimStrength", 0.22f);
@@ -950,6 +952,7 @@ namespace LifeSimProto
                         if (src.name.Contains("DoubleSided")) cull = 0f;
                         t.SetFloat("_Cull", cull);
                         if (SkinLookEnabled && IsSkinMat(src.name)) SetSkinLook(t);
+                        else if (SkinLookEnabled && src.name.Contains("SharedPalette")) t.SetFloat("_ShadeSoftness", SkinShadeSoftness);   // 2026-11-23 S08 追記2：ティナ・ティアの体の肌は色の表の材質（QR_SharedPalette）なので、影の境目のぼかしだけ肌と同じにする
                         toonCache[src] = t;
                         ToonTune.Register(t);   // 2026-11-06 キャラデザ：トゥーンの強さ・値をゲーム中に変えられるように（ToonTune.cs）
                     }

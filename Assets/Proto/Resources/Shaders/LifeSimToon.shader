@@ -53,6 +53,11 @@ Shader "LifeSim/Toon"
             half _GlossPower;
         CBUFFER_END
         TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
+        // 影の地図の引き方（2026-11-23 本体 S08 追記2。キャラが自分に落とす影のまだら）。全部のキャラに効く値（Shader.SetGlobalFloat）
+        float _LSShadowNormalOffset;   // 影の地図を引く位置を、面の向きにこの長さ（m）だけ浮かせる。0＝今まで
+        float _LSShadowIgnore;         // 1＝影の地図を見ない（確かめ用）
+        float _LSShadeSoftAdd;         // 2段の影の境目のぼかしに足す（確かめ用。0＝今まで）
+        float _LSShadeStepAdd;         // 2段の影の境目の位置に足す（確かめ用。0＝今まで）
         ENDHLSL
 
         Pass
@@ -96,7 +101,8 @@ Shader "LifeSim/Toon"
 
             half Ramp(half ndl)
             {
-                return smoothstep(_ShadeStep - _ShadeSoftness, _ShadeStep + _ShadeSoftness, ndl);
+                half st = _ShadeStep + (half)_LSShadeStepAdd, sf = _ShadeSoftness + (half)_LSShadeSoftAdd;
+                return smoothstep(st - sf, st + sf, ndl);
             }
 
             half4 frag(Varyings i, FRONT_FACE_TYPE face : FRONT_FACE_SEMANTIC) : SV_Target
@@ -111,8 +117,9 @@ Shader "LifeSim/Toon"
                 half3 col = shade * ambient;
 
                 // 太陽・月の光（2段の陰影）
-                float4 sc = TransformWorldToShadowCoord(i.positionWS);
+                float4 sc = TransformWorldToShadowCoord(i.positionWS + n * _LSShadowNormalOffset);
                 Light ml = GetMainLight(sc);
+                ml.shadowAttenuation = lerp(ml.shadowAttenuation, 1.0h, (half)saturate(_LSShadowIgnore));
                 half ndl = dot(n, ml.direction);
                 half lm = Ramp(ndl) * ml.shadowAttenuation;
                 col += lerp(shade, baseCol.rgb, lm) * ml.color * _LightStrength * max(lm, 0.25h);

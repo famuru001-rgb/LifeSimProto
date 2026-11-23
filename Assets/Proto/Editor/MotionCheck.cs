@@ -30,6 +30,8 @@ namespace LifeSimProto.EditorTools
             public Dictionary<string, float[]> sit = new Dictionary<string, float[]>();   // clip → [n, side, fb, maxSide, maxFb, thigh, knee, ankle]
             public int talkN, talkLow; public Dictionary<string, int> talkLowClips = new Dictionary<string, int>(); public float talkMinHip = 9f;
             public Dictionary<string, int> talkClips = new Dictionary<string, int>();
+            public Quaternion[] kRef = new Quaternion[2]; public bool[] kHas = new bool[2];
+            public Dictionary<string, float[]> knee = new Dictionary<string, float[]>();   // 姿勢:動き:左右 → [n, 曲がり, |ねじれ|の和, ねじれ最大, 軸のずれの和]
             public int lookN, lookOver; public float lookMax; public Dictionary<string, int> lookOverWhy = new Dictionary<string, int>();
         }
         static Dictionary<SimCharacter, Acc> acc;
@@ -67,6 +69,8 @@ namespace LifeSimProto.EditorTools
                         acc = new Dictionary<SimCharacter, Acc>(); until = EditorApplication.timeSinceStartup + sec; lastT = Time.time;
                     }
                     else if (a[0] == "looklimit" && a.Length > 1) { ProtoBody.LookTotalMax = float.Parse(a[1], System.Globalization.CultureInfo.InvariantCulture); File.AppendAllText(Path.Combine(Logs, "motion_check.txt"), "looklimit " + ProtoBody.LookTotalMax + "\n", new UTF8Encoding(false)); }
+                    else if (a[0] == "muscles" && a.Length > 1 && Application.isPlaying) Muscles(a[1]);
+                    else if (a[0] == "clipmuscles" && a.Length > 1) ClipMuscles(a[1]);
                     else if (a[0] == "trace" && Application.isPlaying) { traceName = a[1]; traceN = a.Length > 2 ? int.Parse(a[2]) : 60; trace = new StringBuilder(); }
                     else File.WriteAllText(Path.Combine(Logs, "motion_check.txt"), "再生していないか、命令がちがう：" + c, new UTF8Encoding(false));
                 }
@@ -85,6 +89,54 @@ namespace LifeSimProto.EditorTools
             if (b == null) return "?";
             var s = b.DebugClipNow(); var p = s.Split('｜'); if (p.Length < 2) return s;
             var q = p[1]; int i = q.IndexOf(' '); return i > 0 ? q.Substring(0, i) : q;
+        }
+
+        /// <summary>その子の脚の筋肉（人型の動かし方）の値と、体の型の範囲（Logs\motion_check.txt）</summary>
+        static void Muscles(string letter)
+        {
+            var sb = new StringBuilder("== 筋肉 " + letter + " " + DateTime.Now.ToString("HH:mm:ss") + "\n");
+            var w = LoungeWorld.Instance;
+            foreach (var c in w.characters)
+            {
+                if (c == null || c.letter != letter.ToUpperInvariant()) continue;
+                foreach (var an in c.GetComponentsInChildren<Animator>(true))
+                {
+                    if (an.avatar == null || !an.avatar.isHuman) continue;
+                    var h = new HumanPoseHandler(an.avatar, an.transform); var hp = new HumanPose(); h.GetHumanPose(ref hp);
+                    sb.AppendLine(an.name + "（" + an.avatar.name + "）姿勢 " + c.BodyPoseNow);
+                    for (int i = 0; i < HumanTrait.MuscleCount; i++)
+                    {
+                        string n = HumanTrait.MuscleName[i];
+                        if (!n.Contains("Leg") && !n.Contains("Foot")) continue;
+                        sb.AppendLine("  " + n + " = " + hp.muscles[i].ToString("0.000") + "（範囲 " + HumanTrait.GetMuscleDefaultMin(i) + "〜" + HumanTrait.GetMuscleDefaultMax(i) + "）");
+                    }
+                    var hd = an.avatar.humanDescription;
+                    foreach (var hb in hd.human) if (hb.humanName.Contains("LowerLeg") || hb.humanName.Contains("UpperLeg")) sb.AppendLine("  " + hb.humanName + " 範囲 既定=" + hb.limit.useDefaultValues + " min" + hb.limit.min + " max" + hb.limit.max);
+                }
+            }
+            File.AppendAllText(Path.Combine(Logs, "motion_check.txt"), sb.ToString(), new UTF8Encoding(false));
+        }
+
+        /// <summary>動き（FBX の中の人型の動き）の脚の筋肉の値（始め・真ん中・終わり）</summary>
+        static void ClipMuscles(string name)
+        {
+            var sb = new StringBuilder("== 動きの筋肉 " + name + " " + DateTime.Now.ToString("HH:mm:ss") + "\n");
+            foreach (var g in AssetDatabase.FindAssets(name + " t:AnimationClip"))
+            {
+                string p = AssetDatabase.GUIDToAssetPath(g);
+                foreach (var o in AssetDatabase.LoadAllAssetsAtPath(p))
+                {
+                    var clip = o as AnimationClip; if (clip == null || clip.name != name) continue;
+                    sb.AppendLine(p + "（長さ " + clip.length.ToString("0.00") + "）");
+                    foreach (var b in AnimationUtility.GetCurveBindings(clip))
+                    {
+                        if (!(b.propertyName.Contains("Leg") || b.propertyName.Contains("Foot"))) continue;
+                        var cv = AnimationUtility.GetEditorCurve(clip, b);
+                        sb.AppendLine("  " + b.propertyName + "：" + cv.Evaluate(0f).ToString("0.000") + " ／ " + cv.Evaluate(clip.length * 0.5f).ToString("0.000") + " ／ " + cv.Evaluate(clip.length).ToString("0.000"));
+                    }
+                }
+            }
+            File.AppendAllText(Path.Combine(Logs, "motion_check.txt"), sb.ToString(), new UTF8Encoding(false));
         }
 
         static void Sample(LoungeWorld w, float dt)
@@ -113,6 +165,33 @@ namespace LifeSimProto.EditorTools
                     A.walkN++; A.walkSum += a1; A.bodySum += Vector3.Angle(md, tf);
                     if (a1 > 35f) { A.walkBad++; int n; A.walkBadClips.TryGetValue(clip, out n); A.walkBadClips[clip] = n + 1; }
                     if (Vector3.Angle(md, tf) > 35f) A.walkBadBody++;
+                }
+                // ひざ：立ってひざがのびているときの「太ももから見たすね」を基準に、座ったときの回り方（曲がり・ねじれ・軸）を測る（2026-11-23 モーション）
+                for (int sd = 0; sd < 2; sd++)
+                {
+                    var th = an.GetBoneTransform(sd == 0 ? HumanBodyBones.LeftUpperLeg : HumanBodyBones.RightUpperLeg);
+                    var sh = an.GetBoneTransform(sd == 0 ? HumanBodyBones.LeftLowerLeg : HumanBodyBones.RightLowerLeg);
+                    var fo = an.GetBoneTransform(sd == 0 ? HumanBodyBones.LeftFoot : HumanBodyBones.RightFoot);
+                    if (th == null || sh == null || fo == null) continue;
+                    Quaternion rel = Quaternion.Inverse(th.rotation) * sh.rotation;
+                    float bendDir = Vector3.Angle(sh.position - th.position, fo.position - sh.position);
+                    if (pose == BodyPose.Stand && bendDir < 12f && (!had || mv.magnitude / dt < 0.05f)) { A.kRef[sd] = rel; A.kHas[sd] = true; }
+                    if ((pose == BodyPose.SitFloor || pose == BodyPose.Sit) && A.kHas[sd])
+                    {
+                        Quaternion d = Quaternion.Inverse(A.kRef[sd]) * rel;
+                        if (d.w < 0f) { d.x = -d.x; d.y = -d.y; d.z = -d.z; d.w = -d.w; }
+                        Vector3 axLoc = (Quaternion.Inverse(sh.rotation) * (fo.position - sh.position)).normalized;   // すねの長さの向き（すねの骨の中）
+                        Vector3 v = new Vector3(d.x, d.y, d.z);
+                        float tw = 2f * Mathf.Atan2(Vector3.Dot(v, axLoc), d.w) * Mathf.Rad2Deg;
+                        if (tw > 180f) tw -= 360f; if (tw < -180f) tw += 360f;
+                        // 軸のずれ：回る軸と「太ももの骨の横の軸（基準の姿勢で曲げたときの軸）」のなす角 ＝ ねじれ以外の回り方の軸と、すねの長さに直角な面の中での、ひざの横の軸とのずれ
+                        float ang; Vector3 ax; d.ToAngleAxis(out ang, out ax);
+                        Vector3 sideLoc = Vector3.Cross(axLoc, Quaternion.Inverse(sh.rotation) * (sh.position - th.position)).normalized;
+                        float axErr = sideLoc.sqrMagnitude > 0.5f ? Mathf.Min(Vector3.Angle(ax, sideLoc), Vector3.Angle(ax, -sideLoc)) : 0f;
+                        string kk = pose + ":" + clip + ":" + (sd == 0 ? "左" : "右");
+                        float[] s2; if (!A.knee.TryGetValue(kk, out s2)) { s2 = new float[5]; A.knee[kk] = s2; }
+                        s2[0]++; s2[1] += bendDir; s2[2] += Mathf.Abs(tw); if (Mathf.Abs(tw) > Mathf.Abs(s2[3])) s2[3] = tw; s2[4] += axErr;
+                    }
                 }
                 Vector3 up = head.position - hips.position;
                 if (pose == BodyPose.Sit || pose == BodyPose.SitFloor)
@@ -158,6 +237,12 @@ namespace LifeSimProto.EditorTools
                 {
                     var s = kv.Value; if (s[0] < 5) continue;
                     sb.AppendLine(A.name + "｜" + kv.Key + "｜コマ " + s[0] + "｜横 " + (s[1] / s[0]).ToString("0") + "度（最大 " + s[3].ToString("0") + "）・前後 " + (s[2] / s[0]).ToString("0") + "度（最大 " + s[4].ToString("0") + "）｜もも 下向き " + (s[5] / s[0]).ToString("0") + "度・ひざ " + (s[6] / s[0]).ToString("0") + "度・足首の高さ " + (s[7] / s[0]).ToString("0.00") + "m");
+                }
+            sb.AppendLine("【ひざ】立った姿勢を基準にした、すねの回り方：曲がり（太もも→すねの向きのなす角）・ねじれ（すねの長さのまわり）・軸のずれ");
+            foreach (var A in acc.Values) foreach (var kv in A.knee)
+                {
+                    var s2 = kv.Value; if (s2[0] < 5) continue;
+                    sb.AppendLine(A.name + "｜" + kv.Key + "｜コマ " + s2[0] + "｜曲がり " + (s2[1] / s2[0]).ToString("0") + "度・ねじれ 平均 " + (s2[2] / s2[0]).ToString("0") + "度（最大 " + s2[3].ToString("0") + "）・軸のずれ " + (s2[4] / s2[0]).ToString("0") + "度");
                 }
             sb.AppendLine("【立って話す】腰の高さ（床から）の最低と、0.65m より低いコマ");
             foreach (var A in acc.Values) if (A.talkN > 0)

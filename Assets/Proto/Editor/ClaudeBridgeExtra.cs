@@ -78,6 +78,7 @@ namespace LifeSimProto.EditorTools
                 case "navpng":
                 case "goto":
                 case "wall":
+                case "toonshadow":
                 case "knee":
                 case "kneeshots":
                 case "armdown":
@@ -376,6 +377,39 @@ namespace LifeSimProto.EditorTools
                         foreach (var p in PlaceBook.Placed) sb2.Append(p.name + "@" + p.area + "(" + p.x.ToString("0.0") + "," + p.z.ToString("0.0") + "," + p.yaw + ") ");
                         if (PlaceBook.Errors.Count > 0) sb2.Append("・直す所 " + string.Join("／", PlaceBook.Errors));
                         log.AppendLine(sb2.ToString());
+                        break;
+                    }
+                    case "toonshadow":
+                    {
+                        // 2026-11-23 本体 S08 追記2：キャラの影の引き方（LifeSimToon.shader）。toonshadow list／offset（m）／ignore on|off／shots 記号[,記号…] Tag
+                        string m = a.Length > 1 ? a[1] : "list";
+                        var ci = System.Globalization.CultureInfo.InvariantCulture;
+                        if (m == "offset" && a.Length > 2) Shader.SetGlobalFloat("_LSShadowNormalOffset", float.Parse(a[2], ci));
+                        else if (m == "ignore" && a.Length > 2) Shader.SetGlobalFloat("_LSShadowIgnore", a[2] == "on" ? 1f : 0f);
+                        else if (m == "soft" && a.Length > 2) Shader.SetGlobalFloat("_LSShadeSoftAdd", float.Parse(a[2], ci));
+                        else if (m == "step" && a.Length > 2) Shader.SetGlobalFloat("_LSShadeStepAdd", float.Parse(a[2], ci));
+                        else if (m == "skin" && a.Length > 2)
+                        {
+                            // 肌の影の境目のぼかし（ProtoBody.SkinShadeSoftness）。これから作る体と、今いる体の肌の材質の両方を変える
+                            ProtoBody.SkinShadeSoftness = float.Parse(a[2], ci);
+                            int nm = 0; var seen = new System.Collections.Generic.HashSet<Material>();
+                            foreach (var r in Object.FindObjectsByType<Renderer>(FindObjectsSortMode.None))
+                                foreach (var mt in r.sharedMaterials)
+                                    if (mt != null && mt.shader != null && mt.shader.name == "LifeSim/Toon" && ((mt.HasProperty("_ScatterStrength") && mt.GetFloat("_ScatterStrength") > 0f) || mt.name.Contains("SharedPalette")) && seen.Add(mt)) { mt.SetFloat("_ShadeSoftness", ProtoBody.SkinShadeSoftness); nm++; }
+                            log.AppendLine("toonshadow skin: " + ProtoBody.SkinShadeSoftness.ToString("0.00", ci) + "・変えた肌の材質 " + nm);
+                            break;
+                        }
+                        else if (m == "shots")
+                        {
+                            if (ShadowShots.Busy) { log.AppendLine("toonshadow shots: まだ撮っている"); break; }
+                            ShadowShots.Letters = a.Length > 2 ? a[2].ToUpperInvariant() : "I,Q,R";
+                            ShadowShots.Tag = a.Length > 3 ? a[3] : "s08";
+                            ShadowShots.Set = a.Length > 4 ? a[4] : "a";
+                            new GameObject("ShadowShots").AddComponent<ShadowShots>();
+                            log.AppendLine("toonshadow shots: started " + ShadowShots.Letters + " " + ShadowShots.Tag);
+                            break;
+                        }
+                        log.AppendLine("toonshadow: 浮かせ " + Shader.GetGlobalFloat("_LSShadowNormalOffset").ToString("0.000", ci) + "m・影を見ない " + Shader.GetGlobalFloat("_LSShadowIgnore").ToString("0", ci) + "・肌のぼかし " + ProtoBody.SkinShadeSoftness.ToString("0.00", ci));
                         break;
                     }
                     case "knee":
