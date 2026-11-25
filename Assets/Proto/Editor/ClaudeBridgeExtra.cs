@@ -80,6 +80,7 @@ namespace LifeSimProto.EditorTools
                 case "wall":
                 case "toonshadow":
                 case "tailhit":
+                case "faceskinshots":
                 case "knee":
                 case "kneeshots":
                 case "armdown":
@@ -411,6 +412,17 @@ namespace LifeSimProto.EditorTools
                             break;
                         }
                         log.AppendLine("toonshadow: 浮かせ " + Shader.GetGlobalFloat("_LSShadowNormalOffset").ToString("0.000", ci) + "m・影を見ない " + Shader.GetGlobalFloat("_LSShadowIgnore").ToString("0", ci) + "・肌のぼかし " + ProtoBody.SkinShadeSoftness.ToString("0.00", ci));
+                        break;
+                    }
+                    case "faceskinshots":
+                    {
+                        // 2026-11-25 本体：目と口の絵の材質を肌の塗り方にした前と後（FaceSkinShots.cs）。faceskinshots 記号[,記号…] Tag
+                        if (FaceSkinShots.Busy) { log.AppendLine("faceskinshots: まだ撮っている"); break; }
+                        FaceSkinShots.Letters = a.Length > 1 ? a[1].ToUpperInvariant() : "M,L,I,F";
+                        FaceSkinShots.Tag = a.Length > 2 ? a[2] : "f1";
+                        FaceSkinShots.Talk = a.Length > 3 && a[3] == "talk";
+                        new GameObject("FaceSkinShots").AddComponent<FaceSkinShots>();
+                        log.AppendLine("faceskinshots: started " + FaceSkinShots.Letters + " " + FaceSkinShots.Tag);
                         break;
                     }
                     case "tailhit":

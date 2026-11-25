@@ -895,8 +895,13 @@ namespace LifeSimProto
         static readonly string[] skinWords = { "Skin", "Face", "Body", "Hands", "Thigh" };
         static readonly string[] notSkinWords = { "Detail", "Eyes", "Mouth", "Uniform", "Hair", "Underwear", "Bra", "Shorts", "Shoes", "Expression" };
 
+        // 2026-11-25 本体：目と口の絵の材質（FaceEyes・FaceMouth）は、目・口のまわりのほほ・あごの肌も入った絵なので肌として塗る（依頼 連携\依頼\本体_目と口の絵の材質を肌の塗り方に.md・famuru 許可）。
+        // 目だけ・口の中だけの部品のための notSkinWords の Eyes・Mouth は残し、この2つだけ先に肌と見なす。false で今まで（服と同じ塗り方）
+        public static bool FaceAtlasSkin = true;
+
         static bool IsSkinMat(string name)
         {
+            if (FaceAtlasSkin && (name.Contains("FaceEyes") || name.Contains("FaceMouth"))) return true;
             foreach (var w in notSkinWords) if (name.Contains(w)) return false;
             foreach (var w in skinWords) if (name.Contains(w)) return true;
             return false;
