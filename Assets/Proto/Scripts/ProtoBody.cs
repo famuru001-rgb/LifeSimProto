@@ -1357,6 +1357,7 @@ namespace LifeSimProto
             lastSpringRoot = transform.position;
             SetupHitShapes();
             SetupLegShapes();
+            SetupTailBack();   // 2026-11-25 本体：しっぽの上着の当たり判定（ProtoBody.Tail.cs）
         }
 
         // ================= 髪の当たり判定（2026-10-26 famuru 決定：体・腕の簡単な当たり判定。セレネ・リア共通） =================
@@ -1632,6 +1633,7 @@ namespace LifeSimProto
             }
             float len = s.stretch > 0f ? Mathf.Clamp(L, s.length * (1f - s.stretch), s.length * (1f + s.stretch)) : s.length;
             if (s.stretch > 0f && L > 1e-6f) len = Mathf.Lerp(s.length, len, Mathf.Abs(Vector3.Dot(dir, restDir)));
+            if (tailOn) dir = PushTail(s, root, dir, len);   // 2026-11-25 本体：しっぽを上着の後ろの外へ（ProtoBody.Tail.cs）
             // 当たり判定で押し出してから角度の上限をかける（押し出しで上限を超えて跳ね上がらないように）
             if (s.collide && hitShapes.Count > 0)
             {
@@ -1703,6 +1705,7 @@ namespace LifeSimProto
             if (springs.Count == 0) return;
             legK = SkirtLegHit && !testNoLegHit ? 1f - Mathf.Clamp01(skirtSitNow / 100f) : 0f;   // 座りの補正が効いている分だけ脚の当たりを弱める
             if (legShapes.Count > 0) CacheLegPoints();
+            TailFrame();   // 2026-11-25 本体：しっぽの上着の当たり判定
             bool reset = forceReset || dt > 0.1f || (transform.position - lastSpringRoot).sqrMagnitude > 0.25f;
             lastSpringRoot = transform.position;
             int n = Mathf.Clamp(Mathf.CeilToInt(dt * 120f), 1, 12);  // 1/120秒ごとに分けて計算

@@ -79,6 +79,7 @@ namespace LifeSimProto.EditorTools
                 case "goto":
                 case "wall":
                 case "toonshadow":
+                case "tailhit":
                 case "knee":
                 case "kneeshots":
                 case "armdown":
@@ -410,6 +411,29 @@ namespace LifeSimProto.EditorTools
                             break;
                         }
                         log.AppendLine("toonshadow: 浮かせ " + Shader.GetGlobalFloat("_LSShadowNormalOffset").ToString("0.000", ci) + "m・影を見ない " + Shader.GetGlobalFloat("_LSShadowIgnore").ToString("0", ci) + "・肌のぼかし " + ProtoBody.SkinShadeSoftness.ToString("0.00", ci));
+                        break;
+                    }
+                    case "tailhit":
+                    {
+                        // 2026-11-25 本体：しっぽの上着の当たり判定（ProtoBody.Tail.cs）。tailhit on／off／margin X（m）／ramp X（m）／list／shots 記号[,記号…] Tag
+                        string m = a.Length > 1 ? a[1] : "list";
+                        var ci = System.Globalization.CultureInfo.InvariantCulture;
+                        if (m == "on") ProtoBody.TailBackHit = true;
+                        else if (m == "off") ProtoBody.TailBackHit = false;
+                        else if (m == "margin" && a.Length > 2) ProtoBody.TailMargin = float.Parse(a[2], ci);
+                        else if (m == "ramp" && a.Length > 2) ProtoBody.TailMarginRamp = float.Parse(a[2], ci);
+                        else if (m == "shots")
+                        {
+                            if (TailShots.Busy) { log.AppendLine("tailhit shots: まだ撮っている"); break; }
+                            TailShots.Letters = a.Length > 2 ? a[2].ToUpperInvariant() : "C";
+                            TailShots.Tag = a.Length > 3 ? a[3] : "t1";
+                            new GameObject("TailShots").AddComponent<TailShots>();
+                            log.AppendLine("tailhit shots: started " + TailShots.Letters + " " + TailShots.Tag);
+                            break;
+                        }
+                        log.AppendLine("tailhit: " + (ProtoBody.TailBackHit ? "on" : "off") + "・余白 " + ProtoBody.TailMargin.ToString("0.000", ci) + "m・満ちる " + ProtoBody.TailMarginRamp.ToString("0.000", ci) + "m");
+                        foreach (var pb in Object.FindObjectsByType<ProtoBody>(FindObjectsSortMode.None))
+                            if (pb.HasTailHit) log.AppendLine("  " + pb.name + "：" + pb.TailClearance() + "・" + pb.TailProfileText());
                         break;
                     }
                     case "knee":

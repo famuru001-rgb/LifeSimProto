@@ -29,6 +29,15 @@ namespace LifeSimProto.EditorTools
             try
             {
                 if (!EditorApplication.isPlaying) throw new Exception("not playing");
+                if (a.Length > 0 && (a[0] == "close" || a[0] == "sway"))   // 2026-11-25：寄りの写真（CloseShots）・揺れの写真（SwayShots）をどのキャラでも（close （記号）／sway （記号））
+                {
+                    string L = a.Length > 1 ? a[1].Trim().ToUpperInvariant() : "H";
+                    if (a[0] == "close") { LifeSimProto.CloseShots.Letter = L; new GameObject("CloseShots").AddComponent<LifeSimProto.CloseShots>(); }
+                    else { LifeSimProto.SwayShots.Letters = L; LifeSimProto.SwayShots.Tag = L.ToLowerInvariant(); new GameObject("SwayShots").AddComponent<LifeSimProto.SwayShots>(); }
+                    result.AppendLine(a[0] + ": started " + L);
+                    File.WriteAllText(Path.Combine(Logs, "posedump_result.txt"), result.ToString(), new UTF8Encoding(false));
+                    return;
+                }
                 if (a.Length > 0 && a[0] == "outfit")   // 2026-11-16：服ごとの全身（outfit （記号） （保存先））
                 {
                     string[] r = a.Length > 1 ? a[1].Split(new[] { ' ' }, 2, StringSplitOptions.RemoveEmptyEntries) : new string[0];

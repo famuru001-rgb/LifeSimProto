@@ -64,10 +64,13 @@ namespace LifeSimProto
                 {
                     yield return Wait(30);
                     Shown(pb, on);
-                    var tr = pb.transform; Vector3 c = tr.position + Vector3.up * 0.75f;
-                    S(c + tr.forward * 2.6f + Vector3.up * 0.1f, c, on + "_立つ_前");
-                    S(c + tr.right * 2.6f + Vector3.up * 0.1f, c, on + "_立つ_横");
-                    S(c - tr.forward * 2.6f + Vector3.up * 0.1f, c, on + "_立つ_後ろ");
+                    var tr = pb.transform;
+                    float hh = Mathf.Max(1.2f, pb.HeadPos.y - tr.position.y + 0.15f);   // 2026-11-25：背の高いキャラでも頭まで入るように
+                    Vector3 c = tr.position + Vector3.up * (hh * 0.5f); float dd = hh * 1.95f;
+                    S(c + tr.forward * dd + Vector3.up * 0.1f, c, on + "_立つ_前");
+                    S(c + tr.right * dd + Vector3.up * 0.1f, c, on + "_立つ_横");
+                    S(c - tr.forward * dd + Vector3.up * 0.1f, c, on + "_立つ_後ろ");
+                    S(c + (tr.forward + tr.right).normalized * dd + Vector3.up * 0.1f, c, on + "_立つ_斜め");
                     Vector3 hip = tr.position + Vector3.up * 0.65f;
                     S(tr.position + tr.forward * 1.0f + Vector3.up * 0.2f, hip, on + "_立つ_低い前");
                     S(tr.position - tr.forward * 1.0f + Vector3.up * 0.2f, hip, on + "_立つ_低い後ろ");
@@ -82,9 +85,11 @@ namespace LifeSimProto
                     var tr = pb.transform;
                     for (int f = 0; f < 3; f++)
                     {
-                        Vector3 c = tr.position + Vector3.up * 0.75f;
-                        S(c + tr.forward * 2.6f + Vector3.up * 0.1f, c, on + "_歩く_前_" + f);
-                        S(c + tr.right * 2.6f + Vector3.up * 0.1f, c, on + "_歩く_横_" + f);
+                        float hh = Mathf.Max(1.2f, pb.HeadPos.y - tr.position.y + 0.15f);
+                        Vector3 c = tr.position + Vector3.up * (hh * 0.5f); float dd = hh * 1.95f;
+                        S(c + tr.forward * dd + Vector3.up * 0.1f, c, on + "_歩く_前_" + f);
+                        S(c + tr.right * dd + Vector3.up * 0.1f, c, on + "_歩く_横_" + f);
+                        S(c - tr.forward * dd + Vector3.up * 0.1f, c, on + "_歩く_後ろ_" + f);
                         Vector3 hip = tr.position + Vector3.up * 0.65f;
                         S(tr.position + tr.forward * 1.0f + Vector3.up * 0.2f, hip, on + "_歩く_低い前_" + f);
                         yield return Wait(8);
